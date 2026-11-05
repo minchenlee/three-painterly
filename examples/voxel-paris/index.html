@@ -184,7 +184,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <div class="lab"><span>Floors</span><output id="flOut">1 + 2</output></div>
     <div class="floors" id="floors" role="group" aria-label="Floors that blow"></div>
     <div class="lab"><span>Pieces</span><output id="pOut">—</output></div>
-    <input type="range" id="pieces" min="0" max="100" value="100" aria-label="Number of pieces">
+    <input type="range" id="pieces" min="0" max="100" value="85" aria-label="Number of pieces">
     <div class="lab"><span>Piece size</span><output id="sOut">85%</output></div>
     <input type="range" id="psize" min="40" max="200" step="5" value="85" aria-label="Piece size">
     <div class="lab"><span>Secondary blasts</span><output id="secOut">32%</output></div>
@@ -497,6 +497,11 @@ const BURSTS = [
   {c:[-10,10,-96],  n:[1,0,0],     r:14, t:7.2},
   {c:[48,10,-124],  n:[-1,0,0],    r:14, t:8.0},
   {c:[-10,12,-150], n:[1,0,0],     r:15, t:9.0},
+  // the far half of the street, toward Place de Breteuil (BakedDebris retimes up to 16 bursts)
+  {c:[48,10,-170],  n:[-1,0,0],    r:14, t:9.8},
+  {c:[-10,10,-196], n:[1,0,0],     r:14, t:10.6},
+  {c:[48,12,-220],  n:[-1,0,0],    r:15, t:11.4},
+  {c:[-10,10,-246], n:[1,0,0],     r:14, t:12.2},
 ];
 const T_END = 45;
 BURSTS.forEach((b,i) => b.i = i);
@@ -908,11 +913,12 @@ function renderFloors(){
     const F = +b.dataset.f; FLOORS.has(F) ? FLOORS.delete(F) : FLOORS.add(F); renderFloors();
     toast('Rebuilding the blast…'); setTimeout(applyFloors, 30); });
 }
-// slider → total flying pieces: 60 ≈ 11,000, 0 ≈ 500, 100 = every block split in 8
+// slider → flying pieces, log scale: 0 = 500, 85 ≈ 20,000, 100 = 40,000 (about 52 fps on an Apple M2 while playing)
+const PIECES_MIN = 500, PIECES_MAX = 40000;
 const furnFly = () => DEB.fixed.filter(d => d.kind === 0 && d.t0 < 1e8).length;
-const piecesN = v => { const ff = furnFly(), Fmax = DEB.blocks.length*8 + ff, F0 = 11000;
-  const F = v >= 60 ? F0*Math.pow(Fmax/F0, (v-60)/40) : F0*Math.pow(F0/500, (v-60)/60);
-  return Math.max(0, Math.round((paint.on ? Math.min(F, 6000) : F) - ff)); };
+const piecesN = v => { const ff = furnFly(), Fmax = DEB.blocks.length*8 + ff;
+  const F = Math.min(Fmax, PIECES_MIN * Math.pow(PIECES_MAX/PIECES_MIN, v/100));
+  return Math.max(0, Math.round(F - ff)); };
 function setPieces(v){
   const recs = DEB.fixed.filter(d => d.kind === 0).concat(piecesFor(DEB.blocks, piecesN(v)));
   const pieces = recs.map(toPiece);
@@ -1066,10 +1072,10 @@ $('bounce').oninput = () => { const r = $('bounce').value/100; $('rOut').textCon
   clearTimeout(bounceTimer); bounceTimer = setTimeout(() => { boom.rebake({ restitution: r }); markDirty(true); }, 150); };
 document.querySelectorAll('#syncSeg button').forEach(b => b.onclick = () => { syncOn = !!+b.dataset.v;
   document.querySelectorAll('#syncSeg button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('waveRow').hidden = syncOn; applyOffsets(); });
-// group the 12 bursts into waves of n that fire together, spread evenly over 0.8–9.0 s (n = 1 keeps the original timing)
+// group the 16 bursts into waves of n that fire together, spread evenly over 0.8–11.0 s (n = 1 keeps the original timing)
 let waveN = 1; const waveDelta = new Array(BURSTS.length).fill(0);
 function setWave(n){ waveN = n; const W = Math.ceil(BURSTS.length/n);
-  BURSTS.forEach((b, i) => { const k = Math.floor(i/n); waveDelta[i] = n === 1 ? 0 : (W === 1 ? 0.8 : 0.8 + k*(9.0-0.8)/(W-1)) - b.t; });
+  BURSTS.forEach((b, i) => { const k = Math.floor(i/n); waveDelta[i] = n === 1 ? 0 : (W === 1 ? 0.8 : 0.8 + k*(11.0-0.8)/(W-1)) - b.t; });
   document.querySelectorAll('#waveSeg button').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.n === n))); applyOffsets(); }
 document.querySelectorAll('#waveSeg button').forEach(b => b.onclick = () => setWave(+b.dataset.n));
 let warpOn = false, hover = 1/25, burstLen = 0.3;

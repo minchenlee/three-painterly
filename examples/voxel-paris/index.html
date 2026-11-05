@@ -96,7 +96,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   background: #c9c2b4 center / cover no-repeat url('poster.webp'); }
 #poster button { font: inherit; font-weight: 600; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
   padding: 12px 22px; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2); }
-#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 16; max-width: calc(100% - 32px);
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 16; max-width: calc(100vw - 140px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 </style>
@@ -262,7 +262,7 @@ const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMed
 const LITE_SHARE = 0.25;
 // interface strings added for lite mode and loading, in one place for translation
 const STR = {
-  liteNote: 'Lite mode · open on a desktop for the full version',
+  liteNote: 'Lite mode · full version on desktop',
   load3d: 'Load 3D (slower)',
   building: 'Stacking voxels…',
   buildFailed: 'Build failed: ',

@@ -1,0 +1,121 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>baked-debris API tests</title>
+<!-- Browser tests for the GPU side. Open over http (e.g. http://127.0.0.1:8000/packages/baked-debris/test/api.html);
+     results are listed on the page and in window.__results. -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<pre id="out">running…</pre>
+<script type="module">
+import * as THREE from 'three';
+import * as api from '../src/index.js';
+const { BakedDebris } = api;
+import { patchCube, strokeVertex, debrisState } from '../src/shaders.js';
+
+const results = [];
+const test = (name, fn) => { try { fn(); results.push({ name, ok: true }); } catch (e) { results.push({ name, ok: false, msg: String(e && e.message || e) }); } };
+const ok = (v, msg) => { if (!v) throw new Error(msg || 'assertion failed'); };
+const throws = (fn, re, msg) => { try { fn(); } catch (e) { if (re.test(e.message)) return; throw new Error(`${msg}: wrong error "${e.message}"`); } throw new Error(`${msg}: did not throw`); };
+
+// 6 static pieces, 6 that fly (2 of them split into fragments)
+const pieces = [];
+for (let i = 0; i < 12; i++) pieces.push({ position: [i * 0.3 - 1.8, 0.5, 0], burst: i < 6 ? -1 : 0 });
+const opts = (over = {}) => Object.assign({ pieces, bursts: [{ position: [0, 0.5, 0], radius: 2 }], secondary: 1, seed: 7 }, over);
+
+test('B1: a passed material is cloned, not changed, and not disposed', () => {
+  const own = () => {}; const m = new THREE.MeshStandardMaterial(); m.onBeforeCompile = own;
+  let disposed = false; m.addEventListener('dispose', () => { disposed = true; });
+  const b = new BakedDebris(opts({ material: m }));
+  ok(b.mesh.material !== m, 'mesh uses the passed material itself');
+  ok(m.onBeforeCompile === own, 'onBeforeCompile of the passed material was replaced');
+  ok(m.vertexColors === false, 'vertexColors of the passed material was changed');
+  b.dispose(); ok(!disposed, 'the passed material was disposed');
+});
+
+test('B1: the passed material\'s cache key is read on every call', () => {
+  const m = new THREE.MeshStandardMaterial(); let tag = 'a'; m.customProgramCacheKey = () => tag;
+  const b = new BakedDebris(opts({ material: m }));
+  const k1 = b.mesh.material.customProgramCacheKey(); tag = 'b';
+  ok(b.mesh.material.customProgramCacheKey() !== k1, 'cache key did not follow the passed material');
+});
+
+test('A6: point-light shadows use a patched distance material', () => {
+  const b = new BakedDebris(opts());
+  ok(b.mesh.customDistanceMaterial instanceof THREE.MeshDistanceMaterial, 'no customDistanceMaterial');
+});
+
+test('A7: createStrokes twice keeps one stroke mesh', () => {
+  const b = new BakedDebris(opts()), s = new THREE.Scene();
+  const s1 = b.createStrokes(); s.add(s1); const s2 = b.createStrokes(); s.add(s2);
+  ok(!s1.parent, 'the first stroke mesh is still in the scene');
+  ok(b.strokes === s2, 'strokes is not the new mesh');
+});
+
+test('A8: defaults are not shared, unknown options warn', () => {
+  const warn = console.warn, seen = []; console.warn = (...a) => seen.push(a.join(' '));
+  try {
+    const b = new BakedDebris(opts({ speedd: 3 }));
+    ok(b.o.speed !== BakedDebris.defaults.speed, 'speed array shared with defaults');
+    ok(seen.some(s => /speedd/.test(s)), 'no warning for unknown option "speedd"');
+    seen.length = 0; b.rebake({ gravityy: 1 });
+    ok(seen.some(s => /gravityy/.test(s)), 'no warning for unknown rebake option "gravityy"');
+  } finally { console.warn = warn; }
+});
+
+test('B2: a shader chunk that is not found throws', () => {
+  const m = new THREE.MeshStandardMaterial(); m.userData.debrisUniforms = {};
+  patchCube(m, { value: 0 });
+  throws(() => m.onBeforeCompile({ vertexShader: 'void main() {}', fragmentShader: '', uniforms: {} }), /baked-debris.*#include <common>/, 'patchCube');
+});
+
+test('B5: strokeFragment comes from the public entry', () => {
+  ok(typeof api.strokeFragment === 'string' && api.strokeFragment.includes('void main'), 'strokeFragment missing from index.js');
+});
+
+test('B6: createStrokes takes lookAhead', () => {
+  const b = new BakedDebris(opts());
+  ok(b.createStrokes().material.uniforms.uLookAhead?.value === -0.03, 'default lookAhead is not -0.03');
+  ok(b.createStrokes({ lookAhead: 0.03 }).material.uniforms.uLookAhead.value === 0.03, 'lookAhead not used');
+  ok(!/dbOffset = -0\.03/.test(strokeVertex), 'look-ahead still hard-coded');
+});
+
+test('C1: pieces are read by aIndex, only needed instances are drawn', () => {
+  ok(!/gl_InstanceID/.test(debrisState + strokeVertex), 'shaders still use gl_InstanceID');
+  const b = new BakedDebris(opts()), g = b.mesh.geometry, R = b.records;
+  ok(g.attributes.aIndex, 'no aIndex attribute');
+  const hidden = R.filter(d => d.hidden).length, stat = R.filter(d => d.kind === 0 && d.t0 >= 1e8).length;
+  const fly = R.filter(d => d.kind === 0 && d.t0 < 1e8).length;
+  ok(g.instanceCount === R.length - hidden, `cubes draw ${g.instanceCount}, want ${R.length - hidden}`);
+  const s = b.createStrokes();
+  ok(b.mesh.geometry.instanceCount === stat + fly, `cubes with strokes draw ${b.mesh.geometry.instanceCount}, want ${stat + fly}`);
+  ok(s.geometry.instanceCount === R.length - hidden - stat, `strokes draw ${s.geometry.instanceCount}, want ${R.length - hidden - stat}`);
+  b.removeStrokes(); ok(b.mesh.geometry.instanceCount === R.length - hidden, 'cube count not restored after removeStrokes');
+});
+
+test('C2: a texture larger than the GPU allows throws a clear error', () => {
+  const b = new BakedDebris(opts());
+  throws(() => b.mesh.onBeforeRender({ capabilities: { maxTextureSize: 1 } }), /maxTextureSize/, 'onBeforeRender');
+});
+
+test('C6: castShadow / receiveShadow options', () => {
+  const b = new BakedDebris(opts({ castShadow: false, receiveShadow: false }));
+  ok(b.mesh.castShadow === false && b.mesh.receiveShadow === false, 'shadow options ignored');
+});
+
+test('render: cubes, shadows and strokes compile without errors', () => {
+  const r = new THREE.WebGLRenderer(); r.setSize(64, 64); r.shadowMap.enabled = true;
+  const errs = []; r.debug.onShaderError = (gl, p, vs, fs) => errs.push(gl.getShaderInfoLog(vs) + gl.getShaderInfoLog(fs));
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100); cam.position.set(0, 2, 6);
+  const sun = new THREE.DirectionalLight(); sun.castShadow = true; sun.position.set(3, 5, 2);
+  const lamp = new THREE.PointLight(0xffffff, 5); lamp.castShadow = true; lamp.position.set(0, 2, 1);
+  scene.add(sun, lamp);
+  const b = new BakedDebris(opts()); scene.add(b.mesh); b.setTime(0.4); r.render(scene, cam);
+  scene.add(b.createStrokes()); r.render(scene, cam);
+  ok(errs.length === 0, errs.join('\n'));
+  r.dispose();
+});
+
+window.__results = results;
+document.getElementById('out').textContent = results.map(r => (r.ok ? 'ok   ' : 'FAIL ') + r.name + (r.msg ? '\n     ' + r.msg : '')).join('\n');
+</script>

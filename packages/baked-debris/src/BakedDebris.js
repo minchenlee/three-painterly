@@ -1,6 +1,6 @@
 import {
   BoxGeometry, DataTexture, FloatType, InstancedBufferAttribute, InstancedBufferGeometry, Mesh,
-  MeshDepthMaterial, MeshStandardMaterial, NearestFilter, PlaneGeometry, RGBADepthPacking, RGBAFormat,
+  MeshDepthMaterial, MeshDistanceMaterial, MeshStandardMaterial, NearestFilter, PlaneGeometry, RGBADepthPacking, RGBAFormat,
   Color, ShaderMaterial, Vector2,
 } from 'three';
 import { launchPieces, addSecondary, simulate, mulberry32, validateOptions } from './bake.js';
@@ -55,7 +55,10 @@ export class BakedDebris {
     const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
     depth.userData.debrisUniforms = this.uniforms; patchDepth(depth, this._hideFlying);
     this.mesh = new Mesh(new InstancedBufferGeometry(), mat);
+    const dist = new MeshDistanceMaterial();
+    dist.userData.debrisUniforms = this.uniforms; patchDepth(dist, this._hideFlying, 'baked-debris-distance');
     this.mesh.customDepthMaterial = depth;
+    this.mesh.customDistanceMaterial = dist;     // point-light shadows
     this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
     this.strokes = null;
@@ -168,7 +171,7 @@ export class BakedDebris {
 
   dispose() {
     this.removeStrokes();
-    this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh.customDepthMaterial.dispose();
+    this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh.customDepthMaterial.dispose(); this.mesh.customDistanceMaterial.dispose();
     this.uniforms.uSeg.value?.dispose();
   }
 }

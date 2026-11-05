@@ -82,8 +82,9 @@ export function patchCube(material, hideFlyingU) {
   material.customProgramCacheKey = () => 'baked-debris-cube|' + ownTag;
 }
 
-// Shadow / depth material: no normal chunk, so the state is computed in begin_vertex.
-export function patchDepth(material, hideFlyingU) {
+// Shadow materials (MeshDepthMaterial for sun/spot lights, MeshDistanceMaterial for point lights):
+// no normal chunk, so the state is computed in begin_vertex.
+export function patchDepth(material, hideFlyingU, key = 'baked-debris-depth') {
   material.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, material.userData.debrisUniforms, { uHideFlying: hideFlyingU });
     sh.vertexShader = sh.vertexShader
@@ -93,7 +94,7 @@ export function patchDepth(material, hideFlyingU) {
         if (uHideFlying > 0.5 && aStart < 1.0e8 && (aKind > 0.5 || dbT > 0.0)) dbS = 0.0;
         vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;`);
   };
-  material.customProgramCacheKey = () => 'baked-debris-depth';
+  material.customProgramCacheKey = () => key;
 }
 
 // Flying pieces as brush strokes: a camera-facing quad stretched along the piece's screen velocity.

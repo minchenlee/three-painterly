@@ -118,7 +118,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <tr><td><kbd>L</kbd></td><td>Light shafts on / off</td></tr>
     <tr><td><kbd>Tab</kbd></td><td>Next panel tab</td></tr>
     <tr><td><kbd>F</kbd></td><td>Full screen</td></tr>
-    <tr><td><kbd>H</kbd></td><td>Hide / show the panel</td></tr>
+    <tr><td><kbd>H</kbd></td><td>Hide / show all controls</td></tr>
     <tr><td><kbd>?</kbd> <kbd>Esc</kbd></td><td>This list</td></tr>
   </table>
 </div>
@@ -986,7 +986,9 @@ function toggleFull(){
 }
 $('bFull').onclick = toggleFull;
 // hide the panel for a clean view; a small button (or H) brings it back
-function setPanel(show){ $('ui').hidden = !show; $('bShow').hidden = show; (show ? $('bHide') : $('bShow')).focus({ preventScroll: true }); }
+// H hides everything, the Show button too, for a clean screen; H again brings the panel back
+function setPanel(show, byKey = false){ $('ui').hidden = !show; $('bShow').hidden = show || byKey;
+  if (!byKey) (show ? $('bHide') : $('bShow')).focus({ preventScroll: true }); }
 $('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
 let lastBounce = 35;
 // held keys: WASD fly the camera and its target together on the ground plane; Q/E change the focal length
@@ -1035,7 +1037,7 @@ addEventListener('keydown', e => {
       e.preventDefault(); setTab(TABS[(cur + (e.shiftKey ? TABS.length-1 : 1)) % TABS.length]); } break;
     case 'KeyT': $('bDay').click(); break;
     case 'KeyN': light.min = light.min >= 1140 || light.min < 400 ? 900 : 1260; dayRun = false; $('bDay').textContent = '▶ Run a day'; updateLight(); toast(light.min === 900 ? 'Day 15:00' : 'Night 21:00'); break;
-    case 'KeyH': setPanel($('ui').hidden); break;
+    case 'KeyH': setPanel($('ui').hidden, true); break;
   }
 });
 
@@ -1142,7 +1144,7 @@ function frame(now){
   }
   requestAnimationFrame(frame);
 }
-window.__vp = { get boom(){ return boom; }, play, syncUI, setArt, setShot, camera, controls, markDirty, setWarp };
+window.__vp = { get boom(){ return boom; }, renderer, scene, camera, painter, drawFrame, play, syncUI, setArt, setShot, controls, markDirty, setWarp };
 setTimeout(() => { try { init(); syncUI(); requestAnimationFrame(frame); } catch (err) { $('status').hidden = false; $('status').textContent = 'Build failed: ' + err.message; console.error(err); } }, 30);
 </script>
 </body>

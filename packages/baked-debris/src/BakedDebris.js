@@ -146,13 +146,15 @@ export class BakedDebris {
   /**
    * Flying pieces drawn as brush strokes (for PainterlyPass). Returns a Mesh to render after the painting,
    * e.g. painter.overlayScene.add(boom.createStrokes({ painter })). While strokes are on, flying cubes are hidden.
+   * lookAhead: seconds between the two samples that point the stroke (default -0.03, a moment back). Use a positive
+   * value when the clock runs backwards, so strokes still point the way pieces move on screen.
    */
-  createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16 } = {}) {
+  createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03 } = {}) {
     this.removeStrokes();                                     // one stroke mesh at a time
     const U = Object.assign({}, this.uniforms, {
       tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new Vector2(1, 1) }, uPixK: { value: 500 },
       uStrokeScale: { value: strokeScale }, uMaxWidth: { value: maxWidth }, uBright: { value: 1 }, uTint: { value: new Color(1, 1, 1) },
-      uJitter: { value: jitter },
+      uJitter: { value: jitter }, uLookAhead: { value: lookAhead },
     });
     const mat = new ShaderMaterial({ uniforms: U, vertexShader: strokeVertex, fragmentShader: strokeFragment, toneMapped: false });
     const mesh = new Mesh(this._buildStrokeGeo(), mat);

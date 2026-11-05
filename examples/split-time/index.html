@@ -368,11 +368,8 @@ function setPaint(on) {
   paintOn = !!on;
   if (paintOn && !upperBoom.strokes) {
     painter.overlayScene.add(upperBoom.createStrokes({ painter }));
-    const s = lowerBoom.createStrokes({ painter });
     // the lower clock runs backwards: look a moment ahead in baked time so each stroke points the way the piece travels on screen
-    s.material.vertexShader = s.material.vertexShader.replace('dbOffset = -0.03;', 'dbOffset = 0.03;');
-    s.material.needsUpdate = true;
-    painter.overlayScene.add(s);
+    painter.overlayScene.add(lowerBoom.createStrokes({ painter, lookAhead: 0.03 }));
   }
   if (!paintOn) { upperBoom.removeStrokes(); lowerBoom.removeStrokes(); }
   fires.upper.setPaint(paintOn); fires.lower.setPaint(paintOn);

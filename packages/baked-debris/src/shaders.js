@@ -19,7 +19,7 @@ uniform float uBurstT;    // bullet time: seconds at full speed
 uniform float uHover;     // bullet time: clock speed afterwards
 uniform float uGravity;
 uniform float uSizeScale;
-float dbOffset = 0.0;    // lets the stroke shader look a moment back in time
+float dbOffset = 0.0;    // lets the stroke shader sample a moment earlier or later
 uniform highp sampler2D uSeg;
 uniform int uSegW;
 
@@ -113,15 +113,16 @@ uniform vec2 uRes;          // output size in device pixels
 uniform float uPixK;        // pixels per world unit at distance 1
 uniform float uStrokeScale;
 uniform float uMaxWidth;    // device pixels
+uniform float uLookAhead;   // seconds to the second sample that sets the stroke direction (< 0 = back in time)
 varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
 void main() {
   vec3 P0; float a0; float s0; float t0; debrisState(P0, a0, s0, t0);
   bool show = s0 > 0.0 && aStart < 1.0e8 && (aKind > 0.5 || t0 > 0.0);
-  dbOffset = -0.03; vec3 P1; float a1; float s1; float t1; debrisState(P1, a1, s1, t1); dbOffset = 0.0;
+  dbOffset = uLookAhead; vec3 P1; float a1; float s1; float t1; debrisState(P1, a1, s1, t1); dbOffset = 0.0;
   vec4 c0 = projectionMatrix * viewMatrix * vec4(P0, 1.0), c1 = projectionMatrix * viewMatrix * vec4(P1, 1.0);
   if (!show || c0.w <= 0.1 || c1.w <= 0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec2 dv = (c0.xy / c0.w - c1.xy / c1.w) * 0.5 * uRes;
-  float spd = length(dv) / 0.03;                                     // pixels per second
+  float spd = length(dv) / max(abs(uLookAhead), 1e-4);              // pixels per second
   vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
   vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed * 6.283), sin(vSeed * 6.283));
   float tw = 0.35 * sin(a0);                                        // a gentle curl instead of 3D tumbling

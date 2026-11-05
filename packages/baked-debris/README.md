@@ -78,6 +78,8 @@ painter.overlayScene.add(boom.createStrokes({ painter }));
 
 Flying pieces are then drawn as brush strokes on top of the painting, stretched along their screen velocity: long sweeps when fast, short strokes when hovering. The scene depth from the painter hides strokes behind buildings. While strokes are on, flying cubes are hidden; pieces still in place stay cubes and are painted with the scene. `boom.removeStrokes()` switches back.
 
+`createStrokes` options: `strokeScale` (1.25), `maxWidth` in CSS pixels (34), `jitter` (0.16), `lookAhead` (−0.03 s: the stroke points from where the piece was a moment ago; use a positive value when you play the clock backwards).
+
 To give your own effects (fire, sparks) the same brush look, import the stroke fragment shader: `import { strokeFragment } from 'baked-debris'`. The GLSL pieces and patch functions are also available as `baked-debris/shaders`; that entry is lower-level and may change between versions.
 
 ## How it works

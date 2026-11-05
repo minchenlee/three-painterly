@@ -172,18 +172,24 @@ export function simulate(recs, o) {
     while (t < until) {
       let x = px + vx * dt, y = py + vy * dt - 0.5 * g * dt * dt, z = pz + vz * dt;
       vy -= g * dt;
-      let hit = false;
-      if (t > 0.03 && y > killY) {                            // let pieces leave the hole they came from
-        if (vx && solid(x + Math.sign(vx) * h, py, pz)) { vx = -vx * e; x = px; hit = true; }
-        if (vz && solid(x, py, z + Math.sign(vz) * h)) { vz = -vz * e; z = pz; hit = true; }
-        if (vy < 0 && solid(x, y - h, z)) {
+      let hit = false, floor = false;
+      if (y > killY) {
+        // first 0.03 s: probe the centre only, so pieces flush against standing geometry can leave their hole,
+        // but no centre ever enters a wall (a time window without probes let fast pieces get stuck inside)
+        const q = t > 0.03 ? h : 0;
+        if (vx && solid(x + Math.sign(vx) * q, py, pz)) { vx = -vx * e; x = px; hit = true; }
+        if (vz && solid(x, py, z + Math.sign(vz) * q)) { vz = -vz * e; z = pz; hit = true; }
+        if (vy < 0 && solid(x, y - q, z)) {
           y = snap ? Math.floor((y - h) / snap) * snap + snap + h : py;
           if (hasGround && y - h < ground) y = ground + h;
-          const up = -vy * e; vx *= fr; vz *= fr; w *= 0.5; hit = true;
+          const up = -vy * e; vx *= fr; vz *= fr; w *= 0.5; hit = true; floor = true;
           if (up < stop) settled = true; else vy = up;
-        } else if (vy > 0 && solid(x, y + h, z)) { y = py; vy = -vy * e; hit = true; }
+        } else if (vy > 0 && solid(x, y + q, z)) { y = py; vy = -vy * e; hit = true; }
       }
-      t += dt; px = x; py = y; pz = z;
+      // a hit starts the new segment where the step started, and the step is not counted: the drawn path then
+      // never runs past the hit point into the wall (it would for up to one step, then jump back)
+      if (hit) { if (!floor) y = py; x = px; z = pz; } else t += dt;
+      px = x; py = y; pz = z;
       // out of segments: the last one is a rest at this hit point, so what is drawn never runs on through a wall or floor
       if (hit && k === SEGMENTS - 1) settled = true;
       if (settled) { put(k, t, px, py, pz, 0, 0, 0, 0); d.restT = t; break; }

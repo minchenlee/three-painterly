@@ -1,7 +1,8 @@
 // CPU tests for the bake: no three.js, no GPU. Run with `node --test packages/baked-debris/test/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { launchPieces, simulate, mulberry32, SEGMENTS, validateOptions } from '../src/bake.js';
+import { createHash } from 'node:crypto';
+import { launchPieces, addSecondary, simulate, mulberry32, SEGMENTS, validateOptions } from '../src/bake.js';
 import { voxelCollider, boxCollider, anyCollider } from '../src/colliders.js';
 
 const base = {
@@ -73,4 +74,42 @@ test('colliders: boxes, voxels and their union', () => {
   assert.ok(vox(1.2, 0.1, -0.2) && !vox(0.2, 0.1, -0.2));
   const any = anyCollider(box, vox);
   assert.ok(any(0.5, 0.5, 0.5) && any(1.2, 0.1, -0.2) && !any(3, 3, 3));
+});
+
+// A small scene like examples/explode.html: a hollow voxel tower, two bursts, a wall. Cells no burst reaches stay solid.
+function towerScene({ secondary = 0, seed = 4242 } = {}) {
+  const S = 0.25, NX = 12, NY = 16, NZ = 12, grid = new Uint8Array(NX * NY * NZ), pieces = [];
+  const bursts = [{ position: [1.5, 0.8, 0], direction: [0, 0.3, -1], radius: 1.4, time: 0.2 }, { position: [0, 2.5, 1.5], radius: 1.1, time: 0.6 }];
+  const reached = p => bursts.some(b => Math.hypot(p[0] - b.position[0], p[1] - b.position[1], p[2] - b.position[2]) < b.radius);
+  for (let i = 0; i < NX; i++) for (let j = 0; j < NY; j++) for (let k = 0; k < NZ; k++) {
+    if (!(i === 0 || k === 0 || i === NX - 1 || k === NZ - 1 || j === NY - 1)) continue;
+    const position = [(i + 0.5) * S, (j + 0.5) * S, (k + 0.5) * S];
+    pieces.push({ position, color: 0xccbbaa });
+    if (!reached(position)) grid[i + NX * (j + NY * k)] = 1;
+  }
+  const cell = (x, y, z) => { const i = Math.floor(x / S), j = Math.floor(y / S), k = Math.floor(z / S);
+    return i >= 0 && j >= 0 && k >= 0 && i < NX && j < NY && k < NZ && grid[i + NX * (j + NY * k)] === 1; };
+  const wall = (x, y, z) => x >= -3 && x <= 6 && y >= 0 && y <= 2 && z >= -2.6 && z <= -2.2;
+  const solid = (x, y, z) => cell(x, y, z) || wall(x, y, z);
+  const o = Object.assign({}, base, { solid, snap: S, secondary, seed, duration: 10 });
+  const rnd = mulberry32(o.seed);
+  let recs = launchPieces(pieces, bursts, o, rnd);
+  if (secondary > 0) recs = addSecondary(recs, o, rnd);
+  return { o, recs, seg: simulate(recs, o) };
+}
+const digest = ({ recs, seg }) => createHash('sha256').update(Buffer.from(seg.data.buffer))
+  .update(JSON.stringify(recs.map(d => [d.t0, d.restT, d.split ?? 0, d.hidden ? 1 : 0]))).digest('hex').slice(0, 16);
+
+test('at any time, no flying piece is inside solid or below the ground', () => {
+  const { o, recs, seg } = towerScene();
+  let flying = 0;
+  recs.forEach((d, i) => {
+    if (d.kind !== 0 || d.t0 > 1e8) return; flying++;
+    for (let t = 0; t <= o.duration; t += 1 / 60) {
+      const [x, y, z] = positionAt(seg, recs, i, t, o.gravity);
+      assert.ok(!o.solid(x, y, z), `piece ${i} inside solid at local t=${t.toFixed(3)}: ${[x, y, z].map(v => v.toFixed(3))}`);
+      assert.ok(y >= o.ground - 1e-3, `piece ${i} below the ground at local t=${t.toFixed(3)}: y=${y}`);
+    }
+  });
+  assert.ok(flying > 50, `only ${flying} pieces fly; the scene is too small to test`);
 });

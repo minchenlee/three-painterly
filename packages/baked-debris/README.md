@@ -137,7 +137,7 @@ boom.setDisplace(null);           // remove; or pass a new { glsl, uniforms } (r
 
 - Pieces do not collide with each other.
 - World space only. Positions, bursts and `solid` are in world units, and the bake collides in world space. Do not move, rotate or scale `boom.mesh` or its parents: the cubes would move away from what they hit, and the brush strokes (which ignore the mesh transform) would stay behind. To place an explosion, move the pieces and bursts before the bake.
-- Collision uses point probes at the piece's half size, not full boxes; thin geometry can be missed at high speed.
+- Collision uses point probes at the piece's half size, not full boxes; thin geometry can be missed at high speed. In the first 0.03 s after launch only the piece's centre is probed, so pieces flush against what still stands can leave their hole.
 - At most 6 segments per piece: the hit that uses up the last segment ends the motion, and the piece rests at that hit point.
 - Memory per record (a piece, or one of the 8 fragments of a secondary blast): 192 B in the segment texture on the GPU plus the same 192 B kept on the CPU, and 56 B of instance attributes for the cubes (another 56 B while strokes are on). 100k records ≈ 44 MB. The texture is 4096 texels wide and `ceil(records × 12 / 4096)` tall; if that is more than the GPU's `maxTextureSize` (often 16384, so about 5.5M records), the first render throws an error naming the limit.
 - The bake runs on the main thread: about 0.2–2 s for 10k–200k pieces in tests.

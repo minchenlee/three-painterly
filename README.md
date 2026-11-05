@@ -36,7 +36,10 @@ Serve the repository root over HTTP and open an example:
 python3 -m http.server     # or: npx serve .
 # http://localhost:8000/packages/painterly-pass/examples/basic.html
 # http://localhost:8000/packages/baked-debris/examples/explode.html
+# http://localhost:8000/examples/voxel-paris/
 ```
+
+`examples/voxel-paris` is a larger demo that uses both modules: a Paris street corner of about 5 million voxels, where 12 bursts blow out the ground floor and chosen upper floors. Drag the time slider to scrub or rewind, switch between realistic and painterly rendering, and change the time of day. It loads three.js from a CDN and builds the city in the browser (a few seconds on first load).
 
 ## License
 

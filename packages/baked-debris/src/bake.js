@@ -79,50 +79,54 @@ export function simulate(recs, o) {
   const data = new Float32Array(SEG_TEX_WIDTH * rows * 4);
   const g = o.gravity, dt = o.step, e = o.restitution, fr = o.friction, stop = o.stopSpeed;
   const ground = o.ground, killY = o.killY;
-  const solid = (x, y, z) => (ground !== null && y < ground) || (o.solid ? o.solid(x, y, z) : false);
+  const hasGround = ground !== null, collider = o.solid, snap = o.snap;
+  const solid = (x, y, z) => (hasGround && y < ground) || (collider ? collider(x, y, z) : false);
+  // Plain numbers only inside the loop: no arrays are made per step, which keeps big bakes free of GC pauses.
+  let base = 0;
+  const put = (slot, t, px, py, pz, vx, vy, vz, w) => { const k = base + slot * 8;
+    data[k] = t; data[k + 1] = px; data[k + 2] = py; data[k + 3] = pz;
+    data[k + 4] = vx; data[k + 5] = vy; data[k + 6] = vz; data[k + 7] = w; };
 
   for (let i = 0; i < n; i++) {
-    const d = recs[i], base = i * SEGMENTS * 8;
+    const d = recs[i];
+    base = i * SEGMENTS * 8;
     for (let s = 0; s < SEGMENTS; s++) data[base + s * 8] = -1;
-    const put = (slot, t, p, v, w) => { const k = base + slot * 8;
-      data[k] = t; data[k + 1] = p[0]; data[k + 2] = p[1]; data[k + 3] = p[2];
-      data[k + 4] = v[0]; data[k + 5] = v[1]; data[k + 6] = v[2]; data[k + 7] = w; };
 
-    if (d.t0 > 1e8) { put(0, 0, d.p, [0, 0, 0], 0); continue; }
-    let p = d.p.slice(), v = d.v.slice(), w = d.w;
+    if (d.t0 > 1e8) { put(0, 0, d.p[0], d.p[1], d.p[2], 0, 0, 0, 0); continue; }
+    let px = d.p[0], py = d.p[1], pz = d.p[2], vx = d.v[0], vy = d.v[1], vz = d.v[2], w = d.w;
     if (d.kind === 1) {                                       // start from the parent's state at the split
       const par = recs[d.parent];
-      if (!par.splitOK) { d.hidden = true; put(0, 0, d.p, [0, 0, 0], 0); continue; }
+      if (!par.splitOK) { d.hidden = true; put(0, 0, d.p[0], d.p[1], d.p[2], 0, 0, 0, 0); continue; }
       const pb = d.parent * SEGMENTS * 8, tau = par.split, h = d.size / 2;
-      p = [data[pb + 1] + data[pb + 4] * tau + d.kick[0] * h,
-           data[pb + 2] + data[pb + 5] * tau - 0.5 * g * tau * tau + d.kick[1] * h,
-           data[pb + 3] + data[pb + 6] * tau + d.kick[2] * h];
-      v = [data[pb + 4] + d.kick[0] * d.kickSpeed, data[pb + 5] - g * tau + d.kick[1] * d.kickSpeed, data[pb + 6] + d.kick[2] * d.kickSpeed];
+      px = data[pb + 1] + data[pb + 4] * tau + d.kick[0] * h;
+      py = data[pb + 2] + data[pb + 5] * tau - 0.5 * g * tau * tau + d.kick[1] * h;
+      pz = data[pb + 3] + data[pb + 6] * tau + d.kick[2] * h;
+      vx = data[pb + 4] + d.kick[0] * d.kickSpeed; vy = data[pb + 5] - g * tau + d.kick[1] * d.kickSpeed; vz = data[pb + 6] + d.kick[2] * d.kickSpeed;
     }
     const h = d.size / 2;
     let t = 0, k = 0, settled = false;
     const until = d.life > 0 ? Math.min(o.duration, d.life + 0.05) : o.duration;   // short-lived pieces need little simulation
-    put(k++, 0, p, v, w);
+    put(k++, 0, px, py, pz, vx, vy, vz, w);
     while (t < until) {
-      let x = p[0] + v[0] * dt, y = p[1] + v[1] * dt - 0.5 * g * dt * dt, z = p[2] + v[2] * dt;
-      v[1] -= g * dt;
+      let x = px + vx * dt, y = py + vy * dt - 0.5 * g * dt * dt, z = pz + vz * dt;
+      vy -= g * dt;
       let hit = false;
       if (t > 0.03 && y > killY) {                            // let pieces leave the hole they came from
-        if (v[0] && solid(x + Math.sign(v[0]) * h, p[1], p[2])) { v[0] = -v[0] * e; x = p[0]; hit = true; }
-        if (v[2] && solid(x, p[1], z + Math.sign(v[2]) * h)) { v[2] = -v[2] * e; z = p[2]; hit = true; }
-        if (v[1] < 0 && solid(x, y - h, z)) {
-          y = o.snap ? Math.floor((y - h) / o.snap) * o.snap + o.snap + h : p[1];
-          if (ground !== null && y - h < ground) y = ground + h;
-          const vy = -v[1] * e; v[0] *= fr; v[2] *= fr; w *= 0.5; hit = true;
-          if (vy < stop) settled = true; else v[1] = vy;
-        } else if (v[1] > 0 && solid(x, y + h, z)) { y = p[1]; v[1] = -v[1] * e; hit = true; }
+        if (vx && solid(x + Math.sign(vx) * h, py, pz)) { vx = -vx * e; x = px; hit = true; }
+        if (vz && solid(x, py, z + Math.sign(vz) * h)) { vz = -vz * e; z = pz; hit = true; }
+        if (vy < 0 && solid(x, y - h, z)) {
+          y = snap ? Math.floor((y - h) / snap) * snap + snap + h : py;
+          if (hasGround && y - h < ground) y = ground + h;
+          const up = -vy * e; vx *= fr; vz *= fr; w *= 0.5; hit = true;
+          if (up < stop) settled = true; else vy = up;
+        } else if (vy > 0 && solid(x, y + h, z)) { y = py; vy = -vy * e; hit = true; }
       }
-      t += dt; p = [x, y, z];
-      if (settled) { put(Math.min(k, SEGMENTS - 1), t, p, [0, 0, 0], 0); break; }
-      if (hit && k < SEGMENTS - 1) put(k++, t, p, v, w);
+      t += dt; px = x; py = y; pz = z;
+      if (settled) { put(Math.min(k, SEGMENTS - 1), t, px, py, pz, 0, 0, 0, 0); break; }
+      if (hit && k < SEGMENTS - 1) put(k++, t, px, py, pz, vx, vy, vz, w);
       if (y < killY) break;
     }
-    if (!settled && p[1] >= killY) put(Math.min(k, SEGMENTS - 1), t, p, [0, 0, 0], 0);
+    if (!settled && py >= killY) put(Math.min(k, SEGMENTS - 1), t, px, py, pz, 0, 0, 0, 0);
     if (d.split > 0) { const t1 = data[base + 8]; d.splitOK = !(t1 >= 0 && t1 < d.split); }   // cancelled if it hit something first
   }
   return { data, width: SEG_TEX_WIDTH, height: rows };

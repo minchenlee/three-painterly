@@ -73,7 +73,7 @@ Anchoring strokes to surfaces to avoid the "shower door" effect goes back to Bar
 ## Limitations
 
 - Surfaces are mapped by their dominant axis. Strongly slanted or curved surfaces get strokes from the nearest axis plane, which can show a seam where the dominant axis changes.
-- Perspective cameras only. Logarithmic depth buffers are not supported.
+- Perspective cameras only. `WebGLRenderer` only: `WebGPURenderer` is not supported. A renderer created with `logarithmicDepthBuffer` or `reverseDepthBuffer` is not supported; `render()` throws an error that says so.
 - Each pixel samples the scene many times. On weak GPUs lower `resolutionScale` or raise `strokeSize`.
 - Transparent objects are painted with whatever is behind them in the depth buffer.
 

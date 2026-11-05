@@ -19,6 +19,15 @@ import { quadVertex, paintFragment, copyFragment } from './shaders.js';
  *   painter.setSize(w * dpr, h * dpr);
  *   painter.render(renderer);          // draws to the screen
  */
+// The paint shader rebuilds positions from a standard depth buffer (NDC z = 2d - 1, far plane = 1.0).
+// Fail loudly on setups where that is not true, instead of painting the wrong strokes.
+function checkRenderer(renderer) {
+  if (renderer.isWebGPURenderer) throw new Error('PainterlyPass needs a WebGLRenderer; WebGPURenderer is not supported');
+  const caps = renderer.capabilities || {};
+  if (caps.logarithmicDepthBuffer) throw new Error('PainterlyPass does not support logarithmicDepthBuffer; create the WebGLRenderer without it');
+  if (caps.reverseDepthBuffer || renderer.reverseDepthBuffer) throw new Error('PainterlyPass does not support reverseDepthBuffer; create the WebGLRenderer without it');
+}
+
 export class PainterlyPass extends Pass {
   static defaults = {
     strokeSize: 7,          // stroke cell size in CSS pixels
@@ -126,6 +135,7 @@ export class PainterlyPass extends Pass {
 
   render(renderer, writeBuffer = null /*, readBuffer, deltaTime, maskActive */) {
     if (!this.camera.isPerspectiveCamera) throw new Error('PainterlyPass needs a PerspectiveCamera');
+    if (this._checkedRenderer !== renderer) { checkRenderer(renderer); this._checkedRenderer = renderer; }
     if (this._size.x <= 1) { const s = renderer.getDrawingBufferSize(new Vector2()); this.setSize(s.x, s.y); }
     this._ensureTargets();
 

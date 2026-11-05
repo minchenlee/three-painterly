@@ -414,11 +414,23 @@ const sectionAt = t => { const e = track?.env; if (!e) return 0; return e.data[M
 async function load(make, name, loop) {
   if (busy) return; busy = true; ensureAudio(); ctx.resume();
   $('track').textContent = `Preparing ${name}…`;
-  try { startTrack(await make(), name, loop); toast(`${TEXT.playing} ${name}`); }
+  try { const r = await make(), buf = r.buf || r; name = r.name || name; startTrack(buf, name, loop); toast(`${TEXT.playing} ${name}`); }
   catch (err) { console.error(err); toast(loop ? TEXT.demoFailed : TEXT.badFile); updateTransport(); }
   finally { busy = false; }
 }
-const playDemo = () => load(renderDemo, TEXT.demoName, true);
+// A host page can swap the demo for a recording: define window.PAINT_PULSE_DEMO = { src, name } before this module runs.
+const HOST_DEMO = window.PAINT_PULSE_DEMO?.src ? window.PAINT_PULSE_DEMO : null;
+let hostBuf = null;
+async function hostDemo() {   // fetch and decode once; if that fails, fall back to the synthesised track
+  try {
+    if (!hostBuf) { const res = await fetch(HOST_DEMO.src); if (!res.ok) throw new Error(`HTTP ${res.status}`); hostBuf = await ctx.decodeAudioData(await res.arrayBuffer()); }
+    return { buf: hostBuf, name: HOST_DEMO.name || TEXT.demoName };
+  } catch (err) {
+    console.warn(`Paint Pulse: the host demo track (${HOST_DEMO.src}) failed (${err.message || err}); playing the synthesised demo`);
+    return { buf: await renderDemo(), name: TEXT.demoName };
+  }
+}
+const playDemo = () => HOST_DEMO ? load(hostDemo, HOST_DEMO.name || TEXT.demoName, true) : load(renderDemo, TEXT.demoName, true);
 const playFile = f => f && load(async () => ctx.decodeAudioData(await f.arrayBuffer()), f.name.replace(/\.[^.]+$/, ''), false);
 
 // An original 48 s loop, synthesised offline: intro → build (hats, then kicks) → drop → break (sub bass, then shaker) → drop.

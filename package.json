@@ -1,0 +1,12 @@
+{
+  "name": "three-painterly-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "node --test packages/*/test/*.test.js"
+  },
+  "devDependencies": {
+    "three": "0.160.0"
+  }
+}

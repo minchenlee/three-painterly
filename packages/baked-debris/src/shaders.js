@@ -61,6 +61,13 @@ void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
 }
 `;
 
+// String.replace that fails loudly: a missing chunk (e.g. after a three.js update) would otherwise
+// leave the pieces at their bake positions without any error.
+export function mustReplace(src, find, repl, where) {
+  if (!src.includes(find)) throw new Error(`baked-debris (${where}): shader chunk "${find}" not found; this three.js version is not supported`);
+  return src.replace(find, repl);
+}
+
 // Cube material (MeshStandardMaterial etc.): position, spin, normal and colour come from the bake.
 // The hooks of `source` (default: the material itself, as it was) run after the debris patch, so they can add fog,
 // lighting tweaks and so on; they see `transformed` and `objectNormal` already moved by the debris code.
@@ -69,14 +76,15 @@ export function patchCube(material, hideFlyingU, source = null) {
   const src = source ?? { onBeforeCompile: material.onBeforeCompile, customProgramCacheKey: material.customProgramCacheKey.bind(material) };
   material.onBeforeCompile = (sh, renderer) => {
     Object.assign(sh.uniforms, material.userData.debrisUniforms, { uHideFlying: hideFlyingU });
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + debrisState + '\nuniform float uHideFlying;')
-      .replace('#include <beginnormal_vertex>', `
+    let v = sh.vertexShader;
+    v = mustReplace(v, '#include <common>', '#include <common>\n' + debrisState + '\nuniform float uHideFlying;', 'cube');
+    v = mustReplace(v, '#include <beginnormal_vertex>', `
         vec3 dbP; float dbA; float dbS; float dbT; debrisState(dbP, dbA, dbS, dbT);
         if (uHideFlying > 0.5 && aStart < 1.0e8 && (aKind > 0.5 || dbT > 0.0)) dbS = 0.0;   // drawn as strokes instead
-        vec3 objectNormal = rotAxis(normal, aAxis, dbA);`)
-      .replace('#include <begin_vertex>', 'vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;')
-      .replace('#include <color_vertex>', '#if defined(USE_COLOR)\n vColor = mix(aColor, vec3(2.4, 1.3, 0.45), 0.9 * debrisGlow());\n#endif');
+        vec3 objectNormal = rotAxis(normal, aAxis, dbA);`, 'cube');
+    v = mustReplace(v, '#include <begin_vertex>', 'vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;', 'cube');
+    v = mustReplace(v, '#include <color_vertex>', '#if defined(USE_COLOR)\n vColor = mix(aColor, vec3(2.4, 1.3, 0.45), 0.9 * debrisGlow());\n#endif', 'cube');
+    sh.vertexShader = v;
     src.onBeforeCompile.call(source ?? material, sh, renderer);
   };
   material.customProgramCacheKey = () => 'baked-debris-cube|' + src.customProgramCacheKey.call(source ?? material);
@@ -87,12 +95,13 @@ export function patchCube(material, hideFlyingU, source = null) {
 export function patchDepth(material, hideFlyingU, key = 'baked-debris-depth') {
   material.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, material.userData.debrisUniforms, { uHideFlying: hideFlyingU });
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + debrisState + '\nuniform float uHideFlying;')
-      .replace('#include <begin_vertex>', `
+    let v = sh.vertexShader;
+    v = mustReplace(v, '#include <common>', '#include <common>\n' + debrisState + '\nuniform float uHideFlying;', key);
+    v = mustReplace(v, '#include <begin_vertex>', `
         vec3 dbP; float dbA; float dbS; float dbT; debrisState(dbP, dbA, dbS, dbT);
         if (uHideFlying > 0.5 && aStart < 1.0e8 && (aKind > 0.5 || dbT > 0.0)) dbS = 0.0;
-        vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;`);
+        vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;`, key);
+    sh.vertexShader = v;
   };
   material.customProgramCacheKey = () => key;
 }

@@ -138,7 +138,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <div class="lab"><span>Sensitivity</span><output id="sensOut">130%</output></div>
     <input type="range" id="sens" min="40" max="250" step="5" value="130" aria-label="Sensitivity">
     <div class="lab"><span>Stroke size</span><output id="strokeOut">7 px</output></div>
-    <input type="range" id="stroke" min="3" max="18" step="1" value="7" aria-label="Stroke size">
+    <input type="range" id="stroke" min="3" max="40" step="1" value="7" aria-label="Stroke size">
     <div class="row"><span class="lab">Look</span>
       <div class="seg" role="group" aria-label="Look" id="lookSeg">
         <button type="button" data-v="1" aria-pressed="true">Painted</button>
@@ -314,10 +314,10 @@ scene.add(boom.mesh);
 boom.mesh.castShadow = boom.mesh.receiveShadow = false;
 
 const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04, sky: false });
-let strokes = null, painted = true;
+let strokes = null, painted = true, strokeK = 1;   // strokeK: flying strokes scale with the Stroke size slider (7 px = 1)
 function setPainted(on) {
   painted = on;
-  if (on && !strokes) { strokes = boom.createStrokes({ painter, strokeScale: 0.85, maxWidth: 16 }); painter.overlayScene.add(strokes); }
+  if (on && !strokes) { strokes = boom.createStrokes({ painter, strokeScale: 0.85 * strokeK, maxWidth: 16 * strokeK }); painter.overlayScene.add(strokes); }
   if (!on && strokes) { boom.removeStrokes(); strokes = null; }
   document.querySelectorAll('#lookSeg button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === (on ? 1 : 0))));
 }
@@ -493,7 +493,11 @@ $('bFile').onclick = () => $('file').click();
 $('file').onchange = e => { playFile(e.target.files[0]); e.target.value = ''; };
 $('bPause').onclick = () => togglePause();
 $('sens').oninput = e => { sens = e.target.value / 100; $('sensOut').textContent = e.target.value + '%'; };
-$('stroke').oninput = e => { painter.strokeSize = +e.target.value; $('strokeOut').textContent = e.target.value + ' px'; };
+let strokeTimer = 0;
+$('stroke').oninput = e => { const v = +e.target.value; painter.strokeSize = v; $('strokeOut').textContent = v + ' px';
+  strokeK = v / 7; if (strokes) strokes.material.uniforms.uStrokeScale.value = 0.85 * strokeK;
+  clearTimeout(strokeTimer);   // maxWidth is fixed per stroke mesh: rebuild it once the slider settles
+  strokeTimer = setTimeout(() => { if (painted && strokes) { setPainted(false); setPainted(true); } }, 150); };
 document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPainted(b.dataset.v === '1'));
 function setPanel(show, byKey = false) {
   $('ui').hidden = !show; $('bShow').hidden = show || byKey;

@@ -2,13 +2,15 @@
 
 Two small three.js modules, extracted from a voxel street-corner piece. Plain ES modules, no build step. Both need three.js r160 or later (WebGL 2).
 
-![A voxel Paris street blowing apart into brush strokes, rendered with PainterlyPass and BakedDebris](docs/images/voxel-paris.jpg)
+**Live demos:** [Voxel Paris](https://mclee.dev/lab/voxel-paris/) · [Split Time](https://mclee.dev/lab/split-time/) · [Paint Pulse](https://mclee.dev/lab/paint-pulse/) (all at [mclee.dev/lab](https://mclee.dev/lab))
 
-| [split-time](examples/split-time/) | [paint-pulse](examples/paint-pulse/) |
+[![A voxel Paris street blowing apart into brush strokes, rendered with PainterlyPass and BakedDebris](docs/images/voxel-paris.jpg)](https://mclee.dev/lab/voxel-paris/)
+
+| [Split Time](https://mclee.dev/lab/split-time/) | [Paint Pulse](https://mclee.dev/lab/paint-pulse/) |
 |---|---|
-| ![One building on two clocks: the upper floors blow apart while the lower floors fly back together](docs/images/split-time.jpg) | ![An oil-paint ball that bursts into brush strokes with the music](docs/images/paint-pulse.jpg) |
+| [![One building on two clocks: the upper floors blow apart while the lower floors fly back together](docs/images/split-time.jpg)](https://mclee.dev/lab/split-time/) | [![An oil-paint ball that bursts into brush strokes with the music](docs/images/paint-pulse.jpg)](https://mclee.dev/lab/paint-pulse/) |
 
-*Top: [examples/voxel-paris](examples/voxel-paris/). All three examples use both modules.*
+*Click an image to open the live demo. Source: [examples/voxel-paris](examples/voxel-paris/), [examples/split-time](examples/split-time/), [examples/paint-pulse](examples/paint-pulse/). All three use both modules.*
 
 ## PainterlyPass
 

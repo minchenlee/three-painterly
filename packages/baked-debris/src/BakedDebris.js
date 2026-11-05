@@ -135,7 +135,7 @@ export class BakedDebris {
 
   /**
    * Flying pieces drawn as brush strokes (for PainterlyPass). Returns a Mesh to render after the painting,
-   * e.g. painter.overlays.push(boom.createStrokes({ painter })). While strokes are on, flying cubes are hidden.
+   * e.g. painter.overlayScene.add(boom.createStrokes({ painter })). While strokes are on, flying cubes are hidden.
    */
   createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16 } = {}) {
     this.removeStrokes();                                     // one stroke mesh at a time

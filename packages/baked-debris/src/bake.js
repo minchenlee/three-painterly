@@ -18,6 +18,7 @@ const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / 
 /**
  * Turn pieces + bursts into launched pieces.
  * Each piece is launched by the nearest burst whose radius reaches it; other pieces stay where they are.
+ * A piece that has its own `velocity` is launched with it instead (at `launchTime`, or its burst's time).
  * Kinds: 0 = cube, 1 = fragment of a secondary blast.
  */
 export function launchPieces(pieces, bursts, o, rnd) {
@@ -30,8 +31,14 @@ export function launchPieces(pieces, bursts, o, rnd) {
       if (d < b.radius && d < bd) { bd = d; best = j; }
     });
     const rec = { kind: 0, burst: best, p: p.slice(), v: [0, 0, 0], t0: 1e9, size: pc.size ?? o.pieceSize,
-      color: pc.color, axis: norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]), w: 0, split: 0, src: i };
-    if (best >= 0) {
+      color: pc.color, axis: norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]), w: 0, split: 0, src: i, life: pc.lifetime ?? 0 };
+    if (pc.velocity) {                                        // the caller launched this piece itself
+      rec.burst = pc.burst ?? -1;
+      rec.v = pc.velocity.slice();
+      rec.t0 = pc.launchTime ?? (rec.burst >= 0 ? bursts[rec.burst].time ?? 0 : 0);
+      rec.w = pc.spin ?? (rnd() * 2 - 1) * o.spin;
+      if (pc.axis) rec.axis = norm(pc.axis);
+    } else if (best >= 0) {
       const b = bursts[best], c = b.position, n = b.direction ?? [0, 1, 0], r = b.radius, f = Math.min(1, bd / r);
       const dir = norm([(p[0] - c[0]) / r + n[0] * 1.1 + (rnd() - 0.5) * 0.9,
                         (p[1] - c[1]) / r + n[1] * 1.1 + 0.7 + (rnd() - 0.5) * 0.9,
@@ -50,10 +57,10 @@ export function launchPieces(pieces, bursts, o, rnd) {
 export function addSecondary(recs, o, rnd) {
   const kids = [];
   recs.forEach((d, i) => {
-    if (d.kind !== 0 || d.t0 > 1e8 || rnd() >= o.secondary) return;
+    if (d.kind !== 0 || d.t0 > 1e8 || d.life > 0 || rnd() >= o.secondary) return;
     d.split = o.secondaryDelay[0] + rnd() * (o.secondaryDelay[1] - o.secondaryDelay[0]);
     for (let k = 0; k < 8; k++) {
-      kids.push({ kind: 1, parent: i, burst: d.burst, p: d.p.slice(), v: [0, 0, 0], t0: d.t0, size: d.size / 2, color: d.color,
+      kids.push({ kind: 1, parent: i, burst: d.burst, life: 0, p: d.p.slice(), v: [0, 0, 0], t0: d.t0, size: d.size / 2, color: d.color,
         axis: norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]), w: (rnd() * 2 - 1) * o.spin * 1.5, split: 0,
         kick: norm([rnd() - 0.5, rnd() - 0.5 + 0.35, rnd() - 0.5]),
         kickSpeed: o.secondarySpeed[0] + rnd() * (o.secondarySpeed[1] - o.secondarySpeed[0]) });
@@ -94,8 +101,9 @@ export function simulate(recs, o) {
     }
     const h = d.size / 2;
     let t = 0, k = 0, settled = false;
+    const until = d.life > 0 ? Math.min(o.duration, d.life + 0.05) : o.duration;   // short-lived pieces need little simulation
     put(k++, 0, p, v, w);
-    while (t < o.duration) {
+    while (t < until) {
       let x = p[0] + v[0] * dt, y = p[1] + v[1] * dt - 0.5 * g * dt * dt, z = p[2] + v[2] * dt;
       v[1] -= g * dt;
       let hit = false;

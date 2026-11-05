@@ -51,9 +51,21 @@ Requires three.js r160 or later (WebGL 2).
 | `timeWarp` | `null` | `{ burst: 0.3, hover: 1/25 }`: full speed for `burst` s after launch, then the clock slows to `hover`. Also `setTimeWarp()`. |
 | `sizeScale` | `1` | Resize pieces once they fly. Also `setSizeScale()`. |
 | `seed` | `4242` | Same seed, same explosion. |
-| `material` | new `MeshStandardMaterial` | Material to patch for the cubes. |
+| `material` | new `MeshStandardMaterial` | Material to patch for the cubes. If it has its own `onBeforeCompile`, that hook runs after the debris patch and sees the moved `transformed` and `objectNormal`. |
 
-Bursts: `{ position, radius, time = 0, direction = [0, 1, 0], strength = 1 }`.
+Bursts: `{ position, radius, time = 0, direction = [0, 1, 0], strength = 1 }`. A burst with `radius: 0` launches nothing by itself; use it with pieces that carry their own launch.
+
+Pieces: `{ position, color, size }`, plus these optional fields when you want to launch a piece yourself:
+
+| Field | Meaning |
+|---|---|
+| `velocity` | Launch velocity `[x, y, z]`. Without it, the nearest burst inside its radius launches the piece. |
+| `launchTime` | When the piece leaves. Default: the time of its burst. |
+| `burst` | Index of the burst it belongs to, for `setBurstOffsets()` and bullet time. |
+| `spin`, `axis` | Spin speed (rad/s) and spin axis. |
+| `lifetime` | Seconds until the piece shrinks away (0 = stays). Useful for bits that crumble right after launch. |
+
+`boom.setBurstOffsets([dt0, dt1, …])` moves bursts in time without a rebake: each piece of burst *i* leaves `dt_i` seconds later (or earlier). Collisions are with static geometry only, so the paths stay exact. Only the first 16 bursts can be moved.
 
 After a bake, `boom.stats` gives `{ pieces, flying, secondary }`.
 

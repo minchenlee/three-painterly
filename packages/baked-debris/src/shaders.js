@@ -8,6 +8,10 @@ attribute vec3 aAxis;     // spin axis
 attribute vec3 aColor;    // linear colour
 attribute float aKind;    // 0 = piece, 1 = fragment of a secondary blast
 attribute float aSplit;   // piece: local time it breaks apart (0 = never); fragment: its parent's split time
+attribute float aBurst;   // index of the burst that launched it (-1 = none)
+attribute float aLife;    // seconds after launch it takes to shrink away (0 = lives forever)
+#define MAX_BURSTS 16
+uniform float uBurstShift[MAX_BURSTS];   // per-burst time offset, so bursts can be retimed without a new bake
 uniform float uTime;
 uniform float uWarp;      // 1 = bullet time
 uniform float uBurstT;    // bullet time: seconds at full speed
@@ -23,7 +27,9 @@ vec3 rotAxis(vec3 v, vec3 a, float t) { float c = cos(t), s = sin(t); return v *
 
 // seconds of physics time since this piece launched (after the optional time warp)
 float debrisLocalTime() {
-  float tl = uTime + dbOffset - aStart;
+  float start = aStart;
+  if (aBurst > -0.5 && aBurst < float(MAX_BURSTS) - 0.5) start += uBurstShift[int(aBurst + 0.5)];
+  float tl = uTime + dbOffset - start;
   if (uWarp > 0.5 && tl > 0.0) tl = uBurstT * (1.0 - exp(-tl / uBurstT)) + uHover * tl;
   return tl;
 }
@@ -50,11 +56,16 @@ void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
   sc = aSize * mix(1.0, uSizeScale, smoothstep(0.0, 0.2, tl));
   if (A.x > 0.0) P.y += (sc - aSize) * 0.5;               // resting pieces keep sitting on the floor when resized
   if (aKind < 0.5 && aSplit > 0.0 && tl >= aSplit) sc = 0.0;   // a piece vanishes when it breaks apart
+  if (aLife > 0.0) sc *= max(0.0, 1.0 - tl / aLife);            // crumbles to nothing
 }
 `;
 
 // Cube material (MeshStandardMaterial etc.): position, spin, normal and colour come from the bake.
+// The material's own onBeforeCompile (if any) runs after the debris patch, so it can add fog, lighting tweaks
+// and so on; it sees `transformed` and `objectNormal` already moved by the debris code.
 export function patchCube(material, hideFlyingU) {
+  const own = material.onBeforeCompile, ownKey = material.customProgramCacheKey.bind(material);
+  const ownTag = String(ownKey());
   material.onBeforeCompile = (sh, renderer) => {
     Object.assign(sh.uniforms, material.userData.debrisUniforms, { uHideFlying: hideFlyingU });
     sh.vertexShader = sh.vertexShader
@@ -65,8 +76,9 @@ export function patchCube(material, hideFlyingU) {
         vec3 objectNormal = rotAxis(normal, aAxis, dbA);`)
       .replace('#include <begin_vertex>', 'vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;')
       .replace('#include <color_vertex>', '#if defined(USE_COLOR)\n vColor = mix(aColor, vec3(2.4, 1.3, 0.45), 0.9 * debrisGlow());\n#endif');
+    own.call(material, sh, renderer);
   };
-  material.customProgramCacheKey = () => 'baked-debris-cube';
+  material.customProgramCacheKey = () => 'baked-debris-cube|' + ownTag;
 }
 
 // Shadow / depth material: no normal chunk, so the state is computed in begin_vertex.

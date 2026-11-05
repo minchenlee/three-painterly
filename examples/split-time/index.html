@@ -249,8 +249,29 @@ const lowerBoom = new BakedDebris({
   pieces: lower, pieceSize: S, snap: S, ground: 0, duration: 12, restitution: 0.3, seed: 11,
   bursts: [{ position: [0, 0, 0], radius: 0 }],
 });
+/* Support: the whole scene is "the lower floors blow, the upper floors lose their support and fall onto the rubble",
+   played backwards. On the lower clock (tau = rebuild - t) the upper floors start to fall once the top rows have gone
+   (SUP_T0) and land on the rubble after a free fall of SUP_MAX. Played backwards they lift off the rubble,
+   slow down, and stop in place the moment the wall is whole. A free fall is slower than the wall comes down,
+   so the upper floors never sink into the rebuilt rows. */
+const SUP_T0 = 0.3, SUP_G = 9.81, SUP_PILE = 0.75, SUP_MAX = SPLIT * S - SUP_PILE, SUP_FADE = 0.6;
+const clocks = { rebuild: 6.5, upper: 5.3 };
+const upperDrop = t => { const tau = Math.max(0, clocks.rebuild - t) - SUP_T0; return tau <= 0 ? 0 : Math.min(SUP_MAX, 0.5 * SUP_G * tau * tau); };
+// GPU side of upperDrop, for every upper piece: before launch it rides with the falling block; a launched piece keeps
+// the drop it had at launch and loses it over its first SUP_FADE s of flight (the bake ran in place), never below the ground
+const supportHook = {
+  uniforms: { uSupR: { value: clocks.rebuild } },
+  glsl: /* glsl */`
+    uniform float uSupR;
+    float supDrop(float t){ float tau = max(0.0, uSupR - t) - ${SUP_T0.toFixed(3)};
+      return tau <= 0.0 ? 0.0 : min(${SUP_MAX.toFixed(3)}, 0.5 * ${SUP_G.toFixed(3)} * tau * tau); }
+    vec3 debrisDisplace(vec3 p, DebrisInfo d){
+      float off = d.local <= 0.0 ? -supDrop(d.time) : -supDrop(d.time - d.local) * (1.0 - smoothstep(0.0, ${SUP_FADE.toFixed(3)}, d.local));
+      return vec3(0.0, max(off, ${(S / 2).toFixed(3)} - p.y), 0.0);
+    }`,
+};
 const upperBoom = new BakedDebris({
-  pieces: upper, pieceSize: S, snap: S, ground: 0, duration: 12, speed: [6, 13], stagger: 0.6, seed: 23,
+  pieces: upper, pieceSize: S, snap: S, ground: 0, duration: 12, speed: [6, 13], stagger: 0.6, seed: 23, displace: supportHook,
   solid: voxelCollider((i, j, k) => lowerCells.has(key(i, j, k)), S),
   bursts: [
     { position: [0, 11.2, 0.3], direction: [0, 0.4, 0.3], radius: 8, time: 0 },
@@ -269,7 +290,7 @@ function makeFire({ bursts, look }) {
   const FIRE_BURSTS = bursts;
   const box = new THREE.BoxGeometry(1, 1, 1), g = new THREE.InstancedBufferGeometry(), FIRE_N = LITE ? 95 : 380, N = FIRE_N * FIRE_BURSTS.length;
   g.index = box.index; g.setAttribute('position', box.attributes.position);
-  const P = new Float32Array(N * 3), V = new Float32Array(N * 3), A = new Float32Array(N * 4), T = new Float32Array(N * 4);
+  const P = new Float32Array(N * 3), V = new Float32Array(N * 3), A = new Float32Array(N * 4), T = new Float32Array(N * 4), B = new Float32Array(N);
   let i = 0;
   for (const b of FIRE_BURSTS) for (let n = 0; n < FIRE_N; n++, i++) {
     const u = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - u * u), d = [r * Math.cos(a) * 1.3, u * 0.8 + 0.25, r * Math.sin(a) + 0.35];
@@ -278,17 +299,18 @@ function makeFire({ bursts, look }) {
     V.set([d[0] * sp, d[1] * sp, d[2] * sp], i * 3);
     A.set([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5, 0.35 + rnd() * 0.75], i * 4);              // spin axis, size
     T.set([b.t + rnd() * 0.18, 0.45 + rnd() * 0.9, (rnd() * 2 - 1) * 5, rnd()], i * 4);   // start, life, spin, heat
+    B[i] = FIRE_BURSTS.indexOf(b);
   }
-  for (const [k, arr, n] of [['fP', P, 3], ['fV', V, 3], ['fA', A, 4], ['fT', T, 4]]) g.setAttribute(k, new THREE.InstancedBufferAttribute(arr, n));
+  for (const [k, arr, n] of [['fP', P, 3], ['fV', V, 3], ['fA', A, 4], ['fT', T, 4], ['fB', B, 1]]) g.setAttribute(k, new THREE.InstancedBufferAttribute(arr, n));
   g.instanceCount = N;
   const fireGeo = g;
-const fireU = { uFireT: { value: -1 } };   // seconds on this fire's clock
+const fireU = { uFireT: { value: -1 }, uLift: { value: FIRE_BURSTS.map(() => 0) } };   // seconds on this fire's clock; y offset per burst
 const fireGLSL = /* glsl */`
-  attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT;
-  uniform float uFireT;
+  attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT; attribute float fB;
+  uniform float uFireT; uniform float uLift[${FIRE_BURSTS.length}];
   vec3 frot(vec3 v, vec3 a, float t){ float c = cos(t), s = sin(t); return v*c + cross(a, v)*s + a*dot(a, v)*(1.0 - c); }
   float fLocal(float off){ return uFireT + off - fT.x; }
-  vec3 fPos(float tl){ return fP + fV*(1.0 - exp(-2.2*tl))/2.2 + vec3(0.0, 0.9*tl*tl, 0.0); }
+  vec3 fPos(float tl){ return fP + fV*(1.0 - exp(-2.2*tl))/2.2 + vec3(0.0, 0.9*tl*tl + uLift[int(fB + 0.5)], 0.0); }
   float fSize(float tl){ return tl <= 0.0 || tl >= fT.y ? 0.0 : fA.w * min(1.0, tl/0.08) * (1.0 + 0.8*tl/fT.y) * (1.0 - tl/fT.y); }
   vec3 fColor(float tl){ float k = clamp(tl/fT.y, 0.0, 1.0);   // white-hot, then orange, then deep red
     vec3 c = mix(vec3(2.6, 1.1, 0.22), vec3(1.7, 0.32, 0.04), smoothstep(0.0, 0.3, k + 0.2*fT.w));
@@ -308,7 +330,7 @@ fireCubes.frustumCulled = false; scene.add(fireCubes);
 function makeFireStrokes(){
   const plane = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
   g.index = plane.index; g.setAttribute('position', plane.attributes.position);
-  for (const k of ['fP', 'fV', 'fA', 'fT']) g.setAttribute(k, fireGeo.attributes[k]);
+  for (const k of ['fP', 'fV', 'fA', 'fT', 'fB']) g.setAttribute(k, fireGeo.attributes[k]);
   g.instanceCount = fireGeo.instanceCount;
   const U = Object.assign({}, fireU, { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) },
     uPixK: { value: 500 }, uMaxWidth: { value: 30 }, uBright: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uJitter: { value: 0.1 } });
@@ -346,6 +368,8 @@ let fireStrokes = null;
 // (on the reversed clock the same curve plays backwards: the light swells and peaks as the fire vanishes)
 const flashes = FIRE_BURSTS.map(b => { const L = new THREE.PointLight(0xffa650, 0, 60, 1.6); L.position.set(b.p[0], b.p[1], b.p[2] + 1.2); scene.add(L); return L; });
 return {
+  setLift(lift){   // y offset per burst (the upper floors can blow while they are still lowered)
+    fireU.uLift.value = lift; FIRE_BURSTS.forEach((b, i) => flashes[i].position.y = b.p[1] + lift[i]); },
   apply(tu){
     fireU.uFireT.value = tu;
     FIRE_BURSTS.forEach((b, i) => { const tl = tu - b.t;
@@ -361,7 +385,6 @@ return {
 /* ---------- timeline ---------- */
 const T_END = 11, SPEEDS = [0.25, 0.5, 1, 2];
 const play = { t: 0, dir: 0, speed: 0.5 };
-const clocks = { rebuild: 6.5, upper: 5.3 };
 // lower clock runs backwards and reaches 0 (whole wall) at `rebuild`; upper clock runs forwards from `upper`
 const lowerTime = t => Math.max(0, clocks.rebuild - t);
 const upperTime = t => t - clocks.upper;
@@ -369,6 +392,8 @@ function applyTime(t) {
   lowerBoom.setTime(lowerTime(t));
   upperBoom.setTime(t);
   upperBoom.setBurstOffsets([clocks.upper, clocks.upper]);   // move both upper bursts to the chosen moment
+  upperBoom.uniforms.uSupR.value = clocks.rebuild;
+  fires.upper.setLift(FIRE_UPPER.map(b => -upperDrop(clocks.upper + b.t)));   // the drop at the moment each burst goes off
   fires.upper.apply(upperTime(t));
   fires.lower.apply(lowerTime(t));
 }
@@ -376,8 +401,9 @@ function applyTime(t) {
 /* ---------- painterly mode ---------- */
 const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.3 });
 let paintOn = false;
+const FIRE_UPPER = [{ p: [0, 11.2, 0.3], t: 0 }, { p: [0, 15.6, 0.3], t: 0.25 }];
 const fires = {
-  upper: makeFire({ look: -0.03, bursts: [{ p: [0, 11.2, 0.3], t: 0 }, { p: [0, 15.6, 0.3], t: 0.25 }] }),
+  upper: makeFire({ look: -0.03, bursts: FIRE_UPPER }),
   // lower clock: the top of the lower floors left first (t = 0), the ground floor last (about 0.9 s)
   lower: makeFire({ look: 0.03, bursts: [{ p: [0, 6.6, 0.3], t: 0.05 }, { p: [0, 1.6, 0.3], t: 0.9 }] }),
 };
@@ -465,7 +491,7 @@ renderer.setAnimationLoop(now => {
 });
 $('status').hidden = true;
 syncUI();
-window.__st = { LITE, play, clocks, fps, setPaint, syncUI, renderer, lowerBoom, upperBoom, camera, controls };
+window.__st = { LITE, upperDrop, play, clocks, fps, setPaint, syncUI, renderer, lowerBoom, upperBoom, camera, controls };
 </script>
 </body>
 </html>

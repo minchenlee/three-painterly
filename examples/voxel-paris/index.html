@@ -65,6 +65,9 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
 .floors button { padding: 4px 0; font-variant-numeric: tabular-nums; }
 .floors button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .floors button:disabled { opacity: .6; cursor: default; }
+html[data-ui-hidden] #liteNote, html[data-ui-hidden] #toast { display: none !important; }   /* H hides every overlay */
+#sections { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+#sections button { font-size: 12px; }
 .shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .shots button { text-align: left; }
 .shots button span { color: var(--muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
@@ -121,6 +124,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Camera shots</td></tr>
     <tr><td><kbd>Y</kbd></td><td>Staggered / all at once</td></tr>
     <tr><td><kbd>V</kbd></td><td>Bursts per wave 1 → 2 → 3 → 4 → 6</td></tr>
+    <tr><td><kbd>G</kbd></td><td>Street sections: all → one at a time</td></tr>
     <tr><td><kbd>M</kbd></td><td>Real time / bullet time</td></tr>
     <tr><td><kbd>B</kbd></td><td>Bounce on / off</td></tr>
     <tr><td><kbd>N</kbd></td><td>Day 15:00 / night 21:00</td></tr>
@@ -193,6 +197,8 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     </div>
     <div class="lab"><span>Floors</span><output id="flOut">1 + 2</output></div>
     <div class="floors" id="floors" role="group" aria-label="Floors that blow"></div>
+    <div class="lab"><span>Sections</span><output id="secsOut">All</output></div>
+    <div class="floors" id="sections" role="group" aria-label="Street sections that blow"></div>
     <div class="lab"><span>Pieces</span><output id="pOut">—</output></div>
     <input type="range" id="pieces" min="0" max="100" step="0.1" value="60.6" aria-label="Number of pieces">
     <div class="lab"><span>Piece size</span><output id="sOut">85%</output></div>
@@ -267,6 +273,10 @@ const STR = {
   building: 'Stacking voxels…',
   buildFailed: 'Build failed: ',
   loadFailed: 'Failed to load: ',
+  sections: ['Corner', 'Near', 'Middle', 'Far', 'End'],   // street sections, see sectionOf()
+  allSections: 'All',
+  rebuilding: 'Rebuilding the blast…',
+  sectionToast: s => `Sections · ${s}`,
 };
 
 /* ---------- palette (limited, 40 colours) ---------- */
@@ -534,6 +544,11 @@ const BURSTS = [   // facades (n sideways) and parked cars (n up); in time order
 ];
 const T_END = 45;
 BURSTS.forEach((b,i) => b.i = i);
+// street sections: the two corners, then the street cut by distance toward Place de Breteuil (z falls away from the camera)
+const sectionOf = b => (b.c[0] < -30 || b.c[0] > 80) ? 0 : b.c[2] > -65 ? 1 : b.c[2] > -130 ? 2 : b.c[2] > -190 ? 3 : 4;
+BURSTS.forEach(b => b.sec = sectionOf(b));
+const secOn = STR.sections.map(() => true);   // default: every section blows
+const burstOn = b => secOn[b.sec];
 const GRAV = 39.2; // 9.8 m/s² at 0.25 m per voxel
 
 function norm(v){ const l=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/l,v[1]/l,v[2]/l]; }
@@ -557,11 +572,11 @@ function makeLaunch(rnd, out){
 function collectFixed(furn){
   const fixed = [], rnd = mulberry(4242), launch = makeLaunch(rnd, fixed);
   for (const [x,y,z,col] of furn){
-    let best=null, bd=1e9; for (const b of BURSTS){ const d=Math.hypot(x-b.c[0],y-b.c[1],z-b.c[2]); if (d < b.r+8 && d<bd){ bd=d; best=b; } }
+    let best=null, bd=1e9; for (const b of BURSTS){ if (!burstOn(b)) continue; const d=Math.hypot(x-b.c[0],y-b.c[1],z-b.c[2]); if (d < b.r+8 && d<bd){ bd=d; best=b; } }
     if (best) launch(best, x,y,z, col, 0.5);
     else fixed.push({kind:0, p:[x,y,z], v:[0,0,0], t0:1e9, th:0, ax:[0,1,0], w:0, col, s:0.5});
   }
-  BURSTS.forEach((b) => { const [cx,cy,cz] = b.c;
+  BURSTS.forEach((b) => { if (!burstOn(b)) return; const [cx,cy,cz] = b.c;
     for (let k=0;k<16;k++){   // fireball only; no smoke cubes
       const dir = norm([b.n[0]*.6+(rnd()-.5)*2, b.n[1]*.6+.4+(rnd()-.5)*1.2, b.n[2]*.6+(rnd()-.5)*2]), sp = 12+rnd()*16;
       fixed.push({kind:2, bt: b.t, bi: b.i, p:[cx+(rnd()-.5)*4, cy+(rnd()-.5)*3, cz+(rnd()-.5)*4], v:[dir[0]*sp,dir[1]*sp,dir[2]*sp],
@@ -577,7 +592,7 @@ const FLOORS = new Set([4]);
 function collectBlocks(floors){
   const blocks = [];
   const take = (b,x,y,z) => { const v = get(x,y,z); if (!v) return; set(x,y,z,0); blocks.push([b,x,y,z,v]); };
-  BURSTS.forEach((b) => {
+  BURSTS.forEach((b) => { if (!burstOn(b)) return;
     const [cx,cy,cz] = b.c, r = b.r, facade = b.n[1] < 0.5;   // car bursts point straight up
     for (let x=Math.floor(cx-r); x<=cx+r; x++) for (let y=Math.max(1,Math.floor(cy-r)); y<=Math.min(facade ? 18 : 36, cy+r); y++) for (let z=Math.floor(cz-r); z<=cz+r; z++){
       if (Math.hypot(x+.5-cx,y+.5-cy,z+.5-cz) > r*(0.7+0.4*h01(x>>1,y>>1,z>>1,9))) continue;
@@ -866,7 +881,7 @@ function setShot(i, ms = 1300){ const S = SHOTS[i]; shotIdx = i;
 /* ---------- explosion: BakedDebris for the pieces, a small puff shader for the fireballs ---------- */
 // Every piece is simulated once on the CPU against the voxel grid (facades, balconies, awnings, cars, lamps, curbs);
 // the GPU then shows any moment directly, so scrubbing and rewinding are exact.
-let secFrac = 0.32, boom = null, fire = null, statFaces = 0, statVox = 0, nFine = 0, DEB = null;
+let secFrac = 0.32, boom = null, fire = null, statFaces = 0, statVox = 0, nFine = 0, DEB = null, FURN = null;
 const solidAt = voxelCollider(get, 1);
 const SYNC_T = 1.0;
 const burstOffsets = new Array(BURSTS.length).fill(0);
@@ -989,7 +1004,36 @@ function renderFloors(){
   $('flOut').textContent = ['1', ...sel].join(' + ');
   document.querySelectorAll('#floors button[data-f]').forEach(b => b.onclick = () => {
     const F = +b.dataset.f; FLOORS.has(F) ? FLOORS.delete(F) : FLOORS.add(F); renderFloors();
-    toast('Rebuilding the blast…'); setTimeout(applyFloors, 30); });
+    toast(STR.rebuilding); setTimeout(applyFloors, 30); });
+}
+// fireball records of the enabled bursts (lite mode keeps a quarter)
+const fireRecs = () => DEB.fixed.filter(d => d.kind === 2).filter((d, i) => !LITE || i % Math.round(1 / LITE_SHARE) === 0);
+function rebuildFire(){
+  scene.remove(fire); fire.geometry.dispose(); fire.material.dispose();
+  if (fireStrokes){ painter.overlayScene.remove(fireStrokes); fireStrokes.geometry.dispose(); fireStrokes.material.dispose(); fireStrokes = null; }
+  makeFire(fireRecs());
+  if (paint.on){ fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); fire.visible = false; }
+}
+// street sections: a disabled section does not blow at all (wall whole, furniture still, no fire, no flash)
+function applySections(){
+  const t0 = performance.now();
+  DEB.fixed = collectFixed(FURN);   // furniture flies only from enabled bursts; fireballs only at enabled bursts
+  applyFloors();                    // put the crater back, cut the new one, rebake
+  rebuildFire(); setWave(waveN); lastT = -1; markDirty(true);
+  return performance.now() - t0;
+}
+function renderSections(){
+  const n = secOn.filter(Boolean).length;
+  $('sections').innerHTML = STR.sections.map((name, i) =>
+    `<button type="button" data-s="${i}" aria-pressed="${secOn[i]}"${secOn[i] && n === 1 ? ' disabled title="At least one section blows"' : ''}>${name}</button>`).join('');
+  $('secsOut').textContent = sectionLabel();
+  document.querySelectorAll('#sections button[data-s]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.s; secOn[i] = !secOn[i]; renderSections(); toast(STR.rebuilding); setTimeout(applySections, 30); });
+}
+const sectionLabel = () => secOn.every(Boolean) ? STR.allSections : STR.sections.filter((_, i) => secOn[i]).join(' + ');
+function setSections(on){   // on: one boolean per section; at least one must be true. Returns the rebuild time in ms.
+  if (!on.some(Boolean)) throw new Error('at least one section must blow');
+  on.forEach((v, i) => secOn[i] = !!v); renderSections(); return applySections();
 }
 // slider → flying pieces, log scale: 0 = 500, 60.6 ≈ 7,200 (default), 85 ≈ 20,000, 100 = 40,000 (about 52 fps on an Apple M2 while playing)
 const PIECES_MIN = 500, PIECES_MAX = 40000;
@@ -1008,19 +1052,19 @@ function setPieces(v){
 }
 function init(){
   buildWorld();
-  const furn = buildFurniture(); nFine = furn.length;
-  DEB = { fixed: collectFixed(furn), blocks: collectBlocks(FLOORS) };
+  FURN = buildFurniture(); nFine = FURN.length;
+  DEB = { fixed: collectFixed(FURN), blocks: collectBlocks(FLOORS) };
   for (let x = WX0-4; x < WX1+4; x++) for (let z = WZ0-4; z < WZ1+4; z++) for (let y = -3; y < 122; y++) if (G[I(x, y, z)]) statVox++;
   for (let x = WX0-CH; x < WX1+CH; x += CH) for (let z = WZ0-CH; z < WZ1+CH; z += CH){
     const r = buildChunk(x, z, -3, 121); if (!r) continue; statFaces += r.faces; addChunk(`${x},${z}`, r);
   }
   paint.on = true;   // start painterly: bake once with the painterly piece cap
   setPieces(+$('pieces').value);
-  makeFire(DEB.fixed.filter(d => d.kind === 2).filter((d, i) => !LITE || i % Math.round(1 / LITE_SHARE) === 0));
+  makeFire(fireRecs());
   $('stats').textContent = `${statVox.toLocaleString('en-US')} voxels`;
   camera.position.set(...SHOTS[0][1]); controls.target.set(...SHOTS[0][2]); camera.fov = SHOTS[0][3]; camera.updateProjectionMatrix(); controls.update();
   applyTime(0, true);
-  updateLight(); refreshEnv(); renderFloors();
+  updateLight(); refreshEnv(); renderFloors(); renderSections();
   // defaults: 1×, staggered in waves of 2, bullet time, piece size 85 %, 32 % secondary, today in Paris at 15:00, painterly
   setSpeed(1); setWave(2); setWarp(true); $('psize').dispatchEvent(new Event('input')); $('bNow').click(); light.min = 900; updateLight(); setArt(true);
   $('status').hidden = true;
@@ -1032,7 +1076,7 @@ function applyTime(t, force){
   if (!force && t === lastT) return; lastT = t;
   boom.setTime(t);
   let best = 0, bi = -1;
-  BURSTS.forEach((b, i) => { const x = t - burstT(b); if (x < -0.02) return; const f = Math.exp(-(((x-0.05)/0.14)**2)); if (f > best){ best = f; bi = i; } });
+  BURSTS.forEach((b, i) => { if (!burstOn(b)) return; const x = t - burstT(b); if (x < -0.02) return; const f = Math.exp(-(((x-0.05)/0.14)**2)); if (f > best){ best = f; bi = i; } });
   flash.intensity = best * (syncOn ? 30000 : 10000);
   if (bi >= 0) flash.position.set(BURSTS[bi].c[0] + BURSTS[bi].n[0]*6, BURSTS[bi].c[1]+4, BURSTS[bi].c[2] + BURSTS[bi].n[2]*6);
 }
@@ -1116,6 +1160,9 @@ addEventListener('keydown', e => {
     case 'KeyF': toggleFull(); break;
     case 'KeyL': { const el = $('shaft'); el.value = +el.value ? 0 : 50; el.dispatchEvent(new Event('input')); toast(+el.value ? 'Light shafts on' : 'Light shafts off'); break; }
     case 'KeyV': { const L = [1, 2, 3, 4, 6]; setWave(L[(L.indexOf(waveN)+1) % L.length]); toast(`${waveN} per wave`); break; }
+    case 'KeyG': { const one = secOn.filter(Boolean).length === 1 ? secOn.indexOf(true) : -1, all = secOn.every(Boolean);
+      const next = all ? 0 : one >= 0 && one < secOn.length-1 ? one+1 : -1;   // all → Corner → Near → … → End → all
+      toast(STR.rebuilding); setTimeout(() => { setSections(secOn.map((_, i) => next < 0 || i === next)); toast(STR.sectionToast(sectionLabel())); }, 30); break; }
     case 'KeyM': setWarp(!warpOn); toast(warpOn ? 'Bullet time' : 'Real time'); break;
     case 'Tab': if (!$('ui').contains(document.activeElement)){   // keep normal Tab focus movement inside the panel
       const cur = TABS.findIndex(t => !document.querySelector(`[data-pane="${t}"]`).hidden);
@@ -1153,8 +1200,12 @@ document.querySelectorAll('#syncSeg button').forEach(b => b.onclick = () => { sy
   document.querySelectorAll('#syncSeg button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('waveRow').hidden = syncOn; applyOffsets(); });
 // group the bursts into waves of n that fire together, spread evenly over 0.8–11.0 s (n = 1 keeps the original timing)
 let waveN = 1; const waveDelta = new Array(BURSTS.length).fill(0);
-function setWave(n){ waveN = n; const W = Math.ceil(BURSTS.length/n);
-  BURSTS.forEach((b, i) => { const k = Math.floor(i/n); waveDelta[i] = n === 1 ? 0 : (W === 1 ? 0.8 : 0.8 + k*(11.0-0.8)/(W-1)) - b.t; });
+// Only the enabled sections count: n = 1 moves them all earlier so the first one fires at the first burst time;
+// waves keep the spacing they have with every section on, so fewer sections finish sooner.
+function setWave(n){ waveN = n; const W = Math.ceil(BURSTS.length/n), gap = W === 1 ? 0 : (11.0-0.8)/(W-1);
+  const A = BURSTS.filter(burstOn), shift = A.length ? BURSTS[0].t - A[0].t : 0;
+  waveDelta.fill(0);
+  A.forEach((b, j) => { waveDelta[b.i] = n === 1 ? shift : 0.8 + Math.floor(j/n)*gap - b.t; });
   document.querySelectorAll('#waveSeg button').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.n === n))); applyOffsets(); }
 document.querySelectorAll('#waveSeg button').forEach(b => b.onclick = () => setWave(+b.dataset.n));
 let warpOn = false, hover = 1/25, burstLen = 0.3;
@@ -1229,7 +1280,11 @@ function frame(now){
   }
   requestAnimationFrame(frame);
 }
-window.__vp = { LITE, get boom(){ return boom; }, renderer, scene, camera, painter, drawFrame, play, syncUI, setArt, setShot, controls, markDirty, setWarp };
+window.__vp = { LITE, setSections, sectionNames: STR.sections, burstOf: () => BURSTS.map(b => b.sec),
+  blastInfo: () => ({ blocks: DEB.blocks.length, blocksOff: DEB.blocks.filter(([b]) => !secOn[BURSTS[b.i].sec]).length,
+    fire: fire.geometry.instanceCount, fireOff: DEB.fixed.filter(d => d.kind === 2 && !secOn[BURSTS[d.bi].sec]).length,
+    firstT: Math.min(...BURSTS.filter(burstOn).map(burstT)) }),
+  burstTimes: () => BURSTS.filter(burstOn).map(b => [STR.sections[b.sec], +burstT(b).toFixed(2)]), get boom(){ return boom; }, renderer, scene, camera, painter, drawFrame, play, syncUI, setArt, setShot, controls, markDirty, setWarp };
 function start(){
   $('status').hidden = false; $('status').textContent = STR.building;
   setTimeout(() => { try { init(); syncUI(); requestAnimationFrame(frame); } catch (err) { $('status').hidden = false; $('status').textContent = STR.buildFailed + err.message; console.error(err); } }, 30);

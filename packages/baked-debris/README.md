@@ -45,13 +45,26 @@ const boom = new BakedDebris({ pieces, bursts: [{ position: [0, 1, 0], radius: 0
 
 - `size`: cube size. Cells sit on a world grid: cell *i* spans `[i * size, (i + 1) * size)` on each axis, so pieces line up with `voxelCollider(get, size)` (origin `[0, 0, 0]`).
 - `fill`: `'volume'` keeps every cell inside. `'surface'` keeps only inside cells that have an empty neighbour: a hollow shell one cell thick, with far fewer pieces.
-- `color`: a function `(x, y, z) => colour` for the cell centre. Without it, a piece takes the colour of the nearer surface straight above or below it: the material colour, times the interpolated vertex colour when the geometry has a `color` attribute. Each piece gets its own `Color`. A multi-material mesh uses each group's material.
+- `color`: a function `(x, y, z) => colour` for the cell centre. Without it, a piece takes the colour of the nearer surface straight above or below it: the material colour, times the interpolated vertex colour when the geometry has a `color` attribute. Return a number or a `Color`; BakedDebris copies it when it builds, so one shared `Color` is fine as long as you do not change it before then. Without `color`, each piece gets its own `Color`. A multi-material mesh uses each group's material.
 - The mesh must be closed (watertight). Each grid column is intersected with the triangles once, and the inside is between the 1st and 2nd hit, the 3rd and 4th, and so on. A column with an odd number of hits (a hole) drops the last one.
 - It uses `mesh.matrixWorld` and updates the parents first. It ignores morph targets, skinning and instancing.
 - Deterministic: the same mesh and options give the same pieces in the same order.
 - Speed: a 10k-triangle torus knot gives about 6k pieces in 3–15 ms (Node). The time grows with the number of cells.
 
 Pieces do not collide with each other, so debris flies through the part of the object that stays. To make it bounce off that part, build a `voxelCollider` from the pieces no burst reaches, and pass it as `solid`.
+
+A piece is reached when it is closer than `radius` to a burst's `position` (unless you set its `burst` or `launchTime`):
+
+```js
+const reached = p => bursts.some(b => Math.hypot(p.position[0] - b.position[0], p.position[1] - b.position[1], p.position[2] - b.position[2]) < b.radius);
+const cells = pieces.filter(p => !reached(p)).map(p => p.position.map(v => Math.floor(v / size)));
+const lo = [0, 1, 2].map(a => cells.reduce((m, c) => Math.min(m, c[a]), Infinity));
+const n = [0, 1, 2].map(a => cells.reduce((m, c) => Math.max(m, c[a]), -Infinity) - lo[a] + 1);
+const grid = new Uint8Array(n[0] * n[1] * n[2]);
+for (const [i, j, k] of cells) grid[(i - lo[0]) + n[0] * ((j - lo[1]) + n[1] * (k - lo[2]))] = 1;
+const solid = voxelCollider((i, j, k) => i >= 0 && j >= 0 && k >= 0 && i < n[0] && j < n[1] && k < n[2]
+  && grid[i + n[0] * (j + n[1] * k)] === 1, size, lo.map(v => v * size));
+```
 
 ## Options
 

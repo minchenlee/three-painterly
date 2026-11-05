@@ -46,6 +46,5 @@
     "instancing",
     "webgl"
   ],
-  "license": "MIT",
-  "private": true
+  "license": "MIT"
 }

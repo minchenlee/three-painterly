@@ -2,7 +2,7 @@
 
 Both packages share one version number until the first public release.
 
-## Unreleased (0.1.0)
+## 0.1.0 (2026-11-05)
 
 ### painterly-pass
 - Sky is detected only where depth is exactly 1.0, so distant objects are no longer painted as sky.

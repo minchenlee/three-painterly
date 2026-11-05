@@ -40,6 +40,5 @@
     "npr",
     "webgl"
   ],
-  "license": "MIT",
-  "private": true
+  "license": "MIT"
 }

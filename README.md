@@ -1,6 +1,12 @@
 # three-painterly
 
+[![painterly-pass on npm](https://img.shields.io/npm/v/painterly-pass?label=painterly-pass)](https://www.npmjs.com/package/painterly-pass) [![baked-debris on npm](https://img.shields.io/npm/v/baked-debris?label=baked-debris)](https://www.npmjs.com/package/baked-debris) [![test](https://github.com/minchenlee/three-painterly/actions/workflows/test.yml/badge.svg)](https://github.com/minchenlee/three-painterly/actions/workflows/test.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Two small three.js modules, extracted from a voxel street-corner piece. Plain ES modules, no build step. Both need three.js r160 or later (WebGL 2).
+
+```sh
+npm i painterly-pass baked-debris three
+```
 
 **Live demos:** [Voxel Paris](https://mclee.dev/lab/voxel-paris/) · [Split Time](https://mclee.dev/lab/split-time/) · [Paint Pulse](https://mclee.dev/lab/paint-pulse/) (all at [mclee.dev/lab](https://mclee.dev/lab))
 

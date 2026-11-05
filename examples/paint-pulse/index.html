@@ -105,7 +105,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 <div id="ui">
   <header>
     <h1>Paint Pulse</h1>
-    <p>An oil-paint ball that listens. Loud passages and beats blow it apart into brush strokes; quiet ones pull the strokes back into a ball.</p>
+    <p>An oil-paint ball that listens. Bass breaks up its red bottom, mids its golden middle, highs its blue top; quiet passages pull the strokes back into a ball.</p>
   </header>
 
   <div class="grp">
@@ -119,9 +119,9 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   </div>
 
   <div class="meters" aria-label="Audio levels">
-    <span>Low</span><div class="bar"><i id="mLow"></i></div>
-    <span>Mid</span><div class="bar"><i id="mMid"></i></div>
-    <span>High</span><div class="bar"><i id="mHigh"></i></div>
+    <span>Low · bottom</span><div class="bar"><i id="mLow" style="background:#d2553c"></i></div>
+    <span>Mid · middle</span><div class="bar"><i id="mMid" style="background:#d6a83a"></i></div>
+    <span>High · top</span><div class="bar"><i id="mHigh" style="background:#5f7fdc"></i></div>
     <span>Beat</span><div class="bar beat"><i id="mBeat"></i></div>
     <span>Spread</span><div class="bar"><i id="mSpread"></i></div>
   </div>
@@ -189,30 +189,40 @@ const backdrop = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), new THREE.
 }));
 scene.add(backdrop);
 
-/* ---------- the ball: a filled voxel sphere, baked once as an outward burst ---------- */
+/* ---------- the ball: a filled voxel sphere in three latitude bands, baked once as an outward burst ---------- */
+// Bottom = low, middle = mid, top = high: seen from the side, all three bands stay visible at once
+// (a core / shell split would hide the inner bands), and "bass below, treble above" reads naturally.
+// Each band is a burst of its own, so setBurstOffsets gives every band its own clock from one bake.
 const R = 2.1, S = 0.105, pieces = [];
 const rnd = (s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(77);
-const col = new THREE.Color(), warm = new THREE.Color(), cool = new THREE.Color();
-const N = Math.ceil(R / S);
+const BANDS = [   // hues: low = crimson / orange, mid = ochre / gold, high = cobalt / violet
+  { name: 'Low',  hz: [30, 110],      hue: [0.985, 0.07], css: '#d2553c', kick: 1.0 },
+  { name: 'Mid',  hz: [300, 2500],   hue: [0.10, 0.17],  css: '#d6a83a', kick: 0.7 },
+  { name: 'High', hz: [4000, 14000], hue: [0.58, 0.74],  css: '#5f7fdc', kick: 0.6 },
+];
+const SPLIT = 0.265 * R;   // equal volume per band
+const col = new THREE.Color();
+const N = Math.ceil(R / S), counts = [0, 0, 0];
 for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) for (let k = -N; k <= N; k++) {
   const x = i * S, y = j * S, z = k * S, r = Math.hypot(x, y, z);
   if (r > R) continue;
   const f = r / R, nx = x / (r || 1), ny = y / (r || 1), nz = z / (r || 1);
-  // colour: cool cobalt / violet / rose on the skin, gold and orange in the core
-  const band = 0.5 + 0.5 * Math.sin(nx * 3.1 + ny * 2.3 + Math.sin(nz * 2.7) * 1.6);
-  cool.setHSL(0.62 - 0.12 * band + 0.04 * ny, 0.55, 0.42 + 0.18 * ny * 0.5 + 0.08 * band);
-  if (band > 0.82) cool.setHSL(0.97, 0.5, 0.62);
-  warm.setHSL(0.09 - 0.05 * (1 - f), 0.85, 0.55 + 0.1 * (1 - f));
-  col.copy(warm).lerp(cool, smooth(0.55, 0.92, f)).offsetHSL((rnd() - 0.5) * 0.03, 0, (rnd() - 0.5) * 0.06);
+  const yb = y + (rnd() - 0.5) * 0.18 + 0.08 * Math.sin(x * 3.3 + z * 2.1);   // a ragged, painted edge between bands
+  const bi = yb < -SPLIT ? 0 : (yb > SPLIT ? 2 : 1), B = BANDS[bi];
+  const swirl = 0.5 + 0.5 * Math.sin(nx * 3.1 + ny * 2.3 + Math.sin(nz * 2.7) * 1.6);
+  const h0 = B.hue[0], h1 = B.hue[1] < h0 ? B.hue[1] + 1 : B.hue[1];
+  col.setHSL((h0 + (h1 - h0) * swirl) % 1, 0.62, 0.42 + 0.14 * swirl + 0.12 * (1 - f))   // lighter towards the core
+     .offsetHSL((rnd() - 0.5) * 0.025, 0, (rnd() - 0.5) * 0.06);
   // launch: outward with a swirl around the y axis; the skin leaves first, the core last
   const sp = (0.75 + 1.2 * rnd()) * (0.6 + 0.5 * f);
   const tx = -nz, tz = nx, sw = 0.45 * (0.4 + rnd());
   const v = [nx * sp + tx * sw + (rnd() - 0.5) * 0.3, ny * sp + (rnd() - 0.5) * 0.3, nz * sp + tz * sw + (rnd() - 0.5) * 0.3];
-  pieces.push({ position: [x, y, z], color: col.getHex(), velocity: v, launchTime: (1 - f * f * f) * 1.3 + rnd() * 0.15,
+  pieces.push({ position: [x, y, z], color: col.getHex(), velocity: v, burst: bi, launchTime: (1 - f * f * f) * 1.3 + rnd() * 0.15,
     spin: (rnd() * 2 - 1) * 4 });
+  counts[bi]++;
 }
-const T_MAX = 3.0;   // debris clock range: 0 = whole ball, T_MAX = fully scattered
-const boom = new BakedDebris({ pieces, bursts: [{ position: [0, 0, 0], radius: 0 }], gravity: 0, ground: null,
+const T_MAX = 3.0;   // debris clock range per band: 0 = whole, T_MAX = fully scattered
+const boom = new BakedDebris({ pieces, bursts: BANDS.map(() => ({ position: [0, 0, 0], radius: 0 })), gravity: 0, ground: null,
   pieceSize: S, duration: T_MAX + 1, step: 1 / 60, seed: 7 });
 scene.add(boom.mesh);
 boom.mesh.castShadow = boom.mesh.receiveShadow = false;
@@ -283,7 +293,7 @@ async function load(make, name, loop) {
 const playDemo = () => load(renderDemo, 'Demo track (120 BPM, synthesised)', true);
 const playFile = f => f && load(async () => ctx.decodeAudioData(await f.arrayBuffer()), f.name.replace(/\.[^.]+$/, ''), false);
 
-// An original 48 s loop, synthesised offline: intro → build → drop → break → drop.
+// An original 48 s loop, synthesised offline: intro → build (hats, then kicks) → drop → break (sub bass, then shaker) → drop.
 async function renderDemo() {
   const SR = 44100, step = 0.125, bars = 24, steps = bars * 16, len = steps * step + 2;
   const ac = new OfflineAudioContext(2, Math.ceil(len * SR), SR), out = ac.createGain(); out.gain.value = 0.8; out.connect(ac.destination);
@@ -306,7 +316,7 @@ async function renderDemo() {
     if (p === 0) for (const m of ch) for (const d of [-8, 8])     // pad on every bar
       tone('sawtooth', mtof(m - 12), t, step * 16, brk ? 0.035 : drop ? 0.03 : 0.04, brk ? 700 : intro ? 900 : 1400 + 2400 * rise, d, 0.4);
     if (!brk && (p % 2 === 0 || drop)) tone('triangle', mtof(ch[(p >> 1) % 3] + 12 + (p % 8 === 6 ? 12 : 0)), t, 0.16, intro ? 0.05 : 0.07, 4000);   // arp
-    if (build || drop) { if (p % 4 === 0) kick(t); hiss(t, 'highpass', 8000, drop ? 0.12 : 0.06 + 0.06 * rise, 0.05); }
+    if (build || drop) { if (p % 4 === 0 && (drop || bar >= 6)) kick(t); hiss(t, 'highpass', 8000, drop ? 0.12 : 0.08 + 0.08 * rise, 0.05); }   // the build opens on hats alone
     if (intro && p % 4 === 2) hiss(t, 'highpass', 9000, 0.04, 0.04);
     if (drop) {
       if (p === 4 || p === 12) { hiss(t, 'bandpass', 1800, 0.5, 0.18); tone('triangle', 200, t, 0.08, 0.25, 3000); }   // clap
@@ -316,6 +326,8 @@ async function renderDemo() {
     }
     if (build && bar === 7 && p >= 8) hiss(t, 'bandpass', 1500 + 300 * (p - 8), 0.12 + 0.03 * (p - 8), 0.08);   // snare roll
     if (brk && p % 8 === 0) tone('sine', mtof(ch[0] + 24), t, 0.9, 0.05, 3000);
+    if (brk && bar < 16 && p % 8 === 0) { const b = tone('sine', mtof(bs - 12), t, 0.7, 0.55, 400); b.o.frequency.exponentialRampToValueAtTime(mtof(bs - 14), t + 0.6); }   // sub bass, first half of the break
+    if (brk && bar >= 16) hiss(t, 'highpass', 7000, p % 2 ? 0.05 : 0.09, 0.06);   // shaker over the second half of the break
   }
   return ac.startRendering();
 }
@@ -324,48 +336,58 @@ async function renderDemo() {
 const binOf = hz => Math.max(1, Math.min(1023, Math.round(hz / ((ctx?.sampleRate || 48000) / 2) * 1024)));
 const band = (lo, hi) => { let s = 0; const a = binOf(lo), b = Math.max(a + 1, binOf(hi)); for (let i = a; i < b; i++) s += freq[i]; return s / (b - a) / 255; };
 const prevFreq = new Uint8Array(1024);
-const A = { low: 0, mid: 0, high: 0, level: 0, flux: 0, fluxAvg: 0, fluxDev: 0.01, beat: 0, lastBeat: -1, section: 0, beats: 0, kick: 0 };
+// Per band: level, a slow peak (to compare bands that differ in loudness), onset strength (spectral flux) with an
+// adaptive threshold, and the band's own debris clock t. A later per-band effect can hang off this state too.
+const BS = BANDS.map(() => ({ level: 0, fast: 0, peak: 0.2, flux: 0, fluxAvg: 0, fluxDev: 0.01, last: -1, kick: 0, onsets: 0, t: 0, punch: 0 }));
+const A = { low: 0, mid: 0, high: 0, beat: 0, section: 0, beats: 0 };
 function listen(now, dt) {
   const live = track && !paused && analyser;
-  if (live) {
-    analyser.getByteFrequencyData(freq);
-    A.low = band(30, 150); A.mid = band(300, 2500); A.high = band(4000, 14000);
-    // bass onset strength: how much the low bins rose since the last frame (spectral flux)
-    let f = 0; const a = binOf(30), b = binOf(160);
-    for (let i = a; i < b; i++) { const d = freq[i] - prevFreq[i]; if (d > 0) f += d; }
-    A.flux = f / ((b - a) * 255); prevFreq.set(freq);
-    A.section += (sectionAt(position() + 0.1) - A.section) * Math.min(1, dt * 7);
-  } else { A.low *= 0.85; A.mid *= 0.85; A.high *= 0.85; A.flux = 0; A.section *= 1 - Math.min(1, dt * 3); }
-  // fast loudness: follows the music within ~0.1 s
-  A.level += (A.low * 0.45 + A.mid * 0.35 + A.high * 0.2 - A.level) * Math.min(1, dt * 12);
-  // beat: the bass onset is clearly above its own recent average and spread (adaptive, so quiet and loud tracks both work)
-  const thr = A.fluxAvg + Math.max(0.012, 2 * A.fluxDev);
-  if (live && A.flux > thr && now - A.lastBeat > 0.2) {
-    A.lastBeat = now; A.beats++; A.beat = Math.min(1, 0.55 + 0.45 * (A.flux - thr) / (thr + 0.02)); A.kick = A.beat;
-  }
-  const k = Math.min(1, dt * 2.5);   // ~0.4 s memory
-  A.fluxAvg += (A.flux - A.fluxAvg) * k;
-  A.fluxDev += (Math.abs(A.flux - A.fluxAvg) - A.fluxDev) * k;
+  if (live) { analyser.getByteFrequencyData(freq); A.section += (sectionAt(position() + 0.1) - A.section) * Math.min(1, dt * 7); }
+  else A.section *= 1 - Math.min(1, dt * 3);
+  const k = Math.min(1, dt * 2.5);   // ~0.4 s memory for the onset threshold
+  BANDS.forEach((B, n) => {
+    const s = BS[n];
+    if (live) {
+      s.level = band(B.hz[0], B.hz[1]);
+      let f = 0; const a = binOf(B.hz[0]), b = Math.max(a + 1, binOf(B.hz[1]));
+      for (let i = a; i < b; i++) { const d = freq[i] - prevFreq[i]; if (d > 0) f += d; }
+      s.flux = f / ((b - a) * 255);
+    } else { s.level *= 0.85; s.flux = 0; }
+    s.fast += (s.level - s.fast) * Math.min(1, dt * 12);
+    s.peak = Math.max(s.fast, s.peak - dt * 0.06, 0.12);
+    const thr = s.fluxAvg + Math.max(0.012, 2 * s.fluxDev);
+    if (live && s.flux > thr && now - s.last > 0.2) {
+      s.last = now; s.onsets++; s.kick = Math.min(1, 0.55 + 0.45 * (s.flux - thr) / (thr + 0.02));
+      if (n === 0) { A.beats++; A.beat = s.kick; }
+    }
+    s.fluxAvg += (s.flux - s.fluxAvg) * k;
+    s.fluxDev += (Math.abs(s.flux - s.fluxAvg) - s.fluxDev) * k;
+  });
+  if (live) prevFreq.set(freq);
+  A.low = BS[0].level; A.mid = BS[1].level; A.high = BS[2].level;
   A.beat = Math.max(0, A.beat - dt * 3.5);
 }
 
-/* ---------- driving the debris clock ---------- */
-let sens = 1.3, t = 0, punch = 0, hold = null;   // hold: a fixed debris time, for tests and screenshots
+/* ---------- driving the three debris clocks ---------- */
+let sens = 1.3, hold = null;   // hold: fixed debris times (a number or [low, mid, high]), for tests and screenshots
 function drive(dt) {
-  // loud passages open the ball, every beat kicks it outward at once, quiet parts pull it back together quickly
-  const energy = A.section * 0.55 + A.level * 0.6;
-  const base = T_MAX * 0.68 * smooth(0.2, 0.95, energy * sens);
-  if (A.kick > 0) {                                     // immediate impulse on the beat frame
-    const loud = 0.15 + 0.85 * smooth(0.2, 0.7, energy * sens);   // onsets in quiet parts only nudge the ball
-    t += T_MAX * (0.07 + 0.11 * A.kick) * Math.min(1.5, sens) * loud;
-    punch = Math.min(0.35, punch + (0.1 + 0.12 * A.kick) * loud); A.kick = 0;
-  }
-  const target = Math.min(T_MAX, base + T_MAX * punch);
-  const rate = target > t ? 6 : 2.8;                   // scatter fast, gather nearly as fast
-  t += Math.max(-rate * dt, Math.min(rate * dt, (target - t) * Math.min(1, dt * 9)));
-  t = Math.min(T_MAX, Math.max(0, t));
-  if (hold !== null) t = hold;
-  punch = Math.max(0, punch - dt * 2.2);
+  // each band: loud passages and its own loudness open it, its onsets kick it outward at once, quiet parts pull it back
+  BANDS.forEach((B, n) => {
+    const s = BS[n];
+    const energy = A.section * 0.2 + 0.8 * (s.fast / s.peak) * smooth(0.04, 0.15, s.fast);   // mostly the band's own loudness
+    const base = T_MAX * 0.68 * smooth(0.25, 0.95, energy * sens);
+    if (s.kick > 0) {
+      const loud = 0.15 + 0.85 * smooth(0.2, 0.7, energy * sens);   // onsets in quiet parts only nudge the band
+      s.t += T_MAX * (0.07 + 0.11 * s.kick) * B.kick * Math.min(1.5, sens) * loud;
+      s.punch = Math.min(0.35, s.punch + (0.1 + 0.12 * s.kick) * B.kick * loud); s.kick = 0;
+    }
+    const target = Math.min(T_MAX, base + T_MAX * s.punch);
+    const rate = target > s.t ? 6 : 2.8;                 // scatter fast, gather nearly as fast
+    s.t += Math.max(-rate * dt, Math.min(rate * dt, (target - s.t) * Math.min(1, dt * 9)));
+    s.t = Math.min(T_MAX, Math.max(0, s.t));
+    if (hold !== null) s.t = Array.isArray(hold) ? hold[n] : hold;
+    s.punch = Math.max(0, s.punch - dt * 2.2);
+  });
 }
 
 /* ---------- UI ---------- */
@@ -417,7 +439,7 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 $('status').hidden = true;
-$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} pieces`;
+$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} pieces · ${counts.join(' / ')}`;
 
 /* ---------- loop ---------- */
 const bars = ['mLow', 'mMid', 'mHigh', 'mBeat', 'mSpread'].map($);
@@ -427,17 +449,17 @@ renderer.setAnimationLoop(nowMs => {
   const dt = Math.min(0.05, (nowMs - prev) / 1000); prev = nowMs; const now = nowMs / 1000;
   listen(now, dt);
   drive(dt);
-  boom.setTime(t);
-  boom.setSizeScale(1 + 0.5 * A.high);
+  boom.setTime(0); boom.setBurstOffsets(BS.map(s => -s.t));   // band n shows its own time BS[n].t
+  boom.setSizeScale(1 + 0.4 * A.high);
   if (strokes) strokes.material.uniforms.uBright.value = 1 + 0.45 * A.beat;
   controls.autoRotateSpeed = 0.5 + 2.5 * A.beat;
   controls.update();
   if (painted) painter.render(renderer); else renderer.render(scene, camera);
-  [A.low, A.mid, A.high, A.beat, t / T_MAX].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
+  [A.low, A.mid, A.high, A.beat, Math.max(...BS.map(s => s.t)) / T_MAX].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
   fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
 });
 window.__pp = { boom, painter, A, fps, T_MAX, setPainted, playDemo, position: () => position(), controls,
-  get t() { return t; }, hold(v) { hold = v; } };
+  BS, BANDS, get t() { return Math.max(...BS.map(s => s.t)); }, get ts() { return BS.map(s => s.t); }, hold(v) { hold = v; } };
 </script>
 </body>
 </html>

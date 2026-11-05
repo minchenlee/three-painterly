@@ -47,6 +47,41 @@ python3 -m http.server     # or: npx serve .
 
 `examples/paint-pulse` is a music visualizer. An oil-painted ball bursts into brush strokes on loud passages and beats, and pulls itself back together when the music goes quiet. It plays a built-in demo track, or you can open or drop your own audio file (BakedDebris + PainterlyPass + WebAudio).
 
+## Use with your AI agent
+
+[llms.txt](llms.txt) is a one-file summary of both APIs, options and pitfalls, written for coding agents. [AGENTS.md](AGENTS.md) is for agents that change this repository. Copy one of these prompts into your agent:
+
+**Paint my scene**
+
+```text
+Read https://raw.githubusercontent.com/minchenlee/three-painterly/main/llms.txt.
+Add PainterlyPass to my three.js scene so it looks like an impressionist oil painting.
+Use it in place of my RenderPass, and remove any OutputPass after it.
+Keep my camera, lights and controls. Add a key (P) that toggles the effect,
+so I can compare. Start from the defaults; tell me which options you changed and why.
+```
+
+**Make something explode**
+
+```text
+Read https://raw.githubusercontent.com/minchenlee/three-painterly/main/llms.txt.
+Use BakedDebris to blow apart <object> in my three.js scene.
+Turn the object into cube pieces (position, color, size), and put 1–3 bursts where it should break.
+Give it a solid(x, y, z) collider for the walls and floor that the pieces should hit,
+using a typed-array lookup. Add a time slider that scrubs forwards and backwards with setTime.
+If the scene uses PainterlyPass, draw the flying pieces as brush strokes with createStrokes.
+Do not move or scale boom.mesh; place the pieces and bursts in world space instead.
+```
+
+**Tune the look by description**
+
+```text
+Read https://raw.githubusercontent.com/minchenlee/three-painterly/main/llms.txt.
+My scene uses PainterlyPass. Change its options so the painting looks <warmer / like dusk /
+bolder strokes / softer and pastel / closer to the original>. Change only the PainterlyPass
+options, show me the old and new values, and explain each change in one line.
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

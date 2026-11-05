@@ -1,0 +1,122 @@
+# three-painterly
+
+> Two three.js modules, plain ES modules with no build step. PainterlyPass repaints any three.js scene in impressionist brush strokes. BakedDebris makes explosion debris that you can scrub and rewind: collisions are baked once on the CPU, and the GPU computes any moment directly from time. Both need three.js r160 or later and WebGL 2. Last tested with three.js r160. License: MIT.
+
+Repository: https://github.com/minchenlee/three-painterly
+npm names: `painterly-pass`, `baked-debris` (not published yet; until then, import from the repository's `packages/*/src/index.js`).
+
+## Docs
+
+- [PainterlyPass README](https://github.com/minchenlee/three-painterly/blob/main/packages/painterly-pass/README.md): options, how it works, limitations
+- [BakedDebris README](https://github.com/minchenlee/three-painterly/blob/main/packages/baked-debris/README.md): options, pieces and bursts, brush strokes, displace hook, limitations
+- [CHANGELOG](https://github.com/minchenlee/three-painterly/blob/main/CHANGELOG.md)
+
+## Examples
+
+- [packages/painterly-pass/examples/basic.html](https://github.com/minchenlee/three-painterly/blob/main/packages/painterly-pass/examples/basic.html): smallest PainterlyPass setup
+- [packages/baked-debris/examples/explode.html](https://github.com/minchenlee/three-painterly/blob/main/packages/baked-debris/examples/explode.html): voxel towers, three bursts, a wall, a swirl made with the displace hook
+- [examples/voxel-paris/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/voxel-paris/index.html): both modules on a large voxel scene, time slider, brush-stroke fire
+- [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
+- [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
+
+## PainterlyPass
+
+```js
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { PainterlyPass } from 'painterly-pass';
+
+const composer = new EffectComposer(renderer);
+const painter = new PainterlyPass(scene, camera, { strokeSize: 7 });
+composer.addPass(painter);          // replaces RenderPass
+// in the loop: composer.render();
+```
+
+Without a composer: `painter.setSize(w * dpr, h * dpr); painter.render(renderer);` draws to the screen.
+
+Options (all are plain properties; change them at any time, e.g. `painter.strokeSize = 9`):
+
+| Option | Default | Meaning |
+|---|---|---|
+| strokeSize | 7 | Stroke cell size in CSS pixels. |
+| amount | 1 | 0 = original image, 1 = fully painted. |
+| resolutionScale | 0.7 | Scene and painting are made at this fraction of the output size. |
+| toneMapping | true | ACES fit on the HDR scene before painting. |
+| exposure | 1 | |
+| saturation | 1.15 | 1.3 suits pale scenes. |
+| shadowTint | [0.78, 0.80, 1.25] | Multiplier for dark tones (cool, violet shadows). |
+| shadowAmount | 0.55 | |
+| warmth | 0.6 | How much highlights lean warm. |
+| colorJitter | 0.07 | Unmixed colour per stroke. |
+| strokeLength | 1 | Above 1 the shader searches a larger neighbourhood and costs more. |
+| strokeWidth | 1 | |
+| contrast | 1.1 | |
+| canvas | 0.035 | Canvas weave strength. |
+| sky | true | Paint the background too. |
+
+Unknown option names are warned about and ignored.
+
+Extra fields:
+- `painter.overlayScene`: a `Scene` drawn on top of the painting with the scene depth. Put BakedDebris strokes or your own effects here.
+- `painter.sceneTarget`: the HDR scene colour and depth at paint resolution, readable by other effects.
+
+## BakedDebris
+
+```js
+import { BakedDebris, voxelCollider, boxCollider, anyCollider } from 'baked-debris';
+
+const boom = new BakedDebris({
+  pieces: [{ position: [x, y, z], color: 0xd9c4a0, size: 0.25 }],   // one entry per cube
+  bursts: [{ position: [0, 1, 0], radius: 1.6, time: 0.5, direction: [0, 0.3, 1], strength: 1 }],
+  solid: voxelCollider((i, j, k) => grid[i + nx * (j + ny * k)] === 1, 0.25),   // optional
+  ground: 0,
+});
+scene.add(boom.mesh);
+boom.setTime(seconds);   // any value, forwards or backwards
+```
+
+Rules:
+- A piece is launched by the nearest burst whose `radius` reaches it. Pieces no burst reaches stay in place.
+- `solid(x, y, z)` returns true inside anything the debris should hit. It is called millions of times per bake: use a typed-array lookup, not a Set of strings. Remove the flying pieces from what `solid` reports.
+- Bake time: about 0.2–2 s for 10k–200k pieces, on the main thread.
+
+Methods:
+- `setTime(t)`, `setTimeWarp({ burst, hover } | null)`, `setSizeScale(s)`: no rebake.
+- `setBurstOffsets([dt0, dt1, …])`: move bursts in time without a rebake (first 32 bursts).
+- `rebake(changes)`: needed after any physics change (speed, restitution, friction, solid, pieces, bursts, seed, …).
+- `createStrokes({ painter, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. Use a positive `lookAhead` when the clock plays backwards. `removeStrokes()` switches back.
+- `setDisplace({ glsl, uniforms } | null)`: GPU offset on top of the bake (see below).
+- `dispose()`.
+- `boom.stats`: `{ pieces, flying, secondary }`. `boom.uniforms`: shader uniforms, including the displace hook's.
+
+Main options: pieceSize 0.25, gravity 9.81, speed [7, 18], stagger 1, spin 9, restitution 0.35, friction 0.6, stopSpeed 0.6, ground 0 (or null), solid null, snap 0, duration 20, step 1/90, secondary 0 (share of pieces that burst again into 8 fragments), timeWarp null, sizeScale 1, seed 4242, castShadow true, receiveShadow true, displace null, material (a MeshStandardMaterial; BakedDebris patches a clone).
+
+Per-piece optional fields: `velocity`, `launchTime`, `burst`, `spin`, `axis`, `lifetime`.
+
+Displace hook (GLSL, fixed signature; returns an offset in world units):
+
+```js
+displace: {
+  uniforms: { uSwirl: { value: 1.5 } },
+  glsl: `
+    uniform float uSwirl;
+    vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+      if (d.local <= 0.0) return vec3(0.0);   // not launched yet
+      float a = uSwirl * d.local;
+      return vec3(sin(a + float(d.index)), 0.0, cos(a)) * 0.3;
+    }`,
+}
+```
+
+`DebrisInfo`: `time` (use it, not uTime), `local` (time since launch, <= 0 = not launched), `kind` (0 piece, 1 fragment), `burst` (-1 = none), `index` (stable per piece), `rest` (local time from which the piece rests).
+
+Brush look for your own effects: `import { strokeFragment } from 'baked-debris'`.
+
+## Pitfalls
+
+- PainterlyPass renders the scene itself: do not add a `RenderPass` before it. It tone-maps and writes the output colour space itself: do not add an `OutputPass` after it when it is the last pass. If the scene is already display-referred, set `toneMapping: false`.
+- PainterlyPass needs a `WebGLRenderer` without `logarithmicDepthBuffer` or `reverseDepthBuffer`. WebGPURenderer is not supported. It throws an error for these.
+- Do not move, rotate or scale `boom.mesh` or its parents. Bakes are in world space. To place an explosion, move the pieces, bursts and `solid` before the bake.
+- Changing physics options needs `rebake()`. Time, time warp and size do not.
+- The displace hook does not change collisions. Large offsets push pieces through walls and the floor. Fade offsets out as `d.local` approaches `d.rest`.
+- Pieces do not collide with each other. At most 6 path segments per piece.
+- Serve examples over HTTP (`python3 -m http.server` at the repository root); `file://` does not load ES modules.

@@ -78,8 +78,9 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 #bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
-#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); max-width: calc(100vw - 140px);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; font-size: 11px; color: #c9cbd6; opacity: 0.8; pointer-events: none; }   /* top right stays free for the host site's link */
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 16; max-width: calc(100vw - 140px);
+  margin: 0; font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }   /* top right stays free for the host site's link */
 #tap { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20, 22, 40, 0.35); border: 0; color: #fff; font-family: inherit; font-size: 20px; font-weight: 600; cursor: pointer; z-index: 5; }
 #tap span { padding: 14px 22px; border-radius: 999px; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: #c9cbd6; pointer-events: none; }
@@ -201,15 +202,32 @@ controls.autoRotate = !matchMedia('(prefers-reduced-motion: reduce)').matches; c
 scene.add(new THREE.HemisphereLight(0xbfd0ff, 0x3a2c48, 0.9));
 const key = new THREE.DirectionalLight(0xffd9a8, 3.2); key.position.set(-6, 7, 6); scene.add(key);
 const rim = new THREE.DirectionalLight(0x8fa6ff, 1.6); rim.position.set(7, -2, -6); scene.add(rim);
-// a soft coloured backdrop behind the ball, so the sky strokes have something to paint
+// A soft coloured backdrop behind the ball. It carries its own static brush dabs, so the paint pass can skip the
+// background (sky: false): that halves the paint cost at full resolution and looks nearly the same.
 const backdrop = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false,
   vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `varying vec3 vP;
-    void main(){ float h = vP.y * 0.5 + 0.5;
+    float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    vec3 sky(float h) {
       vec3 c = mix(vec3(0.020, 0.022, 0.034), vec3(0.036, 0.048, 0.092), smoothstep(0.15, 0.85, h));
-      c = mix(c, vec3(0.10, 0.06, 0.07), 0.45 * exp(-pow((h - 0.42) * 5.0, 2.0)));
-      gl_FragColor = vec4(c, 1.0); }`,
+      return mix(c, vec3(0.10, 0.06, 0.07), 0.45 * exp(-pow((h - 0.42) * 5.0, 2.0)));
+    }
+    void main(){
+      float h = vP.y * 0.5 + 0.5;
+      vec2 q = vec2(atan(vP.z, vP.x) * 80.0, asin(vP.y) * 70.0);   // about square dab cells on the visible band
+      vec2 cell = floor(q - 0.5);   // the 2 x 2 cells around this point hold every dab that can reach it
+      vec3 c = sky(h), dab = vec3(0.0); float best = 0.0;
+      for (int j = 0; j <= 1; j++) for (int i = 0; i <= 1; i++) {               // short slanted dabs, a few lighter ones
+        vec2 id = cell + vec2(i, j), ctr = id + 0.3 + 0.4 * vec2(h21(id), h21(id + 7.3));
+        float a = 0.5 + 0.6 * (h21(id + 3.1) - 0.5);
+        vec2 d = q - ctr; d = vec2(cos(a) * d.x + sin(a) * d.y, -sin(a) * d.x + cos(a) * d.y);
+        float m = 1.0 - smoothstep(0.75, 1.0, length(d / vec2(0.52, 0.17)));
+        if (m > best) { best = m; float r = h21(id + 11.0);
+          dab = r > 0.96 ? vec3(0.17, 0.16, 0.19) : sky(h + 0.25 * (h21(id + 5.0) - 0.5)) * (0.7 + 0.6 * r) + vec3(0.025, 0.0, 0.035) * h21(id + 9.0); }
+      }
+      gl_FragColor = vec4(mix(c * 0.85, dab, best), 1.0);
+    }`,
 }));
 scene.add(backdrop);
 
@@ -295,7 +313,7 @@ boom.setDisplace(flow);
 scene.add(boom.mesh);
 boom.mesh.castShadow = boom.mesh.receiveShadow = false;
 
-const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04 });
+const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04, sky: false });
 let strokes = null, painted = true;
 function setPainted(on) {
   painted = on;
@@ -477,7 +495,10 @@ $('bPause').onclick = () => togglePause();
 $('sens').oninput = e => { sens = e.target.value / 100; $('sensOut').textContent = e.target.value + '%'; };
 $('stroke').oninput = e => { painter.strokeSize = +e.target.value; $('strokeOut').textContent = e.target.value + ' px'; };
 document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPainted(b.dataset.v === '1'));
-function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey; }
+function setPanel(show, byKey = false) {
+  $('ui').hidden = !show; $('bShow').hidden = show || byKey;
+  document.documentElement.toggleAttribute('data-ui-hidden', !show);   // lets a host page hide its own overlays too
+}
 $('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
 document.querySelectorAll('#flowSeg button').forEach(b => b.onclick = () => setFlow(b.dataset.v === '1'));
 const showKeys = on => { $('keys').hidden = !on; };
@@ -531,9 +552,22 @@ $('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} ${TEXT.piece
 const bars = ['mBeat', 'mSpread'].map($);
 const specBars = BANDS.map(B => { const i = document.createElement('i'); i.style.background = B.css; $('spec').append(i); return i; });
 const fps = { n: 0, t0: performance.now(), value: 0 };
-let prev = performance.now();
+// Adaptive quality: when frames keep running long (over ~18 ms), paint at a lower resolution; after a calm spell,
+// try one step back up. Each step that has to come back down doubles the wait before the next try.
+const AQ = { steps: [painter.resolutionScale, 0.55, 0.45], i: 0, avg: 16.7, slow: 0, calm: 0, wait: 3, upAt: -1e9 };
+function adapt(ms, now) {
+  if (!painted || ms > 250) return;   // background tab or a stall: not a frame-time signal
+  AQ.avg += (ms - AQ.avg) * 0.1;   // smoothed: single frames jitter a few ms around the display interval
+  if (AQ.avg > 18) { AQ.slow = Math.min(12, AQ.slow + 1); AQ.calm = 0; } else { AQ.slow = Math.max(0, AQ.slow - 0.5); AQ.calm += ms / 1000; }
+  if (AQ.slow >= 12 && AQ.i < AQ.steps.length - 1) {
+    if (now - AQ.upAt < 2) AQ.wait = Math.min(60, AQ.wait * 2);   // the last step up did not hold
+    painter.resolutionScale = AQ.steps[++AQ.i]; AQ.slow = 0; AQ.calm = 0;
+  } else if (AQ.i > 0 && AQ.calm > AQ.wait) { painter.resolutionScale = AQ.steps[--AQ.i]; AQ.calm = 0; AQ.upAt = now; }
+}
+let prev = performance.now(), prevWall = prev;
 renderer.setAnimationLoop(nowMs => {
-  const dt = Math.min(0.05, (nowMs - prev) / 1000); prev = nowMs; const now = nowMs / 1000;
+  const rawMs = nowMs - prev, dt = Math.min(0.05, rawMs / 1000); prev = nowMs; const now = nowMs / 1000;
+  const wall = performance.now(); adapt(wall - prevWall, now); prevWall = wall;   // wall clock: some browsers pace rAF stamps
   listen(now, dt);
   drive(dt);
   boom.setTime(0); boom.setBurstOffsets(BS.map(s => -s.tShow));   // band n shows its own time
@@ -552,7 +586,7 @@ renderer.setAnimationLoop(nowMs => {
   fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
 });
 window.__pp = { boom, painter, A, fps, T_MAX, LITE, setPainted, playDemo, position: () => position(), controls,
-  BS, BANDS, get t() { return Math.max(...BS.map(s => s.tShow)); }, get ts() { return BS.map(s => s.tShow); }, NB, get hold() { return hold; }, hold(v) { hold = v; }, flow, setFlow };
+  BS, BANDS, get t() { return Math.max(...BS.map(s => s.tShow)); }, get ts() { return BS.map(s => s.tShow); }, NB, hold(v) { hold = v; }, flow, setFlow, AQ };
 </script>
 </body>
 </html>

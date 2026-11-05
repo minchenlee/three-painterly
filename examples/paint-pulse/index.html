@@ -76,6 +76,9 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 #bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); font-size: 11px; color: #c9cbd6; opacity: 0.8; pointer-events: none; }
+#tap { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20, 22, 40, 0.35); border: 0; color: #fff; font-family: inherit; font-size: 20px; font-weight: 600; cursor: pointer; z-index: 5; }
+#tap span { padding: 14px 22px; border-radius: 999px; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: #c9cbd6; pointer-events: none; }
 #drop { position: fixed; inset: 12px; border: 2px dashed rgba(255, 255, 255, 0.6); border-radius: 18px; display: grid; place-items: center;
   color: #fff; font-size: 16px; font-weight: 500; background: rgba(10, 12, 20, 0.35); pointer-events: none; z-index: 40; }
@@ -86,6 +89,8 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 <div id="status">Mixing paint…</div>
 <div id="drop" hidden>Drop a music file to play it</div>
 <div id="toast" hidden role="status"></div>
+<p id="liteNote" hidden></p>
+<button type="button" id="tap" hidden><span></span></button>
 <button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
 <div id="keys" hidden role="dialog" aria-label="Keyboard shortcuts">
   <div class="keys-head"><span>Keyboard shortcuts</span><button type="button" id="keysClose" aria-label="Close">✕</button></div>
@@ -164,14 +169,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BakedDebris } from '../../packages/baked-debris/src/index.js';
 import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
 
-addEventListener('error', e => { const s = $('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
+addEventListener('error', e => { const s = $('status'); s.hidden = false; s.textContent = TEXT.failed + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);
+// Strings the script writes (kept together for a later translation)
+const TEXT = {
+  failed: 'Failed to load: ', noMusic: 'No music yet. Play the demo or drop a file anywhere.', playing: 'Playing', paused: 'Paused', finished: 'Finished',
+  demoName: 'Demo track (120 BPM, synthesised)', demoFailed: 'The demo track failed to render', badFile: 'This file cannot be decoded. Try MP3, WAV, M4A or OGG.',
+  notAudio: 'That is not an audio file', noFull: 'Full screen is not available here', fullDenied: 'Full screen is not allowed here',
+  painted: 'Painted', cubes: 'Plain cubes', swirl: 'Swirling paths', straight: 'Straight paths', rotateOn: 'Auto-rotate on', rotateOff: 'Auto-rotate off',
+  sensitivity: 'Sensitivity', pieces: 'pieces', lite: 'Lite mode · open on a desktop for the full version', tap: 'Tap to start · sound on',
+};
+// Lite mode for phones and small screens: pixel ratio 1, about a quarter of the pieces. ?full=1 turns it off, ?lite=1 forces it.
+const QS = new URLSearchParams(location.search);
+const LITE = QS.has('full') ? false : QS.has('lite') || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
 const clamp01 = x => Math.min(1, Math.max(0, x));
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 /* ---------- scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x242a44);
@@ -200,7 +216,7 @@ scene.add(backdrop);
 // Bottom = low, middle = mid, top = high: seen from the side, all three bands stay visible at once
 // (a core / shell split would hide the inner bands), and "bass below, treble above" reads naturally.
 // Each band is a burst of its own, so setBurstOffsets gives every band its own clock from one bake.
-const R = 2.1, S = 0.105, pieces = [];
+const R = 2.1, S = LITE ? 0.105 * Math.cbrt(4) : 0.105, pieces = [];   // lite: a quarter of the pieces
 const rnd = (s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(77);
 const BANDS = [   // hues: low = crimson / orange, mid = ochre / gold, high = cobalt / violet
   { name: 'Low',  hz: [30, 110],      hue: [0.985, 0.07], css: '#d2553c', kick: 1.0 },
@@ -288,7 +304,7 @@ function startTrack(buf, name, loop, offset = 0) {
   src = ctx.createBufferSource(); src.buffer = buf; src.loop = loop; src.connect(master); src.start(0, offset);
   const id = ++genId;
   track = { buf, name, loop, start: ctx.currentTime - offset, env: envelope(buf) };
-  src.onended = () => { if (id === genId) { track = null; src = null; updateTransport(); toast('Finished'); } };
+  src.onended = () => { if (id === genId) { track = null; src = null; updateTransport(); toast(TEXT.finished); } };
   updateTransport();
 }
 const position = () => { if (!track) return 0; const p = ctx.currentTime - track.start; return track.loop ? p % track.buf.duration : Math.min(p, track.buf.duration); };
@@ -298,7 +314,7 @@ function togglePause() {
 }
 function updateTransport() {
   $('bPause').disabled = !track; $('bPause').textContent = paused ? 'Resume' : 'Pause';
-  $('track').textContent = track ? `${paused ? 'Paused' : 'Playing'} · ${track.name}` : 'No music yet. Play the demo or drop a file anywhere.';
+  $('track').textContent = track ? `${paused ? TEXT.paused : TEXT.playing} · ${track.name}` : TEXT.noMusic;
 }
 
 // Loudness of the whole track, in 50 ms steps, smoothed over ~2 s and ranked 0..1 within the track.
@@ -320,11 +336,11 @@ const sectionAt = t => { const e = track?.env; if (!e) return 0; return e.data[M
 async function load(make, name, loop) {
   if (busy) return; busy = true; ensureAudio(); ctx.resume();
   $('track').textContent = `Preparing ${name}…`;
-  try { startTrack(await make(), name, loop); toast(`Playing ${name}`); }
-  catch (err) { console.error(err); toast(loop ? 'The demo track failed to render' : 'This file cannot be decoded. Try MP3, WAV, M4A or OGG.'); updateTransport(); }
+  try { startTrack(await make(), name, loop); toast(`${TEXT.playing} ${name}`); }
+  catch (err) { console.error(err); toast(loop ? TEXT.demoFailed : TEXT.badFile); updateTransport(); }
   finally { busy = false; }
 }
-const playDemo = () => load(renderDemo, 'Demo track (120 BPM, synthesised)', true);
+const playDemo = () => load(renderDemo, TEXT.demoName, true);
 const playFile = f => f && load(async () => ctx.decodeAudioData(await f.arrayBuffer()), f.name.replace(/\.[^.]+$/, ''), false);
 
 // An original 48 s loop, synthesised offline: intro → build (hats, then kicks) → drop → break (sub bass, then shaker) → drop.
@@ -439,15 +455,15 @@ document.querySelectorAll('#flowSeg button').forEach(b => b.onclick = () => setF
 const showKeys = on => { $('keys').hidden = !on; };
 $('bKeys').onclick = () => showKeys($('keys').hidden); $('keysClose').onclick = () => showKeys(false);
 function fullScreen() { const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (document.fullscreenElement) document.exitFullscreen(); else if (!req) toast('Full screen is not available here');
-  else { const p = req.call(el); if (p && p.catch) p.catch(() => toast('Full screen is not allowed here')); } }
+  if (document.fullscreenElement) document.exitFullscreen(); else if (!req) toast(TEXT.noFull);
+  else { const p = req.call(el); if (p && p.catch) p.catch(() => toast(TEXT.fullDenied)); } }
 $('bFull').onclick = fullScreen;
 let dragN = 0;
 addEventListener('dragenter', e => { e.preventDefault(); dragN++; $('drop').hidden = false; });
 addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; $('drop').hidden = true; } });
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('drop').hidden = true; const f = e.dataTransfer?.files?.[0];
-  if (f && (f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|oga|flac|webm)$/i.test(f.name))) playFile(f); else toast('That is not an audio file'); });
+  if (f && (f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|oga|flac|webm)$/i.test(f.name))) playFile(f); else toast(TEXT.notAudio); });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.matches?.('input[type=file]')) return;
   if (e.target.matches?.('input[type=range]') && e.code.startsWith('Arrow')) return;
@@ -455,11 +471,11 @@ addEventListener('keydown', e => {
     case 'Space': e.preventDefault(); togglePause(); break;
     case 'KeyD': playDemo(); break;
     case 'KeyO': $('file').click(); break;
-    case 'KeyP': setPainted(!painted); toast(painted ? 'Painted' : 'Plain cubes'); break;
-    case 'KeyW': setFlow(!flowOn); toast(flowOn ? 'Swirling paths' : 'Straight paths'); break;
-    case 'KeyR': controls.autoRotate = !controls.autoRotate; toast(controls.autoRotate ? 'Auto-rotate on' : 'Auto-rotate off'); break;
+    case 'KeyP': setPainted(!painted); toast(painted ? TEXT.painted : TEXT.cubes); break;
+    case 'KeyW': setFlow(!flowOn); toast(flowOn ? TEXT.swirl : TEXT.straight); break;
+    case 'KeyR': controls.autoRotate = !controls.autoRotate; toast(controls.autoRotate ? TEXT.rotateOn : TEXT.rotateOff); break;
     case 'BracketLeft': case 'BracketRight': { const el = $('sens'); el.value = +el.value + (e.code === 'BracketRight' ? 10 : -10);
-      el.dispatchEvent(new Event('input')); toast(`Sensitivity ${el.value}%`); break; }
+      el.dispatchEvent(new Event('input')); toast(`${TEXT.sensitivity} ${el.value}%`); break; }
     case 'KeyF': fullScreen(); break;
     case 'KeyH': setPanel($('ui').hidden, true); break;
     case 'Escape': showKeys(false); break;
@@ -469,13 +485,19 @@ addEventListener('keydown', e => {
 
 function resize() {
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h;
-  camera.position.setLength(camera.position.length());
+  camera.position.setLength(11.5 / Math.min(1, camera.aspect * 1.25));   // portrait screens: step back so the ball fits the width
   camera.updateProjectionMatrix();
   const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y);
 }
 addEventListener('resize', resize); resize();
 $('status').hidden = true;
-$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} pieces · ${counts.join(' / ')}`;
+if (LITE) {   // WebAudio needs a tap before it can play
+  $('liteNote').textContent = TEXT.lite; $('liteNote').hidden = false;
+  const tap = $('tap'); tap.firstChild.textContent = TEXT.tap; tap.hidden = false;
+  tap.onclick = () => { tap.hidden = true; playDemo(); };
+  if (innerWidth <= 600) setPanel(false);   // the bottom sheet would cover the ball; 'Show controls' brings it back
+}
+$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} ${TEXT.pieces} · ${counts.join(' / ')}`;
 
 /* ---------- loop ---------- */
 const bars = ['mLow', 'mMid', 'mHigh', 'mBeat', 'mSpread'].map($);
@@ -495,7 +517,7 @@ renderer.setAnimationLoop(nowMs => {
   [A.low, A.mid, A.high, A.beat, Math.max(...BS.map(s => s.t)) / T_MAX].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
   fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
 });
-window.__pp = { boom, painter, A, fps, T_MAX, setPainted, playDemo, position: () => position(), controls,
+window.__pp = { boom, painter, A, fps, T_MAX, LITE, setPainted, playDemo, position: () => position(), controls,
   BS, BANDS, get t() { return Math.max(...BS.map(s => s.t)); }, get ts() { return BS.map(s => s.t); }, hold(v) { hold = v; }, flow, setFlow };
 </script>
 </body>

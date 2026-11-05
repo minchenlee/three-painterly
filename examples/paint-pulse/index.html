@@ -95,6 +95,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <tr><td><kbd>O</kbd></td><td>Open a music file</td></tr>
     <tr><td><kbd>P</kbd></td><td>Painted / plain cubes</td></tr>
     <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Less / more sensitive</td></tr>
+    <tr><td><kbd>W</kbd></td><td>Swirling / straight paths</td></tr>
     <tr><td><kbd>R</kbd></td><td>Auto-rotate on / off</td></tr>
     <tr><td><kbd>F</kbd></td><td>Full screen</td></tr>
     <tr><td><kbd>H</kbd></td><td>Hide / show all controls</td></tr>
@@ -135,6 +136,12 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
       <div class="seg" role="group" aria-label="Look" id="lookSeg">
         <button type="button" data-v="1" aria-pressed="true">Painted</button>
         <button type="button" data-v="0" aria-pressed="false">Cubes</button>
+      </div>
+    </div>
+    <div class="row"><span class="lab">Flow</span>
+      <div class="seg" role="group" aria-label="Flow" id="flowSeg">
+        <button type="button" data-v="1" aria-pressed="true">Swirl</button>
+        <button type="button" data-v="0" aria-pressed="false">Straight</button>
       </div>
     </div>
   </div>
@@ -224,6 +231,33 @@ for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) for (let k = -N; k <
 const T_MAX = 3.0;   // debris clock range per band: 0 = whole, T_MAX = fully scattered
 const boom = new BakedDebris({ pieces, bursts: BANDS.map(() => ({ position: [0, 0, 0], radius: 0 })), gravity: 0, ground: null,
   pieceSize: S, duration: T_MAX + 1, step: 1 / 60, seed: 7 });
+/* ---------- flow: a time-flowing swirl on top of the bake (BakedDebris displace hook) ---------- */
+// The offset grows with d.local, the piece's own time since launch, so it is 0 while the ball is whole and grows
+// as the band spreads. The field itself keeps moving (uFlowT), so a piece meets a different field on the way out
+// and on the way back, and no two scatters take the same shape. Low and high turn one way, the middle the other.
+const flow = {
+  uniforms: { uFlowT: { value: 0 }, uFlowAmp: { value: 1.2 } },
+  glsl: /* glsl */`
+    uniform float uFlowT;
+    uniform float uFlowAmp;
+    vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+      if (d.local <= 0.0) return vec3(0.0);
+      float k = uFlowAmp * smoothstep(0.0, 1.8, d.local);       // 0 at launch, full once the piece is well out
+      float ft = uFlowT + d.time;                                  // d.time carries the strokes' look-ahead
+      vec3 q = p * 0.42;
+      vec3 w = vec3(sin(q.y * 1.9 + ft * 0.9) + sin(q.z * 1.3 - ft * 0.6),
+                    sin(q.z * 1.7 + ft * 0.7) + sin(q.x * 1.1 + ft * 0.8),
+                    sin(q.x * 1.5 - ft * 0.8) + sin(q.y * 1.2 + ft * 0.5));   // a smooth, drifting field
+      float dir = abs(d.burst - 1.0) < 0.5 ? -1.0 : 1.0;
+      float a = dir * (0.45 + 0.3 * sin(ft * 0.45 + d.burst * 2.1 + q.y));     // a swirl about the vertical axis
+      vec2 r = vec2(p.x * cos(a) - p.z * sin(a), p.x * sin(a) + p.z * cos(a)) - p.xz;
+      return k * (0.5 * w + vec3(r.x, 0.0, r.y) * 0.6);
+    }`,
+};
+let flowOn = true;
+const setFlow = on => { flowOn = on; boom.setDisplace(on ? flow : null);
+  document.querySelectorAll('#flowSeg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === '1') === on))); };
+boom.setDisplace(flow);
 scene.add(boom.mesh);
 boom.mesh.castShadow = boom.mesh.receiveShadow = false;
 
@@ -401,6 +435,7 @@ $('stroke').oninput = e => { painter.strokeSize = +e.target.value; $('strokeOut'
 document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPainted(b.dataset.v === '1'));
 function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey; }
 $('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
+document.querySelectorAll('#flowSeg button').forEach(b => b.onclick = () => setFlow(b.dataset.v === '1'));
 const showKeys = on => { $('keys').hidden = !on; };
 $('bKeys').onclick = () => showKeys($('keys').hidden); $('keysClose').onclick = () => showKeys(false);
 function fullScreen() { const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -421,6 +456,7 @@ addEventListener('keydown', e => {
     case 'KeyD': playDemo(); break;
     case 'KeyO': $('file').click(); break;
     case 'KeyP': setPainted(!painted); toast(painted ? 'Painted' : 'Plain cubes'); break;
+    case 'KeyW': setFlow(!flowOn); toast(flowOn ? 'Swirling paths' : 'Straight paths'); break;
     case 'KeyR': controls.autoRotate = !controls.autoRotate; toast(controls.autoRotate ? 'Auto-rotate on' : 'Auto-rotate off'); break;
     case 'BracketLeft': case 'BracketRight': { const el = $('sens'); el.value = +el.value + (e.code === 'BracketRight' ? 10 : -10);
       el.dispatchEvent(new Event('input')); toast(`Sensitivity ${el.value}%`); break; }
@@ -451,6 +487,7 @@ renderer.setAnimationLoop(nowMs => {
   drive(dt);
   boom.setTime(0); boom.setBurstOffsets(BS.map(s => -s.t));   // band n shows its own time BS[n].t
   boom.setSizeScale(1 + 0.4 * A.high);
+  flow.uniforms.uFlowT.value += dt * (0.6 + 1.6 * A.beat);   // the field drifts on its own and surges on beats
   if (strokes) strokes.material.uniforms.uBright.value = 1 + 0.45 * A.beat;
   controls.autoRotateSpeed = 0.5 + 2.5 * A.beat;
   controls.update();
@@ -459,7 +496,7 @@ renderer.setAnimationLoop(nowMs => {
   fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
 });
 window.__pp = { boom, painter, A, fps, T_MAX, setPainted, playDemo, position: () => position(), controls,
-  BS, BANDS, get t() { return Math.max(...BS.map(s => s.t)); }, get ts() { return BS.map(s => s.t); }, hold(v) { hold = v; } };
+  BS, BANDS, get t() { return Math.max(...BS.map(s => s.t)); }, get ts() { return BS.map(s => s.t); }, hold(v) { hold = v; }, flow, setFlow };
 </script>
 </body>
 </html>

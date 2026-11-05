@@ -9,6 +9,6 @@
   "sideEffects": false,
   "peerDependencies": { "three": ">=0.160.0" },
   "keywords": ["three", "threejs", "voxel", "explosion", "debris", "destruction", "baked", "scrub", "instancing"],
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true
 }

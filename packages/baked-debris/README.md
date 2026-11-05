@@ -4,7 +4,7 @@ Scrubbable explosion debris for three.js.
 
 Collisions are simulated once on the CPU ("baked") against your own collision query and the ground. Each piece's path is stored as a few ballistic segments in a float texture. On the GPU, every piece's position is a direct function of time, so you can scrub, rewind, change speed or jump to any moment, and the result is always the same.
 
-Status: 0.1.0, experimental. Developed inside a notes repository; it will move to its own repository.
+Status: 0.1.0, experimental.
 
 ## Use
 
@@ -82,8 +82,8 @@ Flying pieces are then drawn as brush strokes on top of the painting, stretched 
 
 ## Example
 
-`examples/explode.html` — two voxel towers, three bursts, a wall to bounce off. It imports PainterlyPass from `../../painterly-pass/src/`, so serve the parent `Projects/` folder: `python3 -m http.server` and open `/baked-debris/examples/explode.html`.
+`examples/explode.html` — two voxel towers, three bursts, a wall to bounce off. It imports PainterlyPass from `../../painterly-pass/src/`, so serve the repository root: `python3 -m http.server` and open `/packages/baked-debris/examples/explode.html`.
 
 ## License
 
-Not chosen yet (the plan is MIT). Until a license is added, all rights are reserved.
+MIT. See [LICENSE](LICENSE).

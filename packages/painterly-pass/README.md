@@ -6,7 +6,7 @@ The strokes are anchored to surfaces, not to the screen. The pass rebuilds each 
 
 The colour treatment follows habits of Claude Monet's late-1800s paintings (public domain): livelier colour, cool violet shadows that keep their value, warm highlights, and a little unmixed colour in every stroke.
 
-Status: 0.1.0, experimental. Developed inside a notes repository; it will move to its own repository.
+Status: 0.1.0, experimental.
 
 ## Use
 
@@ -79,8 +79,8 @@ Anchoring strokes to surfaces to avoid the "shower door" effect goes back to Bar
 
 ## Example
 
-`examples/basic.html` — a small original scene (meadow, pond, houses, trees). Serve the folder over HTTP (`npx serve .` or `python3 -m http.server`) and open `/examples/basic.html`. Press P to compare with the plain render.
+`examples/basic.html` — a small original scene (meadow, pond, houses, trees). Serve the repository root over HTTP (`npx serve .` or `python3 -m http.server`) and open `/packages/painterly-pass/examples/basic.html`. Press P to compare with the plain render.
 
 ## License
 
-Not chosen yet (the plan is MIT). Until a license is added, all rights are reserved.
+MIT. See [LICENSE](LICENSE).

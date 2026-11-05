@@ -8,6 +8,11 @@ import { patchCube, patchDepth, strokeVertex, strokeFragment } from './shaders.j
 
 const MAX_BURSTS = 32;   // must match MAX_BURSTS in shaders.js
 
+// a misspelt option is otherwise silently ignored
+function warnUnknown(options) {
+  for (const k in options) if (!(k in BakedDebris.defaults) && k !== 'pieces' && k !== 'bursts') console.warn(`BakedDebris: unknown option "${k}" is ignored`);
+}
+
 /**
  * Explosion debris whose collisions are simulated once ("baked") and then played back on the GPU.
  * Any moment can be shown directly with setTime(t), so playback can be scrubbed, rewound and sped up.
@@ -42,7 +47,10 @@ export class BakedDebris {
   };
 
   constructor(options) {
-    this.o = Object.assign({}, BakedDebris.defaults, options);
+    warnUnknown(options);
+    this.o = {};
+    for (const k in BakedDebris.defaults) { const v = BakedDebris.defaults[k]; this.o[k] = Array.isArray(v) ? v.slice() : v; }
+    Object.assign(this.o, options);
     if (!this.o.pieces || !this.o.bursts) throw new Error('BakedDebris needs `pieces` and `bursts`');
     this._hideFlying = { value: 0 };
     this.uniforms = {
@@ -71,6 +79,7 @@ export class BakedDebris {
    * Any option can be passed; gravity, sizeScale and timeWarp also update the GPU side.
    */
   rebake(changes = {}) {
+    warnUnknown(changes);
     validateOptions(Object.assign({}, this.o, changes));   // throws before anything changes
     Object.assign(this.o, changes);
     const o = this.o, rnd = mulberry32(o.seed);

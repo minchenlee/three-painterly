@@ -48,7 +48,7 @@ All options are also writable properties (`painter.strokeSize = 10`). Unknown op
 | `shadowAmount` | `0.55` | How strongly dark tones take the tint. |
 | `warmth` | `0.6` | How much highlights lean warm. |
 | `colorJitter` | `0.07` | Unmixed colour per stroke. |
-| `strokeLength`, `strokeWidth` | `1`, `1` | Stroke proportions. |
+| `strokeLength`, `strokeWidth` | `1`, `1` | Stroke proportions. Each pixel tests enough cells for the longest stroke: `strokeLength` up to 0.76 → 4×4 cells, 1 → 5×5, up to 1.53 → 7×7 (about 3× the paint cost of 4×4). Longer strokes are capped to fit. |
 | `contrast` | `1.1` | Contrast after painting. |
 | `canvas` | `0.035` | Canvas weave strength (fixed to the screen). |
 | `sky` | `true` | Paint the background. |
@@ -61,7 +61,7 @@ All options are also writable properties (`painter.strokeSize = 10`). Unknown op
 
 1. Render the scene into a half-float target with a depth texture, at `resolutionScale`.
 2. For each pixel, rebuild the world position from depth, and the surface direction from the neighbouring pixels.
-3. Pick the dominant axis of the surface and use the surface's own plane coordinates as the canvas. Lay one stroke per grid cell there: an ellipse with a random offset and angle (upright on walls, lying on floors), a ragged bristle edge, a lighter paint ridge and bristle streaks. The topmost stroke of the 4x4 cells around the pixel wins.
+3. Pick the dominant axis of the surface and use the surface's own plane coordinates as the canvas. Lay one stroke per grid cell there: an ellipse with a random offset and angle (upright on walls, lying on floors), a ragged bristle edge, a lighter paint ridge and bristle streaks. The topmost stroke of the cells around the pixel wins (4x4 to 7x7, enough for the longest stroke).
 4. Each stroke takes its colour from the scene at its own centre, projected back to the screen, then passes through the palette.
 5. Choose two power-of-two cell sizes from the distance and cross-fade, so strokes stay about `strokeSize` pixels on screen.
 6. Add the canvas weave, scale up to the output and convert to the output colour space.

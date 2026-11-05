@@ -25,6 +25,8 @@ uniform float uJitter;
 uniform float uCanvas;
 uniform float uLength;
 uniform float uWidth;
+uniform int uSearch;          // cells per side tested around each pixel (4..7), from the longest stroke
+uniform float uReach;         // longest stroke reach from its centre, in cells (fits the search window)
 uniform float uContrast;
 uniform bool uSky;
 uniform mat4 uInvProj;
@@ -74,27 +76,30 @@ vec3 planeToWorld(vec2 q, int axis, float a) {
 }
 
 // Strokes on one plane at cell size C (world units, or radians for the sky).
-// Each cell holds one stroke; the 4x4 cells around the pixel are tested and the topmost wins.
+// Each cell holds one stroke; the uSearch x uSearch cells around the pixel are tested and the topmost wins.
+// The window is large enough for the longest stroke (uReach), so strokes are never cut off at its edge.
 // Only the winning stroke is coloured, after the loop: one scene lookup per plane instead of one per hit.
 vec4 paintPlane(vec2 q, float C, int axis, float a, float seed, float baseAng, vec3 under) {
-  vec2 cell = floor(q / C - 0.5);
-  float bestZ = -1.0, bestE = 0.0, bestV = 0.0;
+  vec2 cell = floor(q / C - 0.5 * float(uSearch - 1));
+  float bestZ = -1.0, bestE = 0.0, bestV = 0.0, reach2 = uReach * uReach * C * C, cap = uReach / 1.0607;
   vec2 bestK = vec2(0.0), bestQ = vec2(0.0);
-  for (int j = -1; j <= 2; j++) for (int i = -1; i <= 2; i++) {
+  for (int j = 0; j < 7; j++) { if (j >= uSearch) break;
+  for (int i = 0; i < 7; i++) { if (i >= uSearch) break;
     vec2 c = cell + vec2(float(i), float(j));
     vec2 k = c + vec2(seed, C * 7.13);
     float z = h1(k + 31.7);
     if (z <= bestZ) continue;
-    vec2 ctr = (c + h2(k)) * C;
+    vec2 ctr = (c + h2(k)) * C, d = q - ctr;
+    if (dot(d, d) > reach2) continue;                          // no stroke from this cell can reach the pixel
     float ang = baseAng + (h1(k + 5.3) - 0.5) * 1.6;
-    vec2 dir = vec2(cos(ang), sin(ang)), d = q - ctr;
+    vec2 dir = vec2(cos(ang), sin(ang));
     float u = dot(d, dir), v = dot(d, vec2(-dir.y, dir.x));
-    float len = C * uLength * (1.05 + 0.8 * h1(k + 9.1));
-    float wid = C * uWidth * (0.40 + 0.18 * h1(k + 2.9));
+    float len = C * min(uLength * (1.05 + 0.8 * h1(k + 9.1)), cap);
+    float wid = C * min(uWidth * (0.40 + 0.18 * h1(k + 2.9)), cap);
     float e = (u * u) / (len * len) + (v * v) / (wid * wid)
             + (h1(floor(vec2(u / C * 9.0, v / C * 25.0)) + k) - 0.5) * 0.25;   // ragged bristle edge
     if (e < 1.0) { bestZ = z; bestE = e; bestK = k; bestQ = ctr + dir * u * 0.5; bestV = v / max(wid, 1e-4); }
-  }
+  } }
   if (bestZ < 0.0) return vec4(under, bestZ);
   vec3 col = palette(colAtWorld(planeToWorld(bestQ, axis, a)), h1(bestK + 7.7) * 100.0);
   float ridge = 1.0 + 0.10 * (1.0 - bestE) - 0.10 * smoothstep(0.7, 1.0, bestE);   // impasto ridge

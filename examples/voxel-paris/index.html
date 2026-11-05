@@ -87,6 +87,9 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
 kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--soft); }
 #toast { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--panel);
   border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; pointer-events: none; backdrop-filter: blur(16px); }
+#bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
 </style>
 </head>
@@ -94,6 +97,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 <canvas id="c"></canvas>
 <div id="status">Stacking voxels…</div>
 <div id="toast" hidden role="status"></div>
+<button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
 <div id="keys" hidden role="dialog" aria-label="Keyboard shortcuts">
   <div class="keys-head"><span>Keyboard shortcuts</span><button type="button" id="keysClose" aria-label="Close">✕</button></div>
   <table>
@@ -221,7 +225,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 
   <div class="foot">
     <p class="meta" id="stats"></p>
-    <div class="row"><button type="button" id="bFull">Full screen</button><button type="button" id="bKeys">Keys</button></div>
+    <div class="row"><button type="button" id="bHide" aria-controls="ui" title="Hide the panel (H)">Hide</button><button type="button" id="bFull">Full screen</button><button type="button" id="bKeys">Keys</button></div>
   </div>
 </div>
 
@@ -981,6 +985,9 @@ function toggleFull(){
     else if (p && p.catch) p.catch(() => toast('Full screen is not allowed here')); }
 }
 $('bFull').onclick = toggleFull;
+// hide the panel for a clean view; a small button (or H) brings it back
+function setPanel(show){ $('ui').hidden = !show; $('bShow').hidden = show; (show ? $('bHide') : $('bShow')).focus({ preventScroll: true }); }
+$('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
 let lastBounce = 35;
 // held keys: WASD fly the camera and its target together on the ground plane; Q/E change the focal length
 const held = new Set(), MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'];
@@ -1028,7 +1035,7 @@ addEventListener('keydown', e => {
       e.preventDefault(); setTab(TABS[(cur + (e.shiftKey ? TABS.length-1 : 1)) % TABS.length]); } break;
     case 'KeyT': $('bDay').click(); break;
     case 'KeyN': light.min = light.min >= 1140 || light.min < 400 ? 900 : 1260; dayRun = false; $('bDay').textContent = '▶ Run a day'; updateLight(); toast(light.min === 900 ? 'Day 15:00' : 'Night 21:00'); break;
-    case 'KeyH': { const ui = $('ui'); ui.hidden = !ui.hidden; if (ui.hidden) toast('Panel hidden · press H'); break; }
+    case 'KeyH': setPanel($('ui').hidden); break;
   }
 });
 

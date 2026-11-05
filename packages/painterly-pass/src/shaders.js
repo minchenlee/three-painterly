@@ -47,12 +47,18 @@ vec3 scr(vec2 uv) {
   vec3 c = texture2D(tScene, clamp(uv, vec2(0.001), vec2(0.999))).rgb * uExposure;
   return uToneMap == 1 ? aces(c) : c;
 }
-vec3 worldAt(vec2 px) {
-  vec2 uv = px / uRes;
-  float d = texture2D(tDepth, uv).x;
-  vec4 v = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+float depthAt(vec2 px) { return texture2D(tDepth, px / uRes).x; }
+vec3 worldFrom(vec2 px, float d) {
+  vec4 v = uInvProj * vec4(px / uRes * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
   v /= v.w;
   return (uCamWorld * v).xyz;
+}
+// Surface step along one screen axis (o = (1,0) or (0,1)). Use the neighbour on the same surface:
+// of the two neighbours, the one whose depth is closer to this pixel's. At the screen edge use the inner one.
+vec3 surfaceStep(vec2 px, vec3 W, float d, vec2 o, float size) {
+  float c = dot(px, o);
+  float dp = c + 1.0 < size ? depthAt(px + o) : 2.0, dn = c - 1.0 > 0.0 ? depthAt(px - o) : 2.0;
+  return abs(dp - d) <= abs(dn - d) ? worldFrom(px + o, dp) - W : W - worldFrom(px - o, dn);
 }
 vec3 colAtWorld(vec3 w) { vec4 c = uViewProj * vec4(w, 1.0); return scr(c.xy / c.w * 0.5 + 0.5); }
 
@@ -112,7 +118,7 @@ void main() {
   vec3 base = scr(uv);
   vec3 under = mix(palette(base, 0.5) * 0.95, vec3(0.78, 0.70, 0.58), 0.12);   // thin underpainting on a warm canvas
   float depth = texture2D(tDepth, uv).x;
-  vec3 W = worldAt(px);
+  vec3 W = worldFrom(px, depth);
   vec3 outc;
   if (depth >= 1.0) {   // cleared depth is exactly 1.0; a threshold below it would turn distant objects into sky
     if (!uSky) { gl_FragColor = vec4(base, 1.0); return; }
@@ -120,7 +126,7 @@ void main() {
     vec2 q = vec2(atan(dir.x, -dir.z), asin(clamp(dir.y, -1.0, 1.0)));
     outc = paintPlane(q, uS * uPixAng, 3, 0.0, 91.0, 0.15, under).rgb;
   } else {
-    vec3 N = cross(worldAt(px + vec2(1.0, 0.0)) - W, worldAt(px + vec2(0.0, 1.0)) - W);
+    vec3 N = cross(surfaceStep(px, W, depth, vec2(1.0, 0.0), uRes.x), surfaceStep(px, W, depth, vec2(0.0, 1.0), uRes.y));
     vec3 an = abs(N);
     int axis = an.x > an.y && an.x > an.z ? 0 : (an.y > an.z ? 1 : 2);
     float a = axis == 0 ? W.x : (axis == 1 ? W.y : W.z);

@@ -89,7 +89,7 @@ Flying pieces are then drawn as brush strokes on top of the painting, stretched 
 
 - Pieces do not collide with each other.
 - Collision uses point probes at the piece's half size, not full boxes; thin geometry can be missed at high speed.
-- At most 6 segments per piece: after 5 hits the piece rests where it is.
+- At most 6 segments per piece: the hit that uses up the last segment ends the motion, and the piece rests at that hit point.
 - The bake runs on the main thread: about 0.2–2 s for 10k–200k pieces in tests.
 
 ## Example

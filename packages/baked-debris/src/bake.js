@@ -92,6 +92,7 @@ export function simulate(recs, o) {
     base = i * SEGMENTS * 8;
     for (let s = 0; s < SEGMENTS; s++) data[base + s * 8] = -1;
 
+    d.restT = 0;                                              // local time from which the piece rests (no gravity)
     if (d.t0 > 1e8) { put(0, 0, d.p[0], d.p[1], d.p[2], 0, 0, 0, 0); continue; }
     let px = d.p[0], py = d.p[1], pz = d.p[2], vx = d.v[0], vy = d.v[1], vz = d.v[2], w = d.w;
     if (d.kind === 1) {                                       // start from the parent's state at the split
@@ -122,11 +123,14 @@ export function simulate(recs, o) {
         } else if (vy > 0 && solid(x, y + h, z)) { y = py; vy = -vy * e; hit = true; }
       }
       t += dt; px = x; py = y; pz = z;
-      if (settled) { put(Math.min(k, SEGMENTS - 1), t, px, py, pz, 0, 0, 0, 0); break; }
-      if (hit && k < SEGMENTS - 1) put(k++, t, px, py, pz, vx, vy, vz, w);
+      // out of segments: the last one is a rest at this hit point, so what is drawn never runs on through a wall or floor
+      if (hit && k === SEGMENTS - 1) settled = true;
+      if (settled) { put(k, t, px, py, pz, 0, 0, 0, 0); d.restT = t; break; }
+      if (hit) put(k++, t, px, py, pz, vx, vy, vz, w);
       if (y < killY) break;
     }
-    if (!settled && py >= killY) put(Math.min(k, SEGMENTS - 1), t, px, py, pz, 0, 0, 0, 0);
+    if (!settled && py >= killY) { put(Math.min(k, SEGMENTS - 1), t, px, py, pz, 0, 0, 0, 0); d.restT = t; }
+    else if (!settled) d.restT = 1e9;                        // fell out of the world: keeps falling
     if (d.split > 0) { const t1 = data[base + 8]; d.splitOK = !(t1 >= 0 && t1 < d.split); }   // cancelled if it hit something first
   }
   return { data, width: SEG_TEX_WIDTH, height: rows };

@@ -10,6 +10,7 @@ attribute float aKind;    // 0 = piece, 1 = fragment of a secondary blast
 attribute float aSplit;   // piece: local time it breaks apart (0 = never); fragment: its parent's split time
 attribute float aBurst;   // index of the burst that launched it (-1 = none)
 attribute float aLife;    // seconds after launch it takes to shrink away (0 = lives forever)
+attribute float aRest;    // local time from which the piece rests: no gravity after it (1e9 = never rests)
 #define MAX_BURSTS 32
 uniform float uBurstShift[MAX_BURSTS];   // per-burst time offset, so bursts can be retimed without a new bake
 uniform float uTime;
@@ -51,7 +52,7 @@ void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
   }
   float dt = tl - A.x;
   P = A.yzw + B.xyz * dt;
-  if (dot(B.xyz, B.xyz) > 0.0) P.y -= 0.5 * uGravity * dt * dt;
+  if (tl < aRest) P.y -= 0.5 * uGravity * dt * dt;          // explicit marker: a zero velocity can also start a free fall
   ang += B.w * dt;
   sc = aSize * mix(1.0, uSizeScale, smoothstep(0.0, 0.2, tl));
   if (A.x > 0.0) P.y += (sc - aSize) * 0.5;               // resting pieces keep sitting on the floor when resized

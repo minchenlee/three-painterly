@@ -86,15 +86,15 @@ export class BakedDebris {
 
     const n = recs.length, start = new Float32Array(n), size = new Float32Array(n), axis = new Float32Array(n * 3),
       color = new Float32Array(n * 3), kind = new Float32Array(n), split = new Float32Array(n),
-      burst = new Float32Array(n), life = new Float32Array(n), c = new Color();
+      burst = new Float32Array(n), life = new Float32Array(n), rest = new Float32Array(n), c = new Color();
     recs.forEach((d, i) => {
       start[i] = d.t0; size[i] = d.hidden ? 0 : d.size; axis.set(d.axis, i * 3); kind[i] = d.kind;
-      burst[i] = d.burst ?? -1; life[i] = d.life ?? 0;
+      burst[i] = d.burst ?? -1; life[i] = d.life ?? 0; rest[i] = d.restT ?? 1e9;
       split[i] = d.kind === 1 ? recs[d.parent].split : (d.splitOK ? d.split : 0);
       c.set(d.color ?? 0xcccccc); color.set([c.r, c.g, c.b], i * 3);   // three converts sRGB hex to linear
     });
     const attrs = { aStart: [start, 1], aSize: [size, 1], aAxis: [axis, 3], aColor: [color, 3], aKind: [kind, 1], aSplit: [split, 1],
-      aBurst: [burst, 1], aLife: [life, 1] };
+      aBurst: [burst, 1], aLife: [life, 1], aRest: [rest, 1] };
     const build = base => { const g = new InstancedBufferGeometry(); g.index = base.index;
       for (const k in base.attributes) g.setAttribute(k, base.attributes[k]);
       for (const k in attrs) g.setAttribute(k, new InstancedBufferAttribute(attrs[k][0], attrs[k][1]));

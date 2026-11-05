@@ -85,13 +85,14 @@ To give your own effects (fire, sparks) the same brush look, import the stroke f
 ## How it works
 
 1. **Launch.** Direction = away from the burst centre + the burst direction + a little up + noise. Speed falls with distance. Launch time = burst time + a delay that grows with distance and noise.
-2. **Bake.** Each flying piece is stepped at `step` against `solid` and the ground. At each hit the velocity is reflected and damped, and a new segment starts: `[start time, position]` and `[velocity, spin]`. Up to 6 segments per piece; a zero velocity marks rest.
+2. **Bake.** Each flying piece is stepped at `step` against `solid` and the ground. At each hit the velocity is reflected and damped, and a new segment starts: `[start time, position]` and `[velocity, spin]`. Up to 6 segments per piece. Each piece also stores the local time from which it rests; gravity stops there (a zero velocity alone can be the top of a free fall).
 3. **Secondary blasts.** A chosen parent breaks at a random moment on its first arc. Its 8 fragments start from the parent's position and velocity at that moment plus an outward kick, and are baked the same way. If the parent hits something first, the split is cancelled.
 4. **Playback.** The vertex shader computes the piece's local time (optionally warped), finds the segment for that time in the texture with `texelFetch`, and evaluates the parabola. Shadows use the same code.
 
 ## Limitations
 
 - Pieces do not collide with each other.
+- World space only. Positions, bursts and `solid` are in world units, and the bake collides in world space. Do not move, rotate or scale `boom.mesh` or its parents: the cubes would move away from what they hit, and the brush strokes (which ignore the mesh transform) would stay behind. To place an explosion, move the pieces and bursts before the bake.
 - Collision uses point probes at the piece's half size, not full boxes; thin geometry can be missed at high speed.
 - At most 6 segments per piece: the hit that uses up the last segment ends the motion, and the piece rests at that hit point.
 - The bake runs on the main thread: about 0.2–2 s for 10k–200k pieces in tests.

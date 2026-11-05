@@ -243,11 +243,14 @@ const upperBoom = new BakedDebris({
 });
 scene.add(lowerBoom.mesh, upperBoom.mesh);
 
-/* ---------- fire: glowing puffs and a light flash at each upper burst ----------
+/* ---------- fire: glowing puffs and a light flash at each burst ----------
    Not baked (no collisions): each puff drifts out of its burst, rises a little, grows, then fades.
-   Cubes mode draws them as glowing cubes; painterly mode draws thin glowing brush flicks instead. */
-const FIRE_BURSTS = [{ p: [0, 11.2, 0.3], t: 0 }, { p: [0, 15.6, 0.3], t: 0.25 }];
-const fireGeo = (() => {
+   Cubes mode draws them as glowing cubes; painterly mode draws thin glowing brush flicks instead.
+   Each fire set has its own clock: the upper fire runs on the upper clock; the lower fire runs on the
+   lower clock (R − t), so it plays backwards: puffs fly in, turn from deep red to white-hot, shrink and
+   vanish into the burst point the moment the wall is whole, and the flash comes last. */
+function makeFire({ bursts, look }) {
+  const FIRE_BURSTS = bursts;
   const box = new THREE.BoxGeometry(1, 1, 1), g = new THREE.InstancedBufferGeometry(), N = 380 * FIRE_BURSTS.length;
   g.index = box.index; g.setAttribute('position', box.attributes.position);
   const P = new Float32Array(N * 3), V = new Float32Array(N * 3), A = new Float32Array(N * 4), T = new Float32Array(N * 4);
@@ -262,9 +265,8 @@ const fireGeo = (() => {
   }
   for (const [k, arr, n] of [['fP', P, 3], ['fV', V, 3], ['fA', A, 4], ['fT', T, 4]]) g.setAttribute(k, new THREE.InstancedBufferAttribute(arr, n));
   g.instanceCount = N;
-  return g;
-})();
-const fireU = { uFireT: { value: -1 } };   // seconds since the upper blast
+  const fireGeo = g;
+const fireU = { uFireT: { value: -1 } };   // seconds on this fire's clock
 const fireGLSL = /* glsl */`
   attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT;
   uniform float uFireT;
@@ -302,7 +304,7 @@ function makeFireStrokes(){
       float tl = fLocal(0.0), sc = fSize(tl);
       if (sc <= 0.0){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       mat4 VP = projectionMatrix * viewMatrix;
-      vec4 c0 = VP * vec4(fPos(tl), 1.0), c1 = VP * vec4(fPos(max(fLocal(-0.03), 0.0)), 1.0);
+      vec4 c0 = VP * vec4(fPos(tl), 1.0), c1 = VP * vec4(fPos(max(fLocal(${look.toFixed(3)}), 0.0)), 1.0);
       if (c0.w <= 0.1 || c1.w <= 0.1){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       vec2 dv = (c0.xy/c0.w - c1.xy/c1.w) * 0.5 * uRes; float spd = length(dv) / 0.03;
       vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
@@ -325,11 +327,19 @@ function makeFireStrokes(){
 }
 let fireStrokes = null;
 // one flash light per burst: a sharp peak that fades in about half a second, with a little flicker
+// (on the reversed clock the same curve plays backwards: the light swells and peaks as the fire vanishes)
 const flashes = FIRE_BURSTS.map(b => { const L = new THREE.PointLight(0xffa650, 0, 60, 1.6); L.position.set(b.p[0], b.p[1], b.p[2] + 1.2); scene.add(L); return L; });
-function applyFire(tu){
-  fireU.uFireT.value = tu;
-  FIRE_BURSTS.forEach((b, i) => { const tl = tu - b.t;
-    flashes[i].intensity = tl > 0 ? 1400 * Math.exp(-tl / 0.22) * (0.85 + 0.15 * Math.sin(tl * 61 + i * 2)) + 160 * Math.exp(-tl / 1.2) : 0; });
+return {
+  apply(tu){
+    fireU.uFireT.value = tu;
+    FIRE_BURSTS.forEach((b, i) => { const tl = tu - b.t;
+      flashes[i].intensity = tl > 0 ? 1400 * Math.exp(-tl / 0.22) * (0.85 + 0.15 * Math.sin(tl * 61 + i * 2)) + 160 * Math.exp(-tl / 1.2) : 0; });
+  },
+  setPaint(on){
+    if (on && !fireStrokes) { fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); }
+    fireCubes.visible = !on; if (fireStrokes) fireStrokes.visible = on;
+  },
+};
 }
 
 /* ---------- timeline ---------- */
@@ -343,12 +353,18 @@ function applyTime(t) {
   lowerBoom.setTime(lowerTime(t));
   upperBoom.setTime(t);
   upperBoom.setBurstOffsets([clocks.upper, clocks.upper]);   // move both upper bursts to the chosen moment
-  applyFire(upperTime(t));
+  fires.upper.apply(upperTime(t));
+  fires.lower.apply(lowerTime(t));
 }
 
 /* ---------- painterly mode ---------- */
 const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.3 });
 let paintOn = false;
+const fires = {
+  upper: makeFire({ look: -0.03, bursts: [{ p: [0, 11.2, 0.3], t: 0 }, { p: [0, 15.6, 0.3], t: 0.25 }] }),
+  // lower clock: the top of the lower floors left first (t = 0), the ground floor last (about 0.9 s)
+  lower: makeFire({ look: 0.03, bursts: [{ p: [0, 6.6, 0.3], t: 0.05 }, { p: [0, 1.6, 0.3], t: 0.9 }] }),
+};
 function setPaint(on) {
   paintOn = !!on;
   if (paintOn && !upperBoom.strokes) {
@@ -360,8 +376,7 @@ function setPaint(on) {
     painter.overlayScene.add(s);
   }
   if (!paintOn) { upperBoom.removeStrokes(); lowerBoom.removeStrokes(); }
-  if (paintOn && !fireStrokes) { fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); }
-  fireCubes.visible = !paintOn; if (fireStrokes) fireStrokes.visible = paintOn;
+  fires.upper.setPaint(paintOn); fires.lower.setPaint(paintOn);
   document.querySelectorAll('#lookSeg button').forEach(b => b.setAttribute('aria-pressed', String(!!+b.dataset.v === paintOn)));
 }
 

@@ -57,6 +57,8 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
 .bar { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--ink); border-radius: 3px; }
 .bar.beat i { background: #d9663a; }
+.spec { display: flex; align-items: flex-end; gap: 1px; height: 26px; }
+.spec i { flex: 1; height: 100%; border-radius: 1px; transform-origin: bottom; transform: scaleY(0.04); }
 
 .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .foot button { background: transparent; padding: 0; min-height: 0; color: var(--muted); }
@@ -71,12 +73,13 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
 #keys td { padding: 5px 0; vertical-align: top; border-top: 1px solid var(--line); }
 #keys td:first-child { white-space: nowrap; padding-right: 12px; }
 kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--soft); }
-#toast { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--panel);
+#toast { position: fixed; top: calc(70px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--panel);
   border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; pointer-events: none; backdrop-filter: blur(16px); z-index: 30; }
 #bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
-#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); font-size: 11px; color: #c9cbd6; opacity: 0.8; pointer-events: none; }
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); max-width: calc(100vw - 140px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; font-size: 11px; color: #c9cbd6; opacity: 0.8; pointer-events: none; }   /* top right stays free for the host site's link */
 #tap { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20, 22, 40, 0.35); border: 0; color: #fff; font-family: inherit; font-size: 20px; font-weight: 600; cursor: pointer; z-index: 5; }
 #tap span { padding: 14px 22px; border-radius: 999px; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: #c9cbd6; pointer-events: none; }
@@ -111,7 +114,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 <div id="ui">
   <header>
     <h1>Paint Pulse</h1>
-    <p>An oil-paint ball that listens. Bass breaks up its red bottom, mids its golden middle, highs its blue top; quiet passages pull the strokes back into a ball.</p>
+    <p>An oil-paint ball that listens. Its colours run through the spectrum, deep red bass to violet highs: each frequency swells and breaks up its own part of the ball, and quiet passages pull the strokes back together.</p>
   </header>
 
   <div class="grp">
@@ -125,9 +128,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   </div>
 
   <div class="meters" aria-label="Audio levels">
-    <span>Low · bottom</span><div class="bar"><i id="mLow" style="background:#d2553c"></i></div>
-    <span>Mid · middle</span><div class="bar"><i id="mMid" style="background:#d6a83a"></i></div>
-    <span>High · top</span><div class="bar"><i id="mHigh" style="background:#5f7fdc"></i></div>
+    <span>Spectrum</span><div class="spec" id="spec" title="40 Hz (left) to 14 kHz (right); colours match the ball"></div>
     <span>Beat</span><div class="bar beat"><i id="mBeat"></i></div>
     <span>Spread</span><div class="bar"><i id="mSpread"></i></div>
   </div>
@@ -177,7 +178,7 @@ const TEXT = {
   demoName: 'Demo track (120 BPM, synthesised)', demoFailed: 'The demo track failed to render', badFile: 'This file cannot be decoded. Try MP3, WAV, M4A or OGG.',
   notAudio: 'That is not an audio file', noFull: 'Full screen is not available here', fullDenied: 'Full screen is not allowed here',
   painted: 'Painted', cubes: 'Plain cubes', swirl: 'Swirling paths', straight: 'Straight paths', rotateOn: 'Auto-rotate on', rotateOff: 'Auto-rotate off',
-  sensitivity: 'Sensitivity', pieces: 'pieces', lite: 'Lite mode · open on a desktop for the full version', tap: 'Tap to start · sound on',
+  sensitivity: 'Sensitivity', pieces: 'pieces', lite: 'Lite mode · full version on desktop', tap: 'Tap to start · sound on',
 };
 // Lite mode for phones and small screens: pixel ratio 1, about a quarter of the pieces. ?full=1 turns it off, ?lite=1 forces it.
 const QS = new URLSearchParams(location.search);
@@ -212,30 +213,37 @@ const backdrop = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), new THREE.
 }));
 scene.add(backdrop);
 
-/* ---------- the ball: a filled voxel sphere in three latitude bands, baked once as an outward burst ---------- */
-// Bottom = low, middle = mid, top = high: seen from the side, all three bands stay visible at once
-// (a core / shell split would hide the inner bands), and "bass below, treble above" reads naturally.
-// Each band is a burst of its own, so setBurstOffsets gives every band its own clock from one bake.
+/* ---------- the ball: a filled voxel sphere that maps the spectrum, baked once as an outward burst ---------- */
+// 24 log-spaced bands, 40 Hz – 14 kHz, run continuously over the ball: low at the bottom, high at the top, but along
+// a wavy spiral, so bands lean into each other and no edge shows. Each piece also borrows a neighbouring band now and
+// then, so bands interleave. Each band is a burst of its own: setBurstOffsets gives every band its own clock.
 const R = 2.1, S = LITE ? 0.105 * Math.cbrt(4) : 0.105, pieces = [];   // lite: a quarter of the pieces
 const rnd = (s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(77);
-const BANDS = [   // hues: low = crimson / orange, mid = ochre / gold, high = cobalt / violet
-  { name: 'Low',  hz: [30, 110],      hue: [0.985, 0.07], css: '#d2553c', kick: 1.0 },
-  { name: 'Mid',  hz: [300, 2500],   hue: [0.10, 0.17],  css: '#d6a83a', kick: 0.7 },
-  { name: 'High', hz: [4000, 14000], hue: [0.58, 0.74],  css: '#5f7fdc', kick: 0.6 },
-];
-const SPLIT = 0.265 * R;   // equal volume per band
+const NB = 24, F0 = 40, F1 = 14000;
+// crimson → orange → gold, a quick pass through olive and teal, then blue → violet (an even hue sweep is mostly green)
+const HUES = [[0, 0.975], [0.22, 1.06], [0.42, 1.13], [0.55, 1.36], [0.68, 1.55], [0.85, 1.65], [1, 1.75]];
+const hueAt = u => { let i = 1; while (i < HUES.length - 1 && u > HUES[i][0]) i++;
+  const [u0, h0] = HUES[i - 1], [u1, h1] = HUES[i]; return (h0 + (h1 - h0) * Math.min(1, Math.max(0, (u - u0) / (u1 - u0)))) % 1; };
+const satAt = u => 0.62 - 0.2 * Math.exp(-(((u - 0.62) / 0.16) ** 2));   // calmer greens and cyans
+const BANDS = Array.from({ length: NB }, (_, i) => {
+  const u = (i + 0.5) / NB;
+  return { hz: [F0 * Math.pow(F1 / F0, i / NB), F0 * Math.pow(F1 / F0, (i + 1) / NB)], u, kick: 1 - 0.4 * u,
+    css: new THREE.Color().setHSL(hueAt(u), 0.6, 0.55).getStyle() };
+});
 const col = new THREE.Color();
-const N = Math.ceil(R / S), counts = [0, 0, 0];
+const N = Math.ceil(R / S), counts = new Array(NB).fill(0);
 for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) for (let k = -N; k <= N; k++) {
   const x = i * S, y = j * S, z = k * S, r = Math.hypot(x, y, z);
   if (r > R) continue;
   const f = r / R, nx = x / (r || 1), ny = y / (r || 1), nz = z / (r || 1);
-  const yb = y + (rnd() - 0.5) * 0.18 + 0.08 * Math.sin(x * 3.3 + z * 2.1);   // a ragged, painted edge between bands
-  const bi = yb < -SPLIT ? 0 : (yb > SPLIT ? 2 : 1), B = BANDS[bi];
-  const swirl = 0.5 + 0.5 * Math.sin(nx * 3.1 + ny * 2.3 + Math.sin(nz * 2.7) * 1.6);
-  const h0 = B.hue[0], h1 = B.hue[1] < h0 ? B.hue[1] + 1 : B.hue[1];
-  col.setHSL((h0 + (h1 - h0) * swirl) % 1, 0.62, 0.42 + 0.14 * swirl + 0.12 * (1 - f))   // lighter towards the core
-     .offsetHSL((rnd() - 0.5) * 0.025, 0, (rnd() - 0.5) * 0.06);
+  // spectrum coordinate: height, twisted along a spiral and a smooth wobble, then made equal-volume (sphere CDF along y)
+  const lon = Math.atan2(z, x);
+  const yy = Math.max(-1, Math.min(1, y / R + 0.22 * Math.sin(2 * lon + 3.2 * y / R) + 0.07 * Math.sin(x * 2.3 + z * 1.7) * Math.cos(y * 2.9)));
+  const u = Math.max(0, Math.min(0.9999, 0.5 + 0.75 * yy - 0.25 * yy * yy * yy));
+  const bi = Math.max(0, Math.min(NB - 1, Math.floor(u * NB + (rnd() - 0.5) * 1.6)));
+  const uc = Math.max(0, Math.min(1, u + (rnd() - 0.5) * 0.03));
+  col.setHSL(hueAt(uc), satAt(uc), 0.43 + 0.05 * Math.sin(lon * 3 + y * 2) + 0.12 * (1 - f))
+     .offsetHSL(0, 0, (rnd() - 0.5) * 0.06);
   // launch: outward with a swirl around the y axis; the skin leaves first, the core last
   const sp = (0.75 + 1.2 * rnd()) * (0.6 + 0.5 * f);
   const tx = -nz, tz = nx, sw = 0.45 * (0.4 + rnd());
@@ -247,31 +255,41 @@ for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) for (let k = -N; k <
 const T_MAX = 3.0;   // debris clock range per band: 0 = whole, T_MAX = fully scattered
 const boom = new BakedDebris({ pieces, bursts: BANDS.map(() => ({ position: [0, 0, 0], radius: 0 })), gravity: 0, ground: null,
   pieceSize: S, duration: T_MAX + 1, step: 1 / 60, seed: 7 });
-/* ---------- flow: a time-flowing swirl on top of the bake (BakedDebris displace hook) ---------- */
-// The offset grows with d.local, the piece's own time since launch, so it is 0 while the ball is whole and grows
-// as the band spreads. The field itself keeps moving (uFlowT), so a piece meets a different field on the way out
-// and on the way back, and no two scatters take the same shape. Low and high turn one way, the middle the other.
+/* ---------- live motion on top of the bake (BakedDebris displace hook) ---------- */
+// 1. Breathing: each band's live level (uSpec) pushes its part of the ball outward and makes it shiver, even while
+//    the ball is whole; a kick (uPulse) pumps the whole ball. Both are 0 in silence, so quiet parts show a clean ball.
+// 2. Flow: a drifting swirl that grows with d.local, the piece's own time since launch, so it is 0 on the whole ball.
+//    The field keeps moving (uFlowT), so a piece meets a different field on the way out and on the way back.
 const flow = {
-  uniforms: { uFlowT: { value: 0 }, uFlowAmp: { value: 1.2 } },
+  uniforms: { uFlowT: { value: 0 }, uFlowAmp: { value: 1.2 }, uSpec: { value: new Float32Array(NB) }, uPulse: { value: 0 } },
   glsl: /* glsl */`
     uniform float uFlowT;
     uniform float uFlowAmp;
+    uniform float uSpec[${NB}];
+    uniform float uPulse;
     vec3 debrisDisplace(vec3 p, DebrisInfo d) {
-      if (d.local <= 0.0) return vec3(0.0);
-      float k = uFlowAmp * smoothstep(0.0, 1.8, d.local);       // 0 at launch, full once the piece is well out
-      float ft = uFlowT + d.time;                                  // d.time carries the strokes' look-ahead
-      vec3 q = p * 0.42;
-      vec3 w = vec3(sin(q.y * 1.9 + ft * 0.9) + sin(q.z * 1.3 - ft * 0.6),
-                    sin(q.z * 1.7 + ft * 0.7) + sin(q.x * 1.1 + ft * 0.8),
-                    sin(q.x * 1.5 - ft * 0.8) + sin(q.y * 1.2 + ft * 0.5));   // a smooth, drifting field
-      float dir = abs(d.burst - 1.0) < 0.5 ? -1.0 : 1.0;
-      float a = dir * (0.45 + 0.3 * sin(ft * 0.45 + d.burst * 2.1 + q.y));     // a swirl about the vertical axis
-      vec2 r = vec2(p.x * cos(a) - p.z * sin(a), p.x * sin(a) + p.z * cos(a)) - p.xz;
-      return k * (0.5 * w + vec3(r.x, 0.0, r.y) * 0.6);
+      float ft = uFlowT + d.time;                                   // d.time carries the strokes' look-ahead
+      float rl = length(p);
+      vec3 n = p / max(rl, 1e-3);
+      float e = uSpec[int(d.burst + 0.5)];
+      float skin = smoothstep(1.2, 2.1, rl);                        // the outer shell moves, the core stays
+      float shiver = 0.35 * sin(ft * 9.0 + dot(n, vec3(5.0, 3.0, 4.0))) + 0.25 * sin(ft * 4.0 + p.y * 3.0);   // a smooth ripple, no gaps
+      vec3 off = n * skin * (0.26 * e * (1.0 + shiver) + 0.2 * uPulse);
+      if (d.local > 0.0) {
+        float k = uFlowAmp * smoothstep(0.0, 1.8, d.local);        // 0 at launch, full once the piece is well out
+        vec3 q = p * 0.42;
+        vec3 w = vec3(sin(q.y * 1.9 + ft * 0.9) + sin(q.z * 1.3 - ft * 0.6),
+                      sin(q.z * 1.7 + ft * 0.7) + sin(q.x * 1.1 + ft * 0.8),
+                      sin(q.x * 1.5 - ft * 0.8) + sin(q.y * 1.2 + ft * 0.5));   // a smooth, drifting field
+        float a = sin(d.burst * 0.55 + 0.6) * (0.45 + 0.3 * sin(ft * 0.45 + q.y));   // swirl direction drifts with the band
+        vec2 r = vec2(p.x * cos(a) - p.z * sin(a), p.x * sin(a) + p.z * cos(a)) - p.xz;
+        off += k * (0.5 * w + vec3(r.x, 0.0, r.y) * 0.6);
+      }
+      return off;
     }`,
 };
 let flowOn = true;
-const setFlow = on => { flowOn = on; boom.setDisplace(on ? flow : null);
+const setFlow = on => { flowOn = on; flow.uniforms.uFlowAmp.value = on ? 1.2 : 0;
   document.querySelectorAll('#flowSeg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === '1') === on))); };
 boom.setDisplace(flow);
 scene.add(boom.mesh);
@@ -388,56 +406,66 @@ const band = (lo, hi) => { let s = 0; const a = binOf(lo), b = Math.max(a + 1, b
 const prevFreq = new Uint8Array(1024);
 // Per band: level, a slow peak (to compare bands that differ in loudness), onset strength (spectral flux) with an
 // adaptive threshold, and the band's own debris clock t. A later per-band effect can hang off this state too.
-const BS = BANDS.map(() => ({ level: 0, fast: 0, peak: 0.2, flux: 0, fluxAvg: 0, fluxDev: 0.01, last: -1, kick: 0, onsets: 0, t: 0, punch: 0 }));
-const A = { low: 0, mid: 0, high: 0, beat: 0, section: 0, beats: 0 };
+const BS = BANDS.map(() => ({ level: 0, env: 0, peak: 0.15, flux: 0, fluxAvg: 0, fluxDev: 0.01, last: -1, kick: 0, onsets: 0, t: 0, tShow: 0, punch: 0, show: 0 }));
+const A = { low: 0, mid: 0, high: 0, beat: 0, section: 0, beats: 0, energy: 0 };
+const kickBins = [30, 120];   // the beat (Beat meter, whole-ball pulse) comes from the kick range
+let kickS = { flux: 0, fluxAvg: 0, fluxDev: 0.01, last: -1 };
+function onsetFlux(lo, hi) { let f = 0; const a = binOf(lo), b = Math.max(a + 1, binOf(hi)); for (let i = a; i < b; i++) { const d = freq[i] - prevFreq[i]; if (d > 0) f += d; } return f / ((b - a) * 255); }
 function listen(now, dt) {
   const live = track && !paused && analyser;
   if (live) { analyser.getByteFrequencyData(freq); A.section += (sectionAt(position() + 0.1) - A.section) * Math.min(1, dt * 7); }
   else A.section *= 1 - Math.min(1, dt * 3);
-  const k = Math.min(1, dt * 2.5);   // ~0.4 s memory for the onset threshold
+  const k = Math.min(1, dt * 2.5);   // ~0.4 s memory for the onset thresholds
+  const onset = (s, flux) => {        // adaptive threshold: an onset is a jump well above the recent average
+    const thr = s.fluxAvg + Math.max(0.012, 2 * s.fluxDev); let hit = 0;
+    if (live && flux > thr && now - s.last > 0.16) { s.last = now; hit = Math.min(1, 0.55 + 0.45 * (flux - thr) / (thr + 0.02)); }
+    s.fluxAvg += (flux - s.fluxAvg) * k; s.fluxDev += (Math.abs(flux - s.fluxAvg) - s.fluxDev) * k; return hit;
+  };
+  let sum = 0;
   BANDS.forEach((B, n) => {
     const s = BS[n];
-    if (live) {
-      s.level = band(B.hz[0], B.hz[1]);
-      let f = 0; const a = binOf(B.hz[0]), b = Math.max(a + 1, binOf(B.hz[1]));
-      for (let i = a; i < b; i++) { const d = freq[i] - prevFreq[i]; if (d > 0) f += d; }
-      s.flux = f / ((b - a) * 255);
-    } else { s.level *= 0.85; s.flux = 0; }
-    s.fast += (s.level - s.fast) * Math.min(1, dt * 12);
-    s.peak = Math.max(s.fast, s.peak - dt * 0.06, 0.12);
-    const thr = s.fluxAvg + Math.max(0.012, 2 * s.fluxDev);
-    if (live && s.flux > thr && now - s.last > 0.2) {
-      s.last = now; s.onsets++; s.kick = Math.min(1, 0.55 + 0.45 * (s.flux - thr) / (thr + 0.02));
-      if (n === 0) { A.beats++; A.beat = s.kick; }
-    }
-    s.fluxAvg += (s.flux - s.fluxAvg) * k;
-    s.fluxDev += (Math.abs(s.flux - s.fluxAvg) - s.fluxDev) * k;
+    s.level = live ? band(B.hz[0], B.hz[1]) : s.level * 0.85;
+    s.env += (s.level - s.env) * Math.min(1, dt * (s.level > s.env ? 40 : 5));   // fast attack, slow release
+    s.peak = Math.max(s.env, s.peak - dt * 0.02, 0.12);   // a slow peak: a soft passage stays soft
+    const hit = onset(s, live ? onsetFlux(B.hz[0], B.hz[1]) : 0);
+    if (hit) { s.kick = Math.max(s.kick, hit); s.onsets++; }
+    s.show = (s.env / s.peak) * smooth(0.03, 0.12, s.env);   // 0..1, comparable across bands
+    sum += s.show;
   });
+  const kh = onset(kickS, live ? onsetFlux(kickBins[0], kickBins[1]) : 0);
+  if (kh) { A.beats++; A.beat = Math.max(A.beat, kh); }
   if (live) prevFreq.set(freq);
-  A.low = BS[0].level; A.mid = BS[1].level; A.high = BS[2].level;
+  const third = a => BS.slice(a * NB / 3, (a + 1) * NB / 3).reduce((x, s) => x + s.env, 0) / (NB / 3);
+  A.low = third(0); A.mid = third(1); A.high = third(2);
+  A.energy += (sum / NB - A.energy) * Math.min(1, dt * 6);
   A.beat = Math.max(0, A.beat - dt * 3.5);
 }
 
-/* ---------- driving the three debris clocks ---------- */
-let sens = 1.3, hold = null;   // hold: fixed debris times (a number or [low, mid, high]), for tests and screenshots
+/* ---------- driving the band clocks ---------- */
+let sens = 1.3, hold = null;   // hold: fixed debris times (a number or one per band), for tests and screenshots
+const tRaw = new Float32Array(NB);
 function drive(dt) {
   // each band: loud passages and its own loudness open it, its onsets kick it outward at once, quiet parts pull it back
   BANDS.forEach((B, n) => {
     const s = BS[n];
-    const energy = A.section * 0.2 + 0.8 * (s.fast / s.peak) * smooth(0.04, 0.15, s.fast);   // mostly the band's own loudness
-    const base = T_MAX * 0.68 * smooth(0.25, 0.95, energy * sens);
+    // squared level: a band stands out only when it is near its own peak; quiet sections damp everything
+    const energy = (A.section * 0.15 + 0.55 * s.show * s.show) * (0.4 + 0.6 * A.section);
+    const base = T_MAX * 0.6 * smooth(0.15, 0.9, energy * sens);
     if (s.kick > 0) {
-      const loud = 0.15 + 0.85 * smooth(0.2, 0.7, energy * sens);   // onsets in quiet parts only nudge the band
-      s.t += T_MAX * (0.07 + 0.11 * s.kick) * B.kick * Math.min(1.5, sens) * loud;
-      s.punch = Math.min(0.35, s.punch + (0.1 + 0.12 * s.kick) * B.kick * loud); s.kick = 0;
+      const loud = 0.12 + 0.88 * smooth(0.1, 0.5, energy * sens);   // onsets in quiet parts only nudge the band
+      s.t += T_MAX * (0.1 + 0.15 * s.kick) * B.kick * Math.min(1.5, sens) * loud;
+      s.punch = Math.min(0.45, s.punch + (0.12 + 0.16 * s.kick) * B.kick * loud); s.kick = 0;
     }
     const target = Math.min(T_MAX, base + T_MAX * s.punch);
     const rate = target > s.t ? 6 : 2.8;                 // scatter fast, gather nearly as fast
     s.t += Math.max(-rate * dt, Math.min(rate * dt, (target - s.t) * Math.min(1, dt * 9)));
     s.t = Math.min(T_MAX, Math.max(0, s.t));
-    if (hold !== null) s.t = Array.isArray(hold) ? hold[n] : hold;
     s.punch = Math.max(0, s.punch - dt * 2.2);
+    tRaw[n] = s.t;
   });
+  // neighbours pull on each other a little, so the spectrum opens as a wave, not as separate blocks
+  BS.forEach((s, n) => { s.tShow = 0.25 * tRaw[Math.max(0, n - 1)] + 0.5 * tRaw[n] + 0.25 * tRaw[Math.min(NB - 1, n + 1)]; });
+  if (hold !== null) BS.forEach((s, n) => { s.tShow = Array.isArray(hold) ? hold[n] : hold; });
 }
 
 /* ---------- UI ---------- */
@@ -497,28 +525,34 @@ if (LITE) {   // WebAudio needs a tap before it can play
   tap.onclick = () => { tap.hidden = true; playDemo(); };
   if (innerWidth <= 600) setPanel(false);   // the bottom sheet would cover the ball; 'Show controls' brings it back
 }
-$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} ${TEXT.pieces} · ${counts.join(' / ')}`;
+$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} ${TEXT.pieces} · ${NB} bands`;
 
 /* ---------- loop ---------- */
-const bars = ['mLow', 'mMid', 'mHigh', 'mBeat', 'mSpread'].map($);
+const bars = ['mBeat', 'mSpread'].map($);
+const specBars = BANDS.map(B => { const i = document.createElement('i'); i.style.background = B.css; $('spec').append(i); return i; });
 const fps = { n: 0, t0: performance.now(), value: 0 };
 let prev = performance.now();
 renderer.setAnimationLoop(nowMs => {
   const dt = Math.min(0.05, (nowMs - prev) / 1000); prev = nowMs; const now = nowMs / 1000;
   listen(now, dt);
   drive(dt);
-  boom.setTime(0); boom.setBurstOffsets(BS.map(s => -s.t));   // band n shows its own time BS[n].t
+  boom.setTime(0); boom.setBurstOffsets(BS.map(s => -s.tShow));   // band n shows its own time
+  const live = hold === null ? 1 : 0;
+  BS.forEach((s, n) => { flow.uniforms.uSpec.value[n] = live * s.show * (0.5 + 0.5 * A.section); });
+  flow.uniforms.uPulse.value = live * A.beat;
   boom.setSizeScale(1 + 0.4 * A.high);
-  flow.uniforms.uFlowT.value += dt * (0.6 + 1.6 * A.beat);   // the field drifts on its own and surges on beats
-  if (strokes) strokes.material.uniforms.uBright.value = 1 + 0.45 * A.beat;
+  flow.uniforms.uFlowT.value += dt * (0.5 + 1.2 * A.energy + 1.6 * A.beat);   // the field drifts, faster when loud, surging on beats
+  if (strokes) { strokes.material.uniforms.uBright.value = 1 + 0.45 * A.beat;
+    strokes.material.uniforms.uLookAhead.value = -(0.03 + 0.05 * A.energy + 0.03 * A.beat); }   // longer strokes when loud
   controls.autoRotateSpeed = 0.5 + 2.5 * A.beat;
   controls.update();
   if (painted) painter.render(renderer); else renderer.render(scene, camera);
-  [A.low, A.mid, A.high, A.beat, Math.max(...BS.map(s => s.t)) / T_MAX].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
+  BS.forEach((s, n) => { specBars[n].style.transform = `scaleY(${(0.04 + 0.96 * clamp01(s.show)).toFixed(3)})`; });
+  [A.beat, Math.max(...BS.map(s => s.tShow)) / T_MAX].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
   fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
 });
 window.__pp = { boom, painter, A, fps, T_MAX, LITE, setPainted, playDemo, position: () => position(), controls,
-  BS, BANDS, get t() { return Math.max(...BS.map(s => s.t)); }, get ts() { return BS.map(s => s.t); }, hold(v) { hold = v; }, flow, setFlow };
+  BS, BANDS, get t() { return Math.max(...BS.map(s => s.tShow)); }, get ts() { return BS.map(s => s.tShow); }, NB, get hold() { return hold; }, hold(v) { hold = v; }, flow, setFlow };
 </script>
 </body>
 </html>

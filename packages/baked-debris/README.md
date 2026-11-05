@@ -14,7 +14,7 @@ import { BakedDebris, voxelCollider } from 'baked-debris';
 const boom = new BakedDebris({
   pieces: [{ position: [x, y, z], color: 0xd9c4a0, size: 0.25 }, ...],
   bursts: [{ position: [0, 1, 0], direction: [0, 0.3, 1], radius: 1.6, time: 0.5 }],
-  solid: voxelCollider((i, j, k) => grid.has(i, j, k), 0.25),   // optional
+  solid: voxelCollider((i, j, k) => grid[i + nx * (j + ny * k)] === 1, 0.25),   // optional; grid: Uint8Array of nx * ny * nz
   ground: 0,
 });
 scene.add(boom.mesh);
@@ -26,9 +26,32 @@ boom.setTime(seconds);
 - Each piece is launched by the nearest burst whose `radius` reaches it. Pieces no burst reaches stay in place, so you can pass a whole model and let the bursts decide what breaks.
 - `solid(x, y, z)` should return `true` inside anything the debris should hit: walls, what is still standing, cars, balconies. Remove the pieces that fly from it.
 - `solid` is called for every probe of every simulation step: millions of times per bake. Keep it cheap. For voxels, look up a typed array (`grid[i + nx * (j + ny * k)]`); a `Set` of `"i,j,k"` strings builds a string per call and can make the bake many times slower.
+- Collider helpers: `voxelCollider(get, cell = 1, origin = [0, 0, 0])` is true where `get(i, j, k)` is truthy, with `i = floor((x - origin[0]) / cell)` (same for y, z). So `origin` is the world position of the minimum corner of cell (0, 0, 0), not its centre. `boxCollider([{ min, max }, …])` is true inside axis-aligned boxes. `anyCollider(a, b, …)` is true where any of them is.
 - Changing physics options needs a new bake: `boom.rebake({ restitution: 0.5 })`. `rebake` accepts any option; `gravity`, `sizeScale` and `timeWarp` passed to it also update the GPU. Changing time, time warp or size alone does not need a bake: use `setTime`, `setTimeWarp`, `setSizeScale`.
 
-Requires three.js r160 or later (WebGL 2). Last tested with three.js r160.
+Requires three.js r160 or later (WebGL 2). Tested with three.js r160 and r187.
+
+## Pieces from a mesh
+
+```js
+import { BakedDebris, meshToPieces } from 'baked-debris';
+
+const pieces = meshToPieces(statue, { size: 0.1 });   // world space, from statue.matrixWorld
+scene.remove(statue);                                 // the pieces replace the mesh
+const boom = new BakedDebris({ pieces, bursts: [{ position: [0, 1, 0], radius: 0.8, time: 0.5 }] });
+```
+
+`meshToPieces(mesh, { size = 0.25, fill = 'volume', color })` returns one piece per grid cell whose centre is inside the mesh:
+
+- `size`: cube size. Cells sit on a world grid: cell *i* spans `[i * size, (i + 1) * size)` on each axis, so pieces line up with `voxelCollider(get, size)` (origin `[0, 0, 0]`).
+- `fill`: `'volume'` keeps every cell inside. `'surface'` keeps only inside cells that have an empty neighbour: a hollow shell one cell thick, with far fewer pieces.
+- `color`: a function `(x, y, z) => colour` for the cell centre. Without it, a piece takes the colour of the nearer surface straight above or below it: the material colour, times the interpolated vertex colour when the geometry has a `color` attribute. Each piece gets its own `Color`. A multi-material mesh uses each group's material.
+- The mesh must be closed (watertight). Each grid column is intersected with the triangles once, and the inside is between the 1st and 2nd hit, the 3rd and 4th, and so on. A column with an odd number of hits (a hole) drops the last one.
+- It uses `mesh.matrixWorld` and updates the parents first. It ignores morph targets, skinning and instancing.
+- Deterministic: the same mesh and options give the same pieces in the same order.
+- Speed: a 10k-triangle torus knot gives about 6k pieces in 3–15 ms (Node). The time grows with the number of cells.
+
+Pieces do not collide with each other, so debris flies through the part of the object that stays. To make it bounce off that part, build a `voxelCollider` from the pieces no burst reaches, and pass it as `solid`.
 
 ## Options
 
@@ -45,6 +68,7 @@ Requires three.js r160 or later (WebGL 2). Last tested with three.js r160.
 | `ground` | `0` | y of a ground plane, or `null`. |
 | `solid` | `null` | `(x, y, z) => boolean` collision query. |
 | `snap` | `0` | Voxel size, so resting pieces sit exactly on voxel tops. |
+| `killY` | `-50` | Pieces that fall below this y stop being simulated. |
 | `duration` | `20` | Seconds of motion simulated per piece. |
 | `step` | `1/90` | Simulation step. |
 | `secondary` | `0` | Share of flying pieces that burst again in mid-air into 8 half-size fragments. |
@@ -79,7 +103,7 @@ const painter = new PainterlyPass(scene, camera);
 painter.overlayScene.add(boom.createStrokes({ painter }));
 ```
 
-Flying pieces are then drawn as brush strokes on top of the painting, stretched along their screen velocity: long sweeps when fast, short strokes when hovering. The scene depth from the painter hides strokes behind buildings. While strokes are on, flying cubes are hidden; pieces still in place stay cubes and are painted with the scene. `boom.removeStrokes()` switches back.
+Flying pieces are then drawn as brush strokes on top of the painting, stretched along their screen velocity: long sweeps when fast, short strokes when hovering. "Flying" means every piece that has been launched: a piece that has landed stays a stroke (lying flat, because it does not move), and `boom.stats.flying` counts all of them. The scene depth from the painter hides strokes behind buildings. While strokes are on, flying cubes are hidden; pieces still in place stay cubes and are painted with the scene. `boom.removeStrokes()` switches back.
 
 `createStrokes` options: `strokeScale` (1.25), `maxWidth` in CSS pixels (34), `jitter` (0.16), `lookAhead` (−0.03 s: the stroke points from where the piece was a moment ago; use a positive value when you play the clock backwards), `keep` (1: the share of flying pieces drawn as strokes; each piece's choice is fixed, so nothing flickers. With large strokes, a lower `keep` saves overdraw. Change it live with `strokes.material.uniforms.uKeep.value`).
 

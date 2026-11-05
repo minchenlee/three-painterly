@@ -1,6 +1,7 @@
 // Type check of the hand-written .d.ts files (npm run typecheck). Never run; it only has to compile.
-import { Scene, PerspectiveCamera, Vector3, MeshStandardMaterial } from 'three';
-import { BakedDebris, voxelCollider, boxCollider, anyCollider, strokeFragment, type DebrisStats } from 'baked-debris';
+import { Scene, PerspectiveCamera, Vector3, MeshStandardMaterial, Mesh, BoxGeometry } from 'three';
+import { BakedDebris, voxelCollider, boxCollider, anyCollider, strokeFragment, meshToPieces, type DebrisStats } from 'baked-debris';
+import { withDisplace, patchCube, strokeFragment as rawStroke } from 'baked-debris/shaders';
 import { PainterlyPass } from 'painterly-pass';
 
 const scene = new Scene(), camera = new PerspectiveCamera(50, 1, 0.1, 100);
@@ -23,6 +24,16 @@ painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, keep: 0.
 boom.setDisplace(null);
 const s: string = strokeFragment;
 void stats; void s;
+
+const cube = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+const pieces = meshToPieces(cube, { size: 0.1, fill: 'surface' });
+new BakedDebris({ pieces: [...pieces, ...meshToPieces(cube, { color: (x, y) => (y > 0 ? 0xff0000 : 'blue') })], bursts: [] });
+const n: number = pieces[0].size;
+const g: string = withDisplace(rawStroke, null);
+patchCube(new MeshStandardMaterial(), { value: 0 });
+void n; void g;
+// @ts-expect-error: fill is 'volume' or 'surface'
+meshToPieces(cube, { fill: 'shell' });
 
 // @ts-expect-error: position needs 3 numbers
 new BakedDebris({ pieces: [{ position: [0, 1] }], bursts: [] });

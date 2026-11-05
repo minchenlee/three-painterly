@@ -2,7 +2,8 @@
  * Collision helpers. A collider is any function (x, y, z) => boolean in world units.
  */
 
-/** Voxel grid collider: `get(ix, iy, iz)` returns a truthy value for filled cells of size `cell`, starting at `origin`. */
+/** Voxel grid collider: `get(ix, iy, iz)` returns a truthy value for filled cells of size `cell`. `origin` is the world
+ * position of the minimum corner of cell (0, 0, 0): cell i spans [origin + i * cell, origin + (i + 1) * cell). */
 // `get` is called millions of times: index a typed array (i + nx * (j + ny * k)), not a Set of "i,j,k" strings.
 export function voxelCollider(get, cell = 1, origin = [0, 0, 0]) {
   const [ox, oy, oz] = origin;

@@ -74,7 +74,7 @@ so I can compare. Start from the defaults; tell me which options you changed and
 ```text
 Read https://raw.githubusercontent.com/minchenlee/three-painterly/main/llms.txt.
 Use BakedDebris to blow apart <object> in my three.js scene.
-Turn the object into cube pieces (position, color, size), and put 1–3 bursts where it should break.
+Turn the object into cube pieces with meshToPieces, and put 1–3 bursts where it should break.
 Give it a solid(x, y, z) collider for the walls and floor that the pieces should hit,
 using a typed-array lookup. Add a time slider that scrubs forwards and backwards with setTime.
 If the scene uses PainterlyPass, draw the flying pieces as brush strokes with createStrokes.
@@ -89,6 +89,8 @@ My scene uses PainterlyPass. Change its options so the painting looks <warmer / 
 bolder strokes / softer and pastel / closer to the original>. Change only the PainterlyPass
 options, show me the old and new values, and explain each change in one line.
 ```
+
+PainterlyPass options change how the scene is painted (strokes, palette, contrast), not its light. An overall mood such as dusk needs the scene's lights and sky changed too: orange, low sun, a darker sky. For that, remove "Change only the PainterlyPass options" from the prompt.
 
 ## License
 

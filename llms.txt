@@ -1,9 +1,9 @@
 # three-painterly
 
-> Two three.js modules, plain ES modules with no build step. PainterlyPass repaints any three.js scene in impressionist brush strokes. BakedDebris makes explosion debris that you can scrub and rewind: collisions are baked once on the CPU, and the GPU computes any moment directly from time. Both need three.js r160 or later and WebGL 2. Last tested with three.js r160. License: MIT.
+> Two three.js modules, plain ES modules with no build step. PainterlyPass repaints any three.js scene in impressionist brush strokes. BakedDebris makes explosion debris that you can scrub and rewind: collisions are baked once on the CPU, and the GPU computes any moment directly from time. Both need three.js r160 or later and WebGL 2. Tested with three.js r160 and r187. License: MIT.
 
 Repository: https://github.com/minchenlee/three-painterly
-npm names: `painterly-pass`, `baked-debris` (not published yet; until then, import from the repository's `packages/*/src/index.js`).
+Install: `npm i painterly-pass baked-debris three`
 
 ## Docs
 
@@ -32,6 +32,19 @@ composer.addPass(painter);          // replaces RenderPass
 ```
 
 Without a composer: `painter.setSize(w * dpr, h * dpr); painter.render(renderer);` draws to the screen.
+
+Toggle with a key (P), to compare with the plain render:
+
+```js
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // plain path only; PainterlyPass tone-maps by itself
+let painted = true;
+addEventListener('keydown', (e) => { if (e.code === 'KeyP') painted = !painted; });
+function frame() { painted ? composer.render() : renderer.render(scene, camera); }
+```
+
+Without ACES on the renderer the plain render looks darker and flatter, so the comparison is unfair. With BakedDebris strokes, also call `boom.removeStrokes()` when turning the painting off and `painter.overlayScene.add(boom.createStrokes({ painter }))` when turning it on.
+
+Options change how the scene is painted, not its light. For an overall mood such as dusk (orange light, darker sky), change the scene's lights, sky and fog; then tune `warmth`, `exposure`, `shadowTint` for the paint.
 
 Options (all are plain properties; change them at any time, e.g. `painter.strokeSize = 9`):
 
@@ -62,7 +75,7 @@ Extra fields:
 ## BakedDebris
 
 ```js
-import { BakedDebris, voxelCollider, boxCollider, anyCollider } from 'baked-debris';
+import { BakedDebris, meshToPieces, voxelCollider, boxCollider, anyCollider } from 'baked-debris';
 
 const boom = new BakedDebris({
   pieces: [{ position: [x, y, z], color: 0xd9c4a0, size: 0.25 }],   // one entry per cube
@@ -74,8 +87,11 @@ scene.add(boom.mesh);
 boom.setTime(seconds);   // any value, forwards or backwards
 ```
 
+Pieces from a mesh: `meshToPieces(mesh, { size = 0.25, fill = 'volume' | 'surface', color })` returns one piece (`{ position, size, color }`) per grid cell whose centre is inside a closed mesh, in world space (mesh.matrixWorld). `'surface'` keeps a hollow shell one cell thick. Colour: `color(x, y, z)` if given, else material colour times interpolated vertex colours. Cells sit on a world grid (cell i spans [i * size, (i + 1) * size)), so they match `voxelCollider(get, size)`. Deterministic; about 3–15 ms for 6k pieces from a 10k-triangle mesh. Remove the mesh from the scene; the pieces replace it.
+
 Rules:
 - A piece is launched by the nearest burst whose `radius` reaches it. Pieces no burst reaches stay in place.
+- `voxelCollider(get, cell = 1, origin = [0, 0, 0])`: `origin` is the world position of the minimum corner of cell (0, 0, 0); `i = floor((x - origin[0]) / cell)`.
 - `solid(x, y, z)` returns true inside anything the debris should hit. It is called millions of times per bake: use a typed-array lookup, not a Set of strings. Remove the flying pieces from what `solid` reports.
 - Bake time: about 0.2–2 s for 10k–200k pieces, on the main thread.
 
@@ -83,12 +99,12 @@ Methods:
 - `setTime(t)`, `setTimeWarp({ burst, hover } | null)`, `setSizeScale(s)`: no rebake.
 - `setBurstOffsets([dt0, dt1, …])`: move bursts in time without a rebake (first 32 bursts).
 - `rebake(changes)`: needed after any physics change (speed, restitution, friction, solid, pieces, bursts, seed, …).
-- `createStrokes({ painter, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. Use a positive `lookAhead` when the clock plays backwards. `keep` (0–1) draws only that share of flying pieces, fixed per piece; lower it for large strokes (live: `mesh.material.uniforms.uKeep.value`). `removeStrokes()` switches back.
+- `createStrokes({ painter, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. "Flying" = every launched piece: landed pieces stay strokes (`stats.flying` counts them all). Use a positive `lookAhead` when the clock plays backwards. `keep` (0–1) draws only that share of flying pieces, fixed per piece; lower it for large strokes (live: `mesh.material.uniforms.uKeep.value`). `removeStrokes()` switches back.
 - `setDisplace({ glsl, uniforms } | null)`: GPU offset on top of the bake (see below).
 - `dispose()`.
 - `boom.stats`: `{ pieces, flying, secondary }`. `boom.uniforms`: shader uniforms, including the displace hook's.
 
-Main options: pieceSize 0.25, gravity 9.81, speed [7, 18], stagger 1, spin 9, restitution 0.35, friction 0.6, stopSpeed 0.6, ground 0 (or null), solid null, snap 0, duration 20, step 1/90, secondary 0 (share of pieces that burst again into 8 fragments), timeWarp null, sizeScale 1, seed 4242, castShadow true, receiveShadow true, displace null, material (a MeshStandardMaterial; BakedDebris patches a clone).
+Main options: pieceSize 0.25, gravity 9.81, speed [7, 18], stagger 1, spin 9, restitution 0.35, friction 0.6, stopSpeed 0.6, ground 0 (or null), solid null, snap 0, killY -50 (pieces below it stop being simulated), duration 20, step 1/90, secondary 0 (share of pieces that burst again into 8 fragments), timeWarp null, sizeScale 1, seed 4242, castShadow true, receiveShadow true, displace null, material (a MeshStandardMaterial; BakedDebris patches a clone).
 
 Per-piece optional fields: `velocity`, `launchTime`, `burst`, `spin`, `axis`, `lifetime`.
 

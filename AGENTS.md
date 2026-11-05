@@ -13,7 +13,7 @@ Guide for coding agents that work on this repository. To use the library in anot
 
 - Plain ES modules. No build step, no TypeScript sources, no bundler. Examples load three.js r160 through an importmap.
 - Public API = what `src/index.js` exports, plus `baked-debris/shaders` (lower-level, may change). Every public change goes in the package README and in `CHANGELOG.md`.
-- Keep `peerDependencies.three` at `>=0.160.0` and keep "Last tested with three.js r…" in each package README correct.
+- Keep `peerDependencies.three` at `>=0.160.0` and keep "Tested with three.js r160 and r…" in each package README and in llms.txt correct.
 - BakedDebris output must stay deterministic: same options and seed, same bake. Do not use `Math.random` in the bake; use the seeded generator.
 - BakedDebris patches three.js shader chunks by string replacement. If you touch the patch, run `chunks.test.js`; it fails when a chunk it patches is missing.
 - PainterlyPass reads the depth buffer as standard depth. Do not remove the renderer checks (WebGPU, logarithmic depth, reverse depth).
@@ -24,6 +24,8 @@ Guide for coding agents that work on this repository. To use the library in anot
 ```sh
 npm install        # three as a dev dependency
 npm test           # node --test packages/*/test/*.test.js
+npm run typecheck  # tsc on the hand-written .d.ts files
+npm i --no-save three@0.187.0 @types/three@0.187.0 && npm test && npm run typecheck   # another three.js version; npm install restores 0.160.0
 python3 -m http.server   # then open packages/baked-debris/test/api.html and the examples
 ```
 

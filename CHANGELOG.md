@@ -12,6 +12,8 @@ Both packages share one version number until the first public release.
 - Normals are rebuilt from the neighbour on the same surface, so silhouettes and screen edges get correct stroke directions.
 
 ### baked-debris
+- New `meshToPieces(mesh, { size, fill, color })`: cube pieces for the inside (`'volume'`) or a one-cell shell (`'surface'`) of a closed mesh, in world space, with material or vertex colours. Deterministic; one triangle pass per grid column.
+- `baked-debris/shaders` has types (`src/shaders.d.ts`, `types` condition in `exports`).
 - `rebake()` keeps `gravity`, `sizeScale` and `timeWarp` in step on the GPU.
 - A piece that uses all 6 segments rests at its last hit instead of falling through the ground. Rest and free fall are marked explicitly, so pieces with zero start velocity fall correctly.
 - Options are validated before the bake; invalid values throw with the option name.
@@ -29,7 +31,8 @@ Both packages share one version number until the first public release.
 
 ### Both packages
 - Hand-written TypeScript types (`src/index.d.ts`, `types` condition in `exports`).
-- `npm test` (Node) and `npm run typecheck` at the repository root.
+- `npm test` (Node) and `npm run typecheck` at the repository root. GitHub Actions runs both with three.js 0.160.0 and the latest release.
+- Docs: P-key toggle for PainterlyPass (with ACES on the plain path and BakedDebris strokes), `voxelCollider` origin, `killY`, "flying" includes landed pieces, overall mood (dusk) needs lights and sky. Tested with three.js r160 and r187.
 
 ### Breaking changes against the pre-release code
 - `boom.mesh.material` is a clone of the material you pass.

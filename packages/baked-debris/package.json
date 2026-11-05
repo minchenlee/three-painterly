@@ -20,7 +20,10 @@
       "types": "./src/index.d.ts",
       "default": "./src/index.js"
     },
-    "./shaders": "./src/shaders.js"
+    "./shaders": {
+      "types": "./src/shaders.d.ts",
+      "default": "./src/shaders.js"
+    }
   },
   "files": [
     "src",

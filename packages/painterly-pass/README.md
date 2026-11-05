@@ -30,7 +30,20 @@ painter.setSize(innerWidth * devicePixelRatio, innerHeight * devicePixelRatio);
 painter.render(renderer);   // draws to the screen
 ```
 
-Requires three.js r160 or later and a `PerspectiveCamera`. Last tested with three.js r160.
+Requires three.js r160 or later and a `PerspectiveCamera`. Tested with three.js r160 and r187.
+
+### Toggle the effect with a key
+
+```js
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // for the plain path; PainterlyPass tone-maps by itself
+let painted = true;
+addEventListener('keydown', (e) => { if (e.code === 'KeyP') painted = !painted; });
+function frame() { painted ? composer.render() : renderer.render(scene, camera); }
+```
+
+Without `renderer.toneMapping = ACESFilmicToneMapping`, the plain render has no tone mapping and looks darker and flatter than the painting, so the comparison is not fair. Setting it does not change the painted path: PainterlyPass renders the scene into its own target, where three.js does not tone-map. `examples/basic.html` does the same with one composer: it switches `enabled` on a `RenderPass` + `OutputPass` pair and on the PainterlyPass.
+
+With BakedDebris brush strokes, also switch the strokes, because the cubes stay hidden while strokes exist: call `boom.removeStrokes()` when you turn the painting off (flying cubes come back), and `painter.overlayScene.add(boom.createStrokes({ painter }))` when you turn it on again.
 
 ## Options
 

@@ -179,12 +179,30 @@ export class BakedDebris {
   dispose(): void;
 }
 
-/** Voxel grid: get(i, j, k) is truthy for filled cells of size cell, starting at origin. Use a typed-array lookup. */
+/**
+ * Voxel grid: get(i, j, k) is truthy for filled cells. Cell (i, j, k) spans origin + [i, i + 1) * cell on x (same for y, z),
+ * so origin is the world position of the minimum corner of cell (0, 0, 0), not its centre. Use a typed-array lookup.
+ */
 export function voxelCollider(get: (i: number, j: number, k: number) => unknown, cell?: number, origin?: Vec3): Collider;
 /** Axis-aligned boxes. */
 export function boxCollider(boxes: { min: Vec3; max: Vec3 }[]): Collider;
 /** True where any of the colliders is. */
 export function anyCollider(...colliders: Collider[]): Collider;
+
+export interface MeshToPiecesOptions {
+  /** Cell (cube) size, world units. Cells sit on a world grid: cell i spans [i * size, (i + 1) * size). Default 0.25. */
+  size?: number;
+  /** 'volume' = every cell whose centre is inside the mesh; 'surface' = only those with an empty neighbour (a hollow shell). Default 'volume'. */
+  fill?: 'volume' | 'surface';
+  /** Colour per cell centre (world units). Default: material colour, times interpolated vertex colours if the geometry has them. */
+  color?: ((x: number, y: number, z: number) => ColorRepresentation) | null;
+}
+
+/**
+ * Cube pieces for the inside of a closed (watertight) mesh, in world space (mesh.matrixWorld; parents are updated first).
+ * Deterministic. Ignores morph targets, skinning and instancing.
+ */
+export function meshToPieces(mesh: Mesh, options?: MeshToPiecesOptions): (DebrisPiece & { size: number; color: ColorRepresentation })[];
 
 /** The brush-stroke fragment shader, for effects that should match the debris strokes. */
 export const strokeFragment: string;

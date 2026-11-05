@@ -113,3 +113,12 @@ test('at any time, no flying piece is inside solid or below the ground', () => {
   });
   assert.ok(flying > 50, `only ${flying} pieces fly; the scene is too small to test`);
 });
+
+// Golden value for this source. If a change to the bake is meant to change the output, check the examples
+// by eye and update the value. (Math.sin/exp may differ in the last bit on other engines; then this fails too.)
+const GOLDEN = '1f4dea89846d054e';
+test('the bake is deterministic and matches the golden output', () => {
+  const a = digest(towerScene({ secondary: 0.3 })), b = digest(towerScene({ secondary: 0.3 }));
+  assert.equal(a, b, 'two bakes with the same seed differ');
+  assert.equal(a, GOLDEN, `bake output changed: ${a}`);
+});

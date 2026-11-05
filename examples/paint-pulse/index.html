@@ -127,8 +127,8 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   </div>
 
   <div class="grp">
-    <div class="lab"><span>Sensitivity</span><output id="sensOut">100%</output></div>
-    <input type="range" id="sens" min="40" max="200" step="5" value="100" aria-label="Sensitivity">
+    <div class="lab"><span>Sensitivity</span><output id="sensOut">130%</output></div>
+    <input type="range" id="sens" min="40" max="250" step="5" value="130" aria-label="Sensitivity">
     <div class="lab"><span>Stroke size</span><output id="strokeOut">7 px</output></div>
     <input type="range" id="stroke" min="3" max="18" step="1" value="7" aria-label="Stroke size">
     <div class="row"><span class="lab">Look</span>
@@ -235,7 +235,7 @@ function ensureAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   master = ctx.createGain(); master.gain.value = 0.85;
   const comp = ctx.createDynamicsCompressor();
-  analyser = ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.6;
+  analyser = ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.3;   // low smoothing: onsets show up within a frame or two
   master.connect(comp); comp.connect(analyser); analyser.connect(ctx.destination);
 }
 function stopTrack() { if (src) { src.onended = null; try { src.stop(); } catch {} src.disconnect(); src = null; } }
@@ -323,36 +323,50 @@ async function renderDemo() {
 /* ---------- listening: bands, beats, section ---------- */
 const binOf = hz => Math.max(1, Math.min(1023, Math.round(hz / ((ctx?.sampleRate || 48000) / 2) * 1024)));
 const band = (lo, hi) => { let s = 0; const a = binOf(lo), b = Math.max(a + 1, binOf(hi)); for (let i = a; i < b; i++) s += freq[i]; return s / (b - a) / 255; };
-const A = { low: 0, mid: 0, high: 0, lowAvg: 0, beat: 0, lastBeat: -1, section: 0, beats: 0 };
+const prevFreq = new Uint8Array(1024);
+const A = { low: 0, mid: 0, high: 0, level: 0, flux: 0, fluxAvg: 0, fluxDev: 0.01, beat: 0, lastBeat: -1, section: 0, beats: 0, kick: 0 };
 function listen(now, dt) {
   const live = track && !paused && analyser;
   if (live) {
     analyser.getByteFrequencyData(freq);
     A.low = band(30, 150); A.mid = band(300, 2500); A.high = band(4000, 14000);
-    A.section += (sectionAt(position() + 0.2) - A.section) * Math.min(1, dt * 2.5);
-  } else { A.low *= 0.92; A.mid *= 0.92; A.high *= 0.92; A.section *= 1 - Math.min(1, dt * 0.8); }
-  // beat: bass jumps clearly above its recent average
-  const jump = A.low - A.lowAvg;
-  if (live && jump > 0.06 + 0.12 * A.lowAvg && A.low > 0.35 && now - A.lastBeat > 0.26) {
-    A.lastBeat = now; A.beats++; A.beat = Math.min(1, 0.45 + jump * 3);
+    // bass onset strength: how much the low bins rose since the last frame (spectral flux)
+    let f = 0; const a = binOf(30), b = binOf(160);
+    for (let i = a; i < b; i++) { const d = freq[i] - prevFreq[i]; if (d > 0) f += d; }
+    A.flux = f / ((b - a) * 255); prevFreq.set(freq);
+    A.section += (sectionAt(position() + 0.1) - A.section) * Math.min(1, dt * 7);
+  } else { A.low *= 0.85; A.mid *= 0.85; A.high *= 0.85; A.flux = 0; A.section *= 1 - Math.min(1, dt * 3); }
+  // fast loudness: follows the music within ~0.1 s
+  A.level += (A.low * 0.45 + A.mid * 0.35 + A.high * 0.2 - A.level) * Math.min(1, dt * 12);
+  // beat: the bass onset is clearly above its own recent average and spread (adaptive, so quiet and loud tracks both work)
+  const thr = A.fluxAvg + Math.max(0.012, 2 * A.fluxDev);
+  if (live && A.flux > thr && now - A.lastBeat > 0.2) {
+    A.lastBeat = now; A.beats++; A.beat = Math.min(1, 0.55 + 0.45 * (A.flux - thr) / (thr + 0.02)); A.kick = A.beat;
   }
-  A.lowAvg += (A.low - A.lowAvg) * Math.min(1, dt * 3);
-  A.beat = Math.max(0, A.beat - dt * 2.6);
+  const k = Math.min(1, dt * 2.5);   // ~0.4 s memory
+  A.fluxAvg += (A.flux - A.fluxAvg) * k;
+  A.fluxDev += (Math.abs(A.flux - A.fluxAvg) - A.fluxDev) * k;
+  A.beat = Math.max(0, A.beat - dt * 3.5);
 }
 
 /* ---------- driving the debris clock ---------- */
-let sens = 1, t = 0, punch = 0, hold = null;   // hold: a fixed debris time, for tests and screenshots
+let sens = 1.3, t = 0, punch = 0, hold = null;   // hold: a fixed debris time, for tests and screenshots
 function drive(dt) {
-  // loud sections open the ball, beats punch it further, quiet parts let it pull back together
-  const energy = A.section * 0.7 + (A.low * 0.45 + A.mid * 0.35 + A.high * 0.2) * 0.45;
-  const target = T_MAX * clamp01(smooth(0.3, 1.0, energy * sens) * 0.72 + punch);
-  const rate = target > t ? 3.2 : 1.1;              // scatter fast, gather slowly
-  t += Math.max(-rate * dt, Math.min(rate * dt, (target - t) * Math.min(1, dt * 4)));
+  // loud passages open the ball, every beat kicks it outward at once, quiet parts pull it back together quickly
+  const energy = A.section * 0.55 + A.level * 0.6;
+  const base = T_MAX * 0.68 * smooth(0.2, 0.95, energy * sens);
+  if (A.kick > 0) {                                     // immediate impulse on the beat frame
+    const loud = 0.15 + 0.85 * smooth(0.2, 0.7, energy * sens);   // onsets in quiet parts only nudge the ball
+    t += T_MAX * (0.07 + 0.11 * A.kick) * Math.min(1.5, sens) * loud;
+    punch = Math.min(0.35, punch + (0.1 + 0.12 * A.kick) * loud); A.kick = 0;
+  }
+  const target = Math.min(T_MAX, base + T_MAX * punch);
+  const rate = target > t ? 6 : 2.8;                   // scatter fast, gather nearly as fast
+  t += Math.max(-rate * dt, Math.min(rate * dt, (target - t) * Math.min(1, dt * 9)));
   t = Math.min(T_MAX, Math.max(0, t));
   if (hold !== null) t = hold;
-  punch = Math.max(0, punch - dt * 0.9);
+  punch = Math.max(0, punch - dt * 2.2);
 }
-let lastSeenBeat = 0;
 
 /* ---------- UI ---------- */
 function toast(msg) { const el = $('toast'); el.textContent = msg; el.hidden = false; clearTimeout(el._h); el._h = setTimeout(() => { el.hidden = true; }, 1800); }
@@ -412,7 +426,6 @@ let prev = performance.now();
 renderer.setAnimationLoop(nowMs => {
   const dt = Math.min(0.05, (nowMs - prev) / 1000); prev = nowMs; const now = nowMs / 1000;
   listen(now, dt);
-  if (A.beats !== lastSeenBeat) { punch = Math.min(0.45, punch + 0.12 + 0.22 * A.beat); lastSeenBeat = A.beats; }
   drive(dt);
   boom.setTime(t);
   boom.setSizeScale(1 + 0.5 * A.high);

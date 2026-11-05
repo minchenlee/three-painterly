@@ -194,7 +194,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <div class="lab"><span>Floors</span><output id="flOut">1 + 2</output></div>
     <div class="floors" id="floors" role="group" aria-label="Floors that blow"></div>
     <div class="lab"><span>Pieces</span><output id="pOut">—</output></div>
-    <input type="range" id="pieces" min="0" max="100" value="85" aria-label="Number of pieces">
+    <input type="range" id="pieces" min="0" max="100" step="0.1" value="60.6" aria-label="Number of pieces">
     <div class="lab"><span>Piece size</span><output id="sOut">85%</output></div>
     <input type="range" id="psize" min="40" max="200" step="5" value="85" aria-label="Piece size">
     <div class="lab"><span>Secondary blasts</span><output id="secOut">32%</output></div>
@@ -991,7 +991,7 @@ function renderFloors(){
     const F = +b.dataset.f; FLOORS.has(F) ? FLOORS.delete(F) : FLOORS.add(F); renderFloors();
     toast('Rebuilding the blast…'); setTimeout(applyFloors, 30); });
 }
-// slider → flying pieces, log scale: 0 = 500, 85 ≈ 20,000, 100 = 40,000 (about 52 fps on an Apple M2 while playing)
+// slider → flying pieces, log scale: 0 = 500, 60.6 ≈ 7,200 (default), 85 ≈ 20,000, 100 = 40,000 (about 52 fps on an Apple M2 while playing)
 const PIECES_MIN = 500, PIECES_MAX = 40000;
 const furnFly = () => DEB.fixed.filter(d => d.kind === 0 && d.t0 < 1e8).length;
 const piecesN = v => { const ff = furnFly(), Fmax = DEB.blocks.length*8 + ff;

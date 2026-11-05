@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PainterlyPass example</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1b1d22; color: #eee; font: 13px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .ui { position: fixed; left: 12px; top: 12px; background: rgba(20,22,27,.85); padding: 10px 12px; border-radius: 8px; display: grid; gap: 6px; width: 220px; }
+  .ui label { display: grid; gap: 2px; }
+  .ui output { float: right; color: #aab; }
+  input[type=range] { width: 100%; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <label><span><input type="checkbox" id="on" checked> Painterly <span style="color:#889">(P)</span></span></label>
+  <label>Stroke size <output id="sOut">7</output><input type="range" id="size" min="3" max="24" value="7"></label>
+  <label>Amount <output id="aOut">1.00</output><input type="range" id="amt" min="0" max="100" value="100"></label>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { PainterlyPass } from '../src/index.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // used by the plain (non-painted) path only
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x7fa8d8);
+scene.fog = new THREE.Fog(0xbcd0e4, 60, 160);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+camera.position.set(22, 12, 26);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3, 0);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x8a7a60, 1.0));
+const sun = new THREE.DirectionalLight(0xffe2b8, 3.0);
+sun.position.set(-30, 25, 18);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 120 });
+scene.add(sun);
+
+// a small original scene: a meadow, a pond, a row of houses, a few trees
+const std = (color, roughness = 0.9) => new THREE.MeshStandardMaterial({ color, roughness });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), std(0x7d9a4e));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const pond = new THREE.Mesh(new THREE.CircleGeometry(7, 48), std(0x5d8fb5, 0.2));
+pond.rotation.x = -Math.PI / 2; pond.position.set(-8, 0.02, 8); scene.add(pond);
+const houseColors = [0xe8d9b8, 0xf0c9a8, 0xd9c4d9, 0xe3e0c8, 0xc9d8e0];
+for (let i = 0; i < 6; i++) {
+  const w = 4 + (i % 3), h = 4 + ((i * 7) % 5), d = 5;
+  const house = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), std(houseColors[i % 5]));
+  house.position.set(-14 + i * 6, h / 2, -8 - (i % 2) * 2);
+  house.castShadow = house.receiveShadow = true; scene.add(house);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.75, 3, 4), std(0xb5553d));
+  roof.position.set(house.position.x, h + 1.5, house.position.z); roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true; scene.add(roof);
+}
+for (let i = 0; i < 9; i++) {
+  const x = -18 + i * 4.5, z = 4 + Math.sin(i * 1.7) * 4;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 3), std(0x6b4a32));
+  trunk.position.set(x, 1.5, z); trunk.castShadow = true; scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.0 + (i % 3) * 0.4, 1), std(0x4f7a3a));
+  crown.position.set(x, 4.2, z); crown.castShadow = crown.receiveShadow = true; scene.add(crown);
+}
+const ball = new THREE.Mesh(new THREE.SphereGeometry(1.4, 48, 24), std(0xd94f3a, 0.5));
+ball.position.set(6, 1.4, 6); ball.castShadow = true; scene.add(ball);
+
+// the plain path and the painted path share a composer; PainterlyPass replaces the RenderPass
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+const painter = new PainterlyPass(scene, camera, { strokeSize: 7 });
+const outputPass = new OutputPass();
+composer.addPass(renderPass);
+composer.addPass(painter);
+composer.addPass(outputPass);
+function setPainted(on) {
+  renderPass.enabled = !on; painter.enabled = on;
+  outputPass.enabled = !on;   // PainterlyPass already tone-maps and writes the output colour space
+  document.getElementById('on').checked = on;
+}
+setPainted(true);
+
+document.getElementById('on').onchange = e => setPainted(e.target.checked);
+document.getElementById('size').oninput = e => { painter.strokeSize = +e.target.value; document.getElementById('sOut').textContent = e.target.value; };
+document.getElementById('amt').oninput = e => { painter.amount = e.target.value / 100; document.getElementById('aOut').textContent = painter.amount.toFixed(2); };
+addEventListener('keydown', e => { if (e.code === 'KeyP') setPainted(!painter.enabled); });
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+renderer.setAnimationLoop(() => {
+  ball.position.y = 1.4 + Math.abs(Math.sin(performance.now() / 600)) * 3;
+  controls.update();
+  composer.render();
+});
+window.__ex = { painter, setPainted, camera, controls };
+</script>
+</body>
+</html>

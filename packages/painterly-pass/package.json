@@ -1,0 +1,14 @@
+{
+  "name": "painterly-pass",
+  "version": "0.1.0",
+  "description": "A three.js post-processing pass that repaints any scene in impressionist brush strokes anchored to surfaces.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src"],
+  "sideEffects": false,
+  "peerDependencies": { "three": ">=0.160.0" },
+  "keywords": ["three", "threejs", "postprocessing", "shader", "painterly", "impressionism", "npr"],
+  "license": "UNLICENSED",
+  "private": true
+}

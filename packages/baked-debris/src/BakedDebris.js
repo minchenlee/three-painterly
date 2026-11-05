@@ -43,6 +43,8 @@ export class BakedDebris {
     seed: 4242,
     timeWarp: null,           // { burst: 0.3, hover: 1/25 }: full speed for `burst` s, then the clock slows to `hover`
     sizeScale: 1,             // resize pieces once they fly
+    castShadow: true,         // the cubes cast shadows (also settable later on boom.mesh)
+    receiveShadow: true,
     material: null,           // a MeshStandardMaterial (or similar) to copy and patch; one is made if omitted
   };
 
@@ -68,7 +70,7 @@ export class BakedDebris {
     dist.userData.debrisUniforms = this.uniforms; patchDepth(dist, this._hideFlying, 'baked-debris-distance');
     this.mesh.customDepthMaterial = depth;
     this.mesh.customDistanceMaterial = dist;     // point-light shadows
-    this.mesh.castShadow = this.mesh.receiveShadow = true;
+    this.mesh.castShadow = this.o.castShadow; this.mesh.receiveShadow = this.o.receiveShadow;
     this.mesh.frustumCulled = false;
     this.mesh.onBeforeRender = renderer => this._checkTexture(renderer);
     this.strokes = null;

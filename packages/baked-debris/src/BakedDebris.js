@@ -70,6 +70,7 @@ export class BakedDebris {
     this.mesh.customDistanceMaterial = dist;     // point-light shadows
     this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
+    this.mesh.onBeforeRender = renderer => this._checkTexture(renderer);
     this.strokes = null;
     this.setTimeWarp(this.o.timeWarp);
     this.rebake();
@@ -133,6 +134,16 @@ export class BakedDebris {
     if ('sizeScale' in changes) this.setSizeScale(o.sizeScale);
     if ('timeWarp' in changes) this.setTimeWarp(o.timeWarp);
     return this.stats;
+  }
+
+  // the segment texture is 4096 texels wide and grows in height with the piece count
+  _checkTexture(renderer) {
+    const tex = this.uniforms.uSeg.value, max = renderer.capabilities.maxTextureSize;
+    if (this._checked === tex) return;
+    const { width, height } = tex.image;
+    if (width > max || height > max) throw new Error(`BakedDebris: ${this.records.length} pieces need a ${width}x${height} segment texture, `
+      + `but this GPU's maxTextureSize is ${max}. Use at most ${Math.floor(max * Math.min(max, width) / 12)} pieces (fragments count).`);
+    this._checked = tex;
   }
 
   // cubes skip fragments while strokes draw them (flying pieces stay in: they are cubes until they launch)

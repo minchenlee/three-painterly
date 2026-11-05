@@ -2,11 +2,16 @@
   "name": "three-painterly-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "test": "node --test packages/*/test/*.test.js"
+    "test": "node --test packages/*/test/*.test.js",
+    "typecheck": "tsc -p test/types"
   },
   "devDependencies": {
-    "three": "0.160.0"
+    "@types/three": "^0.160.0",
+    "three": "0.160.0",
+    "typescript": "^5.9.3"
   }
 }

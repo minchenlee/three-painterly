@@ -417,7 +417,8 @@ $('rebuild').oninput = e => { clocks.rebuild = e.target.value / 10; $('rOut').te
 $('upper').oninput = e => { clocks.upper = e.target.value / 10; $('uOut').textContent = `${clocks.upper.toFixed(1)} s`; syncUI(); };
 document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPaint(!!+b.dataset.v));
 
-function setPanel(show) { $('ui').hidden = !show; $('bShow').hidden = show; }
+function setPanel(show) { $('ui').hidden = !show; $('bShow').hidden = show;
+  document.documentElement.toggleAttribute('data-ui-hidden', !show); }   // lets a host page hide its own overlay (e.g. a back link) too
 $('bHide').onclick = () => setPanel(false);
 $('bShow').onclick = () => setPanel(true);
 function toggleKeys(show) { const k = $('keys'); k.hidden = show === undefined ? !k.hidden : !show; }

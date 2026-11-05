@@ -1072,6 +1072,7 @@ $('bFull').onclick = toggleFull;
 // hide the panel for a clean view; a small button (or H) brings it back
 // H hides everything, the Show button too, for a clean screen; H again brings the panel back
 function setPanel(show, byKey = false){ $('ui').hidden = !show; $('bShow').hidden = show || byKey;
+  document.documentElement.toggleAttribute('data-ui-hidden', !show);   // lets a host page hide its own overlay (e.g. a back link) too
   if (!byKey) (show ? $('bHide') : $('bShow')).focus({ preventScroll: true }); }
 $('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
 let lastBounce = 35;

@@ -10,7 +10,7 @@ attribute float aKind;    // 0 = piece, 1 = fragment of a secondary blast
 attribute float aSplit;   // piece: local time it breaks apart (0 = never); fragment: its parent's split time
 attribute float aBurst;   // index of the burst that launched it (-1 = none)
 attribute float aLife;    // seconds after launch it takes to shrink away (0 = lives forever)
-#define MAX_BURSTS 16
+#define MAX_BURSTS 32
 uniform float uBurstShift[MAX_BURSTS];   // per-burst time offset, so bursts can be retimed without a new bake
 uniform float uTime;
 uniform float uWarp;      // 1 = bullet time

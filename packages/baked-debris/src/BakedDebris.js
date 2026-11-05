@@ -6,7 +6,7 @@ import {
 import { launchPieces, addSecondary, simulate, mulberry32 } from './bake.js';
 import { patchCube, patchDepth, strokeVertex, strokeFragment } from './shaders.js';
 
-const MAX_BURSTS = 16;   // must match MAX_BURSTS in shaders.js
+const MAX_BURSTS = 32;   // must match MAX_BURSTS in shaders.js
 
 /**
  * Explosion debris whose collisions are simulated once ("baked") and then played back on the GPU.
@@ -115,7 +115,7 @@ export class BakedDebris {
 
   /**
    * Move bursts in time without a new bake: offsets[i] seconds are added to burst i and to every piece it launched.
-   * Collisions are with static geometry, so the paths stay exact. Only the first 16 bursts can be moved.
+   * Collisions are with static geometry, so the paths stay exact. Only the first 32 bursts can be moved.
    */
   setBurstOffsets(offsets) {
     const u = this.uniforms.uBurstShift.value;

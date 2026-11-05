@@ -65,7 +65,7 @@ Pieces: `{ position, color, size }`, plus these optional fields when you want to
 | `spin`, `axis` | Spin speed (rad/s) and spin axis. |
 | `lifetime` | Seconds until the piece shrinks away (0 = stays). Useful for bits that crumble right after launch. |
 
-`boom.setBurstOffsets([dt0, dt1, …])` moves bursts in time without a rebake: each piece of burst *i* leaves `dt_i` seconds later (or earlier). Collisions are with static geometry only, so the paths stay exact. Only the first 16 bursts can be moved.
+`boom.setBurstOffsets([dt0, dt1, …])` moves bursts in time without a rebake: each piece of burst *i* leaves `dt_i` seconds later (or earlier). Collisions are with static geometry only, so the paths stay exact. Only the first 32 bursts can be moved.
 
 After a bake, `boom.stats` gives `{ pieces, flying, secondary }`.
 

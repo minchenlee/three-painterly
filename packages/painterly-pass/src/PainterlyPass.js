@@ -42,7 +42,14 @@ export class PainterlyPass extends Pass {
     super();
     this.scene = scene;
     this.camera = camera;
-    Object.assign(this, PainterlyPass.defaults, options);
+    // Own copies of every default (arrays too), then only the known options: a typo is reported,
+    // and options cannot replace Pass fields such as enabled, renderToScreen or render.
+    const defaults = PainterlyPass.defaults, copy = v => (Array.isArray(v) ? v.slice() : v);
+    for (const k in defaults) this[k] = copy(defaults[k]);
+    for (const k in options) {
+      if (Object.prototype.hasOwnProperty.call(defaults, k)) this[k] = copy(options[k]);
+      else console.warn(`PainterlyPass: unknown option "${k}" ignored`);
+    }
     this.needsSwap = true;
 
     this._size = new Vector2(1, 1);

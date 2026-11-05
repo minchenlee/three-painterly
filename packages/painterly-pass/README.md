@@ -34,7 +34,7 @@ Requires three.js r160 or later and a `PerspectiveCamera`.
 
 ## Options
 
-All options are also writable properties (`painter.strokeSize = 10`).
+All options are also writable properties (`painter.strokeSize = 10`). Unknown options are ignored with a console warning, and each instance gets its own copy of array defaults such as `shadowTint`.
 
 | Option | Default | Meaning |
 |---|---|---|

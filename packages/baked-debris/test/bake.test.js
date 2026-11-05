@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { launchPieces, simulate, mulberry32, SEGMENTS, validateOptions } from '../src/bake.js';
+import { voxelCollider, boxCollider, anyCollider } from '../src/colliders.js';
 
 const base = {
   pieceSize: 0.25, gravity: 9.81, speed: [7, 18], stagger: 1, spin: 9, restitution: 0.35, friction: 0.6, stopSpeed: 0.6,
@@ -63,4 +64,13 @@ test('bad options are rejected before the bake, naming the field', () => {
     [{ bursts: null }, /bursts/],
   ];
   for (const [change, re] of bad) assert.throws(() => validateOptions(Object.assign({}, ok, change)), re, JSON.stringify(change));
+});
+
+test('colliders: boxes, voxels and their union', () => {
+  const box = boxCollider([{ min: [0, 0, 0], max: [1, 1, 1] }, { min: [5, 5, 5], max: [6, 6, 6] }]);
+  assert.ok(box(0.5, 0.5, 0.5) && box(5.5, 6, 5) && !box(2, 2, 2) && !box(0.5, 1.5, 0.5));
+  const vox = voxelCollider((i, j, k) => i === 2 && j === 0 && k === -1, 0.5, [0, 0, 0]);
+  assert.ok(vox(1.2, 0.1, -0.2) && !vox(0.2, 0.1, -0.2));
+  const any = anyCollider(box, vox);
+  assert.ok(any(0.5, 0.5, 0.5) && any(1.2, 0.1, -0.2) && !any(3, 3, 3));
 });

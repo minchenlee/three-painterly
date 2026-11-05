@@ -94,7 +94,7 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
-/* lite mode (phones): a poster first, the 3D city only on request */
+/* lite mode (phones): the poster covers the few seconds the city takes to build */
 #poster { position: fixed; inset: 0; z-index: 15; display: grid; place-items: end center; padding: 0 16px calc(32px + env(safe-area-inset-bottom, 0px));
   background: #c9c2b4 center / cover no-repeat url('poster.webp'); }
 #poster button { font: inherit; font-weight: 600; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
@@ -262,14 +262,13 @@ addEventListener('error', e => { const s = document.getElementById('status'); s.
 const $ = id => document.getElementById(id);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Lite mode for phones and small screens: pixel ratio 1, a quarter of the pieces and fire, 2048 shadows, and a poster
-// until the user asks for the 3D city. ?full=1 turns it off, ?lite=1 turns it on (for testing on a desktop).
+// over the canvas while the city builds. ?full=1 turns it off, ?lite=1 turns it on (for testing on a desktop).
 const QS = new URLSearchParams(location.search);
 const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
 const LITE_SHARE = 0.25;
 // interface strings added for lite mode and loading, in one place for translation
 const STR = {
   liteNote: 'Lite mode · full version on desktop',
-  load3d: 'Load 3D (slower)',
   building: 'Stacking voxels…',
   buildFailed: 'Build failed: ',
   loadFailed: 'Failed to load: ',
@@ -1287,13 +1286,13 @@ window.__vp = { LITE, setSections, sectionNames: STR.sections, burstOf: () => BU
   burstTimes: () => BURSTS.filter(burstOn).map(b => [STR.sections[b.sec], +burstT(b).toFixed(2)]), get boom(){ return boom; }, renderer, scene, camera, painter, drawFrame, play, syncUI, setArt, setShot, controls, markDirty, setWarp };
 function start(){
   $('status').hidden = false; $('status').textContent = STR.building;
-  setTimeout(() => { try { init(); syncUI(); requestAnimationFrame(frame); } catch (err) { $('status').hidden = false; $('status').textContent = STR.buildFailed + err.message; console.error(err); } }, 30);
+  setTimeout(() => { try { init(); syncUI(); $('poster').hidden = true; requestAnimationFrame(frame); } catch (err) { $('poster').hidden = true; $('status').hidden = false; $('status').textContent = STR.buildFailed + err.message; console.error(err); } }, 30);
 }
 if (LITE){
   $('liteNote').textContent = STR.liteNote; $('liteNote').hidden = false;
-  $('bLoad').textContent = STR.load3d; $('poster').hidden = false; $('status').hidden = true;
-  $('bLoad').onclick = () => { $('poster').hidden = true; start(); };
-} else start();
+  $('bLoad').textContent = STR.building; $('bLoad').disabled = true; $('poster').hidden = false;   // phones load the 3D city at once
+}
+start();
 </script>
 </body>
 </html>

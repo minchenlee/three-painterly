@@ -109,7 +109,7 @@ void main() {
   float depth = texture2D(tDepth, uv).x;
   vec3 W = worldAt(px);
   vec3 outc;
-  if (depth >= 0.99999) {
+  if (depth >= 1.0) {   // cleared depth is exactly 1.0; a threshold below it would turn distant objects into sky
     if (!uSky) { gl_FragColor = vec4(base, 1.0); return; }
     vec3 dir = normalize(W - uCamPos);   // sky: strokes fixed to directions, so they turn with the view
     vec2 q = vec2(atan(dir.x, -dir.z), asin(clamp(dir.y, -1.0, 1.0)));

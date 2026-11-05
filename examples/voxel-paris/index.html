@@ -23,7 +23,8 @@ body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); ov
 canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
 #ui { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: 300px; max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain;
+  width: 300px; max-height: calc(100dvh - 32px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: none;   /* still scrolls with wheel or touch when the window is short; no visible bar */
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12); }
 .handle { display: none; }
@@ -40,6 +41,7 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 
 header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 header p { margin: 4px 0 0; color: var(--muted); }
+#ui::-webkit-scrollbar { display: none; }
 @media (max-height: 820px) { header p { display: none; } }
 
 .grp { display: grid; gap: 8px; }
@@ -107,7 +109,6 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <tr><td><kbd>V</kbd></td><td>Bursts per wave 1 → 2 → 3 → 4 → 6</td></tr>
     <tr><td><kbd>M</kbd></td><td>Real time / bullet time</td></tr>
     <tr><td><kbd>B</kbd></td><td>Bounce on / off</td></tr>
-    <tr><td><kbd>P</kbd></td><td>Realistic / painterly</td></tr>
     <tr><td><kbd>N</kbd></td><td>Day 15:00 / night 21:00</td></tr>
     <tr><td><kbd>T</kbd></td><td>Run a day / stop</td></tr>
     <tr><td><kbd>L</kbd></td><td>Light shafts on / off</td></tr>
@@ -211,12 +212,6 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   </div>
 
   <div class="grp" data-pane="art" hidden>
-    <div class="row"><span class="lab">Style</span>
-      <div class="seg" role="group" aria-label="Style" id="artSeg">
-        <button type="button" data-v="0" aria-pressed="true">Realistic</button>
-        <button type="button" data-v="1" aria-pressed="false">Painterly</button>
-      </div>
-    </div>
     <div class="lab"><span>Stroke size</span><output id="strokeOut">7 px</output></div>
     <input type="range" id="stroke" min="3" max="22" step="1" value="7" aria-label="Stroke size">
     <div class="lab"><span>Amount</span><output id="amtOut">100%</output></div>
@@ -759,7 +754,6 @@ function setArt(on){ const was = paint.on; paint.on = !!on;
   if (paint.on && !boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, jitter: 0.16 }));
   if (!paint.on) boom.removeStrokes();
   if (was !== paint.on) setPieces(+$('pieces').value);   // painterly mode uses fewer, larger strokes
-  document.querySelectorAll('#artSeg button').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.v === (paint.on ? 1 : 0))));
   markDirty(false); }
 
 /* ---------- sun position for Paris (48.857° N, 2.352° E), solar geometry ---------- */
@@ -1026,7 +1020,6 @@ addEventListener('keydown', e => {
     case 'KeyB': { const el = $('bounce'); if (+el.value > 0){ lastBounce = +el.value; el.value = 0; } else el.value = lastBounce || 35;
       el.dispatchEvent(new Event('input')); toast(+el.value ? `Bounce ${(el.value/100).toFixed(2)}` : 'No bounce'); break; }
     case 'KeyF': toggleFull(); break;
-    case 'KeyP': setArt(!paint.on); toast(paint.on ? 'Painterly' : 'Realistic'); break;
     case 'KeyL': { const el = $('shaft'); el.value = +el.value ? 0 : 50; el.dispatchEvent(new Event('input')); toast(+el.value ? 'Light shafts on' : 'Light shafts off'); break; }
     case 'KeyV': { const L = [1, 2, 3, 4, 6]; setWave(L[(L.indexOf(waveN)+1) % L.length]); toast(`${waveN} per wave`); break; }
     case 'KeyM': setWarp(!warpOn); toast(warpOn ? 'Bullet time' : 'Real time'); break;
@@ -1078,7 +1071,6 @@ $('burstT').oninput = () => { burstLen = $('burstT').value/100; $('bOut').textCo
 // slider 0–100 → hover speed 1/4 … 1/200 of real time (log scale); 47 ≈ 1/25
 $('slow').oninput = () => { const d = Math.round(4*Math.pow(50, $('slow').value/100)); hover = 1/d; $('slOut').textContent = `1/${d}`; if (warpOn) setWarp(true); };
 $('slow').dispatchEvent(new Event('input'));
-document.querySelectorAll('#artSeg button').forEach(b => b.onclick = () => setArt(+b.dataset.v));
 $('stroke').oninput = () => { $('strokeOut').textContent = `${$('stroke').value} px`; painter.strokeSize = +$('stroke').value; markDirty(false); };
 $('amt').oninput = () => { $('amtOut').textContent = `${$('amt').value}%`; painter.amount = $('amt').value/100; markDirty(false); };
 let secTimer = 0;

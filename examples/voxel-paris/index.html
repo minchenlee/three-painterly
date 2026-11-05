@@ -484,7 +484,7 @@ function buildFurniture(){
 }
 
 /* ---------- explosion ---------- */
-const BURSTS = [
+const BURSTS = [   // facades (n sideways) and parked cars (n up); in time order so waves group neighbours
   {c:[-8,6,-40],    n:[1,0,0],     r:14, t:0.8},
   {c:[-10,14,-10],  n:[.7,.25,.7], r:13, t:1.8},
   {c:[-36,6,-8],    n:[0,0,1],     r:14, t:2.4},
@@ -494,13 +494,19 @@ const BURSTS = [
   {c:[5.5,4,-43.5], n:[0,1,0],     r:10, t:5.1},
   {c:[48,10,-80],   n:[-1,0,0],    r:14, t:5.8},
   {c:[88,8,-10],    n:[0,0,1],     r:12, t:6.4},
+  {c:[5.5,4,-95.5], n:[0,1,0],     r:10, t:6.8},
   {c:[-10,10,-96],  n:[1,0,0],     r:14, t:7.2},
   {c:[48,10,-124],  n:[-1,0,0],    r:14, t:8.0},
+  {c:[30.5,4,-147.5],n:[0,1,0],    r:10, t:8.5},
   {c:[-10,12,-150], n:[1,0,0],     r:15, t:9.0},
-  // the far half of the street, toward Place de Breteuil (BakedDebris retimes up to 16 bursts)
+  {c:[5.5,4,-159.5],n:[0,1,0],     r:10, t:9.4},
+  // the far half of the street, toward Place de Breteuil
   {c:[48,10,-170],  n:[-1,0,0],    r:14, t:9.8},
+  {c:[30.5,4,-183.5],n:[0,1,0],    r:10, t:10.2},
   {c:[-10,10,-196], n:[1,0,0],     r:14, t:10.6},
+  {c:[5.5,4,-211.5],n:[0,1,0],     r:10, t:11.0},
   {c:[48,12,-220],  n:[-1,0,0],    r:15, t:11.4},
+  {c:[30.5,4,-235.5],n:[0,1,0],    r:10, t:11.8},
   {c:[-10,10,-246], n:[1,0,0],     r:14, t:12.2},
 ];
 const T_END = 45;
@@ -873,7 +879,7 @@ function makeFire(recs){
     const U = boom.uniforms; Object.assign(sh.uniforms, { uTime: U.uTime, uWarp: U.uWarp, uBurstT: U.uBurstT, uHover: U.uHover, uShift: U.uBurstShift });
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
       attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT; attribute vec3 fCol;
-      uniform float uTime; uniform float uWarp; uniform float uBurstT; uniform float uHover; uniform float uShift[16];
+      uniform float uTime; uniform float uWarp; uniform float uBurstT; uniform float uHover; uniform float uShift[32];
       vec3 frot(vec3 v, vec3 a, float t){ float c = cos(t), s = sin(t); return v*c + cross(a, v)*s + a*dot(a, v)*(1.0 - c); }
       void fstate(out vec3 P, out float ang, out float sc){
         float tl = uTime - fT.x - uShift[int(fT.w + 0.5)];
@@ -1072,7 +1078,7 @@ $('bounce').oninput = () => { const r = $('bounce').value/100; $('rOut').textCon
   clearTimeout(bounceTimer); bounceTimer = setTimeout(() => { boom.rebake({ restitution: r }); markDirty(true); }, 150); };
 document.querySelectorAll('#syncSeg button').forEach(b => b.onclick = () => { syncOn = !!+b.dataset.v;
   document.querySelectorAll('#syncSeg button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('waveRow').hidden = syncOn; applyOffsets(); });
-// group the 16 bursts into waves of n that fire together, spread evenly over 0.8–11.0 s (n = 1 keeps the original timing)
+// group the bursts into waves of n that fire together, spread evenly over 0.8–11.0 s (n = 1 keeps the original timing)
 let waveN = 1; const waveDelta = new Array(BURSTS.length).fill(0);
 function setWave(n){ waveN = n; const W = Math.ceil(BURSTS.length/n);
   BURSTS.forEach((b, i) => { const k = Math.floor(i/n); waveDelta[i] = n === 1 ? 0 : (W === 1 ? 0.8 : 0.8 + k*(11.0-0.8)/(W-1)) - b.t; });

@@ -91,11 +91,21 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+/* lite mode (phones): a poster first, the 3D city only on request */
+#poster { position: fixed; inset: 0; z-index: 15; display: grid; place-items: end center; padding: 0 16px calc(32px + env(safe-area-inset-bottom, 0px));
+  background: #c9c2b4 center / cover no-repeat url('poster.webp'); }
+#poster button { font: inherit; font-weight: 600; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  padding: 12px 22px; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2); }
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 16; max-width: calc(100% - 32px);
+  font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="status">Stacking voxels…</div>
+<div id="poster" hidden><button type="button" id="bLoad"></button></div>
+<div id="liteNote" hidden></div>
 <div id="toast" hidden role="status"></div>
 <button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
 <div id="keys" hidden role="dialog" aria-label="Keyboard shortcuts">
@@ -242,9 +252,22 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { BakedDebris, voxelCollider, strokeFragment } from '../../packages/baked-debris/src/index.js';   // strokeFragment: reuse the debris brush look for fireballs
 import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
 
-addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
+addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });   // STR is not defined yet if the script fails to parse
 const $ = id => document.getElementById(id);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Lite mode for phones and small screens: pixel ratio 1, a quarter of the pieces and fire, 2048 shadows, and a poster
+// until the user asks for the 3D city. ?full=1 turns it off, ?lite=1 turns it on (for testing on a desktop).
+const QS = new URLSearchParams(location.search);
+const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
+const LITE_SHARE = 0.25;
+// interface strings added for lite mode and loading, in one place for translation
+const STR = {
+  liteNote: 'Lite mode · open on a desktop for the full version',
+  load3d: 'Load 3D (slower)',
+  building: 'Stacking voxels…',
+  buildFailed: 'Build failed: ',
+  loadFailed: 'Failed to load: ',
+};
 
 /* ---------- palette (limited, 40 colours) ---------- */
 const HEX = [0,
@@ -581,7 +604,8 @@ function piecesFor(blocks, N){
     const launch = makeLaunch(mulberry(i*7919+11), out), n0 = out.length;
     if (h01(i,3,1) < f){ for (let sx=0;sx<2;sx++) for (let sy=0;sy<2;sy++) for (let sz=0;sz<2;sz++)
       launch(b, x+.25+sx*.5, y+.25+sy*.5, z+.25+sz*.5, v, 0.5, 0.86+h01(i,sx*4+sy*2+sz,4)*0.2); }
-    else launch(b, x+.5, y+.5, z+.5, v, 1, 0.9+h01(i,9,4)*0.15, h01(i,5,2) < keep ? 0 : 3);
+    else { launch(b, x+.5, y+.5, z+.5, v, 1, 0.9+h01(i,9,4)*0.15, h01(i,5,2) < keep ? 0 : 3);
+      if (LITE && out[n0] && out[n0].kind === 3 && h01(i,7,3) >= LITE_SHARE) out.length = n0; }   // LITE: 1/4 of the crumbles
     const ao = aoOf(x,y,z,bs);
     for (let j=n0;j<out.length;j++){ out[j].ao = ao; out[j].vox = [x,y,z]; out[j].sh = 1; }   // look exactly like the wall until they fly
   });
@@ -725,7 +749,7 @@ function glowPatch(sh){   // per-vertex window glow (emis attribute): lit window
 const lin = h => new THREE.Color().setHex(h, THREE.LinearSRGBColorSpace);   // these colours were tuned as linear values
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-const PR_MAX = Math.min(devicePixelRatio, 1.5); let pr = PR_MAX; renderer.setPixelRatio(pr);
+const PR_MAX = LITE ? 1 : Math.min(devicePixelRatio, 1.5); let pr = PR_MAX; renderer.setPixelRatio(pr);
 renderer.shadowMap.autoUpdate = false;   // shadows are redrawn only when the scene changes, not when the camera moves
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
@@ -743,7 +767,7 @@ const moon = new THREE.HemisphereLight(lin(0x6f86b8), lin(0x1c1f2a), 0); scene.a
 const sun = new THREE.DirectionalLight(lin(0xfff0d8), 2.6);
 sun.target.position.set(10, 0, -120); scene.add(sun, sun.target);
 const TOUCH = matchMedia('(pointer: coarse)').matches;
-sun.castShadow = true; sun.shadow.mapSize.set(TOUCH ? 2048 : 4096, TOUCH ? 2048 : 4096);
+sun.castShadow = true; sun.shadow.mapSize.set(TOUCH || LITE ? 2048 : 4096, TOUCH || LITE ? 2048 : 4096);
 Object.assign(sun.shadow.camera, { left: -350, right: 350, top: 350, bottom: -350, near: 20, far: 1300 });
 sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.2;
 const flash = new THREE.PointLight(lin(0xffa860), 0, 120, 1.6); scene.add(flash);
@@ -971,7 +995,7 @@ function renderFloors(){
 const PIECES_MIN = 500, PIECES_MAX = 40000;
 const furnFly = () => DEB.fixed.filter(d => d.kind === 0 && d.t0 < 1e8).length;
 const piecesN = v => { const ff = furnFly(), Fmax = DEB.blocks.length*8 + ff;
-  const F = Math.min(Fmax, PIECES_MIN * Math.pow(PIECES_MAX/PIECES_MIN, v/100));
+  const F = Math.min(Fmax, PIECES_MIN * Math.pow(PIECES_MAX/PIECES_MIN, v/100) * (LITE ? LITE_SHARE : 1));
   return Math.max(0, Math.round(F - ff)); };
 function setPieces(v){
   const recs = DEB.fixed.filter(d => d.kind === 0).concat(piecesFor(DEB.blocks, piecesN(v)));
@@ -992,7 +1016,7 @@ function init(){
   }
   paint.on = true;   // start painterly: bake once with the painterly piece cap
   setPieces(+$('pieces').value);
-  makeFire(DEB.fixed.filter(d => d.kind === 2));
+  makeFire(DEB.fixed.filter(d => d.kind === 2).filter((d, i) => !LITE || i % Math.round(1 / LITE_SHARE) === 0));
   $('stats').textContent = `${statVox.toLocaleString('en-US')} voxels`;
   camera.position.set(...SHOTS[0][1]); controls.target.set(...SHOTS[0][2]); camera.fov = SHOTS[0][3]; camera.updateProjectionMatrix(); controls.update();
   applyTime(0, true);
@@ -1204,8 +1228,16 @@ function frame(now){
   }
   requestAnimationFrame(frame);
 }
-window.__vp = { get boom(){ return boom; }, renderer, scene, camera, painter, drawFrame, play, syncUI, setArt, setShot, controls, markDirty, setWarp };
-setTimeout(() => { try { init(); syncUI(); requestAnimationFrame(frame); } catch (err) { $('status').hidden = false; $('status').textContent = 'Build failed: ' + err.message; console.error(err); } }, 30);
+window.__vp = { LITE, get boom(){ return boom; }, renderer, scene, camera, painter, drawFrame, play, syncUI, setArt, setShot, controls, markDirty, setWarp };
+function start(){
+  $('status').hidden = false; $('status').textContent = STR.building;
+  setTimeout(() => { try { init(); syncUI(); requestAnimationFrame(frame); } catch (err) { $('status').hidden = false; $('status').textContent = STR.buildFailed + err.message; console.error(err); } }, 30);
+}
+if (LITE){
+  $('liteNote').textContent = STR.liteNote; $('liteNote').hidden = false;
+  $('bLoad').textContent = STR.load3d; $('poster').hidden = false; $('status').hidden = true;
+  $('bLoad').onclick = () => { $('poster').hidden = true; start(); };
+} else start();
 </script>
 </body>
 </html>

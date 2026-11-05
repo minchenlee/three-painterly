@@ -24,8 +24,14 @@ Both packages share one version number until the first public release.
 - Segment texture size is checked against `maxTextureSize`; memory per piece is documented.
 - Faster collider calls; `castShadow` / `receiveShadow` options.
 - New `displace` option and `setDisplace()`: a GLSL hook that offsets pieces on top of the bake, applied to cubes, shadows and strokes.
+- Fast pieces no longer pass into walls that are still standing: collisions are checked from launch (centre point for the first 0.03 s), and a hit restarts the segment from the start of that step. A property test checks that no piece is drawn inside `solid` at any time.
+
+### Both packages
+- Hand-written TypeScript types (`src/index.d.ts`, `types` condition in `exports`).
+- `npm test` (Node) and `npm run typecheck` at the repository root.
 
 ### Breaking changes against the pre-release code
 - `boom.mesh.material` is a clone of the material you pass.
 - Instance order differs from `boom.records`.
 - Invalid options throw; unknown options warn.
+- Bakes with collisions give different paths than before (the wall fix above). Bakes without collisions are unchanged.

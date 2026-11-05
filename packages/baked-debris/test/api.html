@@ -116,6 +116,59 @@ test('render: cubes, shadows and strokes compile without errors', () => {
   r.dispose();
 });
 
+// ---- displace hook ----
+// one still piece at the origin, seen head-on: count lit pixels to see where the GPU put it
+function litPixels(b, extra) {
+  const r = new THREE.WebGLRenderer(), rt = new THREE.WebGLRenderTarget(32, 32);
+  const errs = []; r.debug.onShaderError = (gl, p, vs, fs) => errs.push(gl.getShaderInfoLog(vs) + gl.getShaderInfoLog(fs));
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100); cam.position.set(0, 0, 3);
+  scene.add(new THREE.AmbientLight(0xffffff, 3), b.mesh); if (extra) scene.add(extra);
+  const px = new Uint8Array(32 * 32 * 4), count = () => { r.setRenderTarget(rt); r.render(scene, cam); r.readRenderTargetPixels(rt, 0, 0, 32, 32, px);
+    let n = 0; for (let i = 0; i < px.length; i += 4) if (px[i] > 40) n++; return n; };
+  return { count, r, errs, done: () => { rt.dispose(); r.dispose(); } };
+}
+const one = (over = {}) => new BakedDebris(Object.assign({ pieces: [{ position: [0, 0, 0], size: 0.5 }], bursts: [{ position: [9, 9, 9], radius: 0 }], ground: null }, over));
+const lift = { uniforms: { uLift: { value: 50 } }, glsl: 'uniform float uLift;\nvec3 debrisDisplace(vec3 p, DebrisInfo d) { return vec3(0.0, uLift, 0.0); }' };
+
+test('displace: the hook moves pieces on the GPU, setDisplace(null) removes it', () => {
+  const b = one(), L = litPixels(b);
+  ok(L.count() > 20, 'piece not visible without a hook');
+  b.setDisplace(lift); ok(L.count() === 0, 'hook did not move the piece');
+  b.setDisplace(null); ok(L.count() > 20, 'piece did not come back after setDisplace(null)');
+  ok(L.errs.length === 0, L.errs.join('\n')); L.done();
+});
+
+test('displace: hook uniforms update live, without a new program', () => {
+  const b = one({ displace: lift }), L = litPixels(b);
+  ok(L.count() === 0, 'displace option ignored');
+  const progs = L.r.info.programs.length; b.uniforms.uLift.value = 0;
+  ok(L.count() > 20, 'uniform change not used'); ok(L.r.info.programs.length === progs, 'a uniform change recompiled');
+  L.done();
+});
+
+test('displace: shadows and strokes compile with the hook and get its time', () => {
+  const b = one({ displace: { glsl: 'vec3 debrisDisplace(vec3 p, DebrisInfo d) { return vec3(d.time + d.local + d.kind + d.burst + d.index + d.rest) * 0.0; }' } });
+  const lamp = new THREE.PointLight(0xffffff, 5); lamp.castShadow = true; lamp.position.set(0, 2, 2);
+  const sun = new THREE.DirectionalLight(); sun.castShadow = true;
+  const L = litPixels(b, new THREE.Group().add(lamp, sun)); L.r.shadowMap.enabled = true; L.count();
+  const s = b.createStrokes(); ok(/debrisDisplace\(vec3 p, DebrisInfo d\) \{ return vec3\(d\.time/.test(s.material.vertexShader), 'strokes lack the hook');
+  b.mesh.parent.add(s); L.count();
+  ok(L.errs.length === 0, L.errs.join('\n')); L.done();
+});
+
+test('displace: cache keys change with the hook code', () => {
+  const b = one(), M = [b.mesh.material, b.mesh.customDepthMaterial, b.mesh.customDistanceMaterial];
+  const k0 = M.map(m => m.customProgramCacheKey()); b.setDisplace(lift);
+  M.forEach((m, i) => ok(m.customProgramCacheKey() !== k0[i], `cache key ${i} did not change`));
+});
+
+test('displace: a uniform name that clashes throws, bad options throw', () => {
+  throws(() => one({ displace: { glsl: lift.glsl, uniforms: { uTime: { value: 0 } } } }), /uTime/, 'clash with uTime');
+  throws(() => one().createStrokes() && one({ displace: { glsl: lift.glsl, uniforms: { uLookAhead: { value: 0 } } } }), /uLookAhead/, 'clash with uLookAhead');
+  throws(() => one({ displace: { glsl: 3 } }), /displace/, 'glsl not a string');
+  throws(() => one({ displace: { glsl: 'vec3 f() { return vec3(0.0); }' } }), /debrisDisplace/, 'no debrisDisplace');
+});
+
 window.__results = results;
 document.getElementById('out').textContent = results.map(r => (r.ok ? 'ok   ' : 'FAIL ') + r.name + (r.msg ? '\n     ' + r.msg : '')).join('\n');
 </script>

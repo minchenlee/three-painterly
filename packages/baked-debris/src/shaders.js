@@ -1,6 +1,8 @@
 // GLSL shared by the cube material, its shadow material and the brush-stroke material.
 // Every piece's state is a pure function of uTime, so any moment can be shown directly.
 
+const DISPLACE_MARK = '/* baked-debris: displace hook */';
+
 export const debrisState = /* glsl */`
 attribute float aIndex;   // the piece's row in the segment texture
 attribute float aStart;   // launch time (1e9 = never moves)
@@ -38,7 +40,7 @@ float debrisLocalTime() {
 // 0..1 glow right after a secondary blast
 float debrisGlow() { if (aKind < 0.5) return 0.0; float ph = debrisLocalTime() - aSplit; return ph > 0.0 ? 1.0 - smoothstep(0.0, 0.18, ph) : 0.0; }
 
-void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
+void debrisStateRaw(out vec3 P, out float ang, out float sc, out float tl0) {
   tl0 = debrisLocalTime();
   float tl = aKind > 0.5 ? tl0 - aSplit : tl0;
   int base = int(aIndex + 0.5) * 12;
@@ -60,7 +62,32 @@ void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
   if (aKind < 0.5 && aSplit > 0.0 && tl >= aSplit) sc = 0.0;   // a piece vanishes when it breaks apart
   if (aLife > 0.0) sc *= max(0.0, 1.0 - tl / aLife);            // crumbles to nothing
 }
+
+// Public input of the displace hook (README "Displace hook"). Fields may be added, never changed.
+struct DebrisInfo {
+  float time;    // global time of this sample (uTime, shifted by the strokes' look-ahead)
+  float local;   // physics time since launch (after the time warp); <= 0 = not launched yet
+  float kind;    // 0 = piece, 1 = fragment of a secondary blast
+  float burst;   // index of the burst that launched it, -1 = none
+  float index;   // the piece's row in the segment texture: stable, usable as a random seed
+  float rest;    // local time from which it rests
+};
+${DISPLACE_MARK}
+// The baked state plus the hook's offset: the whole piece moves, so cubes stay rigid.
+void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
+  debrisStateRaw(P, ang, sc, tl0);
+  P += debrisDisplace(P, DebrisInfo(uTime + dbOffset, tl0, aKind, aBurst, aIndex, aRest));
+}
 `;
+
+const NO_DISPLACE = 'vec3 debrisDisplace(vec3 p, DebrisInfo d) { return vec3(0.0); }';
+/** Put the displace hook (GLSL that defines debrisDisplace, or null for none) into a shader that contains debrisState. */
+export function withDisplace(src, glsl) {
+  return mustReplace(src, DISPLACE_MARK, '// --- baked-debris displace hook ---\n' + (glsl ?? NO_DISPLACE) + '\n// --- end of displace hook ---', 'displace');
+}
+
+// material.userData.debrisDisplace = { glsl, hash } selects the displace hook; NO_HOOK = none
+const NO_HOOK = { glsl: null, hash: '0' };
 
 // String.replace that fails loudly: a missing chunk (e.g. after a three.js update) would otherwise
 // leave the pieces at their bake positions without any error.
@@ -74,11 +101,12 @@ export function mustReplace(src, find, repl, where) {
 // lighting tweaks and so on; they see `transformed` and `objectNormal` already moved by the debris code.
 // Both hooks are looked up on every call, so later changes to `source` still apply.
 export function patchCube(material, hideFlyingU, source = null) {
+  const hook = () => material.userData.debrisDisplace ?? NO_HOOK;
   const src = source ?? { onBeforeCompile: material.onBeforeCompile, customProgramCacheKey: material.customProgramCacheKey.bind(material) };
   material.onBeforeCompile = (sh, renderer) => {
     Object.assign(sh.uniforms, material.userData.debrisUniforms, { uHideFlying: hideFlyingU });
     let v = sh.vertexShader;
-    v = mustReplace(v, '#include <common>', '#include <common>\n' + debrisState + '\nuniform float uHideFlying;', 'cube');
+    v = mustReplace(v, '#include <common>', '#include <common>\n' + withDisplace(debrisState, hook().glsl) + '\nuniform float uHideFlying;', 'cube');
     v = mustReplace(v, '#include <beginnormal_vertex>', `
         vec3 dbP; float dbA; float dbS; float dbT; debrisState(dbP, dbA, dbS, dbT);
         if (uHideFlying > 0.5 && aStart < 1.0e8 && (aKind > 0.5 || dbT > 0.0)) dbS = 0.0;   // drawn as strokes instead
@@ -88,23 +116,24 @@ export function patchCube(material, hideFlyingU, source = null) {
     sh.vertexShader = v;
     src.onBeforeCompile.call(source ?? material, sh, renderer);
   };
-  material.customProgramCacheKey = () => 'baked-debris-cube|' + src.customProgramCacheKey.call(source ?? material);
+  material.customProgramCacheKey = () => 'baked-debris-cube|' + hook().hash + '|' + src.customProgramCacheKey.call(source ?? material);
 }
 
 // Shadow materials (MeshDepthMaterial for sun/spot lights, MeshDistanceMaterial for point lights):
 // no normal chunk, so the state is computed in begin_vertex.
 export function patchDepth(material, hideFlyingU, key = 'baked-debris-depth') {
+  const hook = () => material.userData.debrisDisplace ?? NO_HOOK;
   material.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, material.userData.debrisUniforms, { uHideFlying: hideFlyingU });
     let v = sh.vertexShader;
-    v = mustReplace(v, '#include <common>', '#include <common>\n' + debrisState + '\nuniform float uHideFlying;', key);
+    v = mustReplace(v, '#include <common>', '#include <common>\n' + withDisplace(debrisState, hook().glsl) + '\nuniform float uHideFlying;', key);
     v = mustReplace(v, '#include <begin_vertex>', `
         vec3 dbP; float dbA; float dbS; float dbT; debrisState(dbP, dbA, dbS, dbT);
         if (uHideFlying > 0.5 && aStart < 1.0e8 && (aKind > 0.5 || dbT > 0.0)) dbS = 0.0;
         vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;`, key);
     sh.vertexShader = v;
   };
-  material.customProgramCacheKey = () => key;
+  material.customProgramCacheKey = () => key + '|' + hook().hash;
 }
 
 // Flying pieces as brush strokes: a camera-facing quad stretched along the piece's screen velocity.

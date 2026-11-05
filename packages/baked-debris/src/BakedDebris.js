@@ -4,9 +4,12 @@ import {
   Color, ShaderMaterial, Vector2,
 } from 'three';
 import { launchPieces, addSecondary, simulate, mulberry32, validateOptions } from './bake.js';
-import { patchCube, patchDepth, strokeVertex, strokeFragment } from './shaders.js';
+import { patchCube, patchDepth, strokeVertex, strokeFragment, withDisplace } from './shaders.js';
 
 const MAX_BURSTS = 32;   // must match MAX_BURSTS in shaders.js
+// uniforms of the stroke material, besides the debris uniforms; hook uniforms must not reuse these names
+const STROKE_UNIFORMS = ['tDepth', 'uUseDepth', 'uRes', 'uPixK', 'uStrokeScale', 'uMaxWidth', 'uBright', 'uTint', 'uJitter', 'uLookAhead', 'uHideFlying'];
+const hashString = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 
 // a misspelt option is otherwise silently ignored
 function warnUnknown(options) {
@@ -45,6 +48,7 @@ export class BakedDebris {
     sizeScale: 1,             // resize pieces once they fly
     castShadow: true,         // the cubes cast shadows (also settable later on boom.mesh)
     receiveShadow: true,
+    displace: null,           // { glsl, uniforms }: GLSL vec3 debrisDisplace(vec3 p, DebrisInfo d) adds an offset per piece
     material: null,           // a MeshStandardMaterial (or similar) to copy and patch; one is made if omitted
   };
 
@@ -73,8 +77,12 @@ export class BakedDebris {
     this.mesh.castShadow = this.o.castShadow; this.mesh.receiveShadow = this.o.receiveShadow;
     this.mesh.frustumCulled = false;
     this.mesh.onBeforeRender = renderer => this._checkTexture(renderer);
+    this._displace = { glsl: null, hash: '0', names: [] };
+    for (const m of [mat, depth, dist]) m.userData.debrisDisplace = this._displace;
     this.strokes = null;
     this.setTimeWarp(this.o.timeWarp);
+    validateOptions(this.o);
+    if (this.o.displace) this.setDisplace(this.o.displace);
     this.rebake();
   }
 
@@ -135,6 +143,7 @@ export class BakedDebris {
     this.uniforms.uGravity.value = o.gravity;
     if ('sizeScale' in changes) this.setSizeScale(o.sizeScale);
     if ('timeWarp' in changes) this.setTimeWarp(o.timeWarp);
+    if ('displace' in changes) this.setDisplace(o.displace);
     return this.stats;
   }
 
@@ -152,6 +161,24 @@ export class BakedDebris {
   _syncCounts() {
     const g = this._groups;
     this.mesh.geometry.instanceCount = g.still + g.flying + (this.strokes ? 0 : g.fragments);
+  }
+
+  /**
+   * Add a GPU offset to every piece: { glsl, uniforms }, where glsl defines vec3 debrisDisplace(vec3 p, DebrisInfo d)
+   * and may declare its own uniforms; null removes it. Cubes, both shadow materials and strokes use it.
+   * Changing the code recompiles; changing boom.uniforms.<name>.value does not. The bake does not know the offset.
+   */
+  setDisplace(h) {
+    validateOptions(Object.assign({}, this.o, { displace: h }));
+    const old = this._displace.names, names = h?.uniforms ? Object.keys(h.uniforms) : [];
+    for (const k of names) if ((k in this.uniforms && !old.includes(k)) || STROKE_UNIFORMS.includes(k))
+      throw new Error(`BakedDebris: displace uniform "${k}" clashes with a built-in uniform; rename it`);
+    for (const k of old) { delete this.uniforms[k]; if (this.strokes) delete this.strokes.material.uniforms[k]; }
+    for (const k of names) { this.uniforms[k] = h.uniforms[k]; if (this.strokes) this.strokes.material.uniforms[k] = h.uniforms[k]; }
+    Object.assign(this._displace, { glsl: h ? h.glsl : null, hash: h ? hashString(h.glsl) : '0', names });
+    this.o.displace = h ?? null;
+    for (const m of [this.mesh.material, this.mesh.customDepthMaterial, this.mesh.customDistanceMaterial]) m.needsUpdate = true;
+    if (this.strokes) { this.strokes.material.vertexShader = withDisplace(strokeVertex, this._displace.glsl); this.strokes.material.needsUpdate = true; }
   }
 
   /** Show the explosion at `t` seconds. Exact for any t, forward or backward. */
@@ -187,7 +214,7 @@ export class BakedDebris {
       uStrokeScale: { value: strokeScale }, uMaxWidth: { value: maxWidth }, uBright: { value: 1 }, uTint: { value: new Color(1, 1, 1) },
       uJitter: { value: jitter }, uLookAhead: { value: lookAhead },
     });
-    const mat = new ShaderMaterial({ uniforms: U, vertexShader: strokeVertex, fragmentShader: strokeFragment, toneMapped: false });
+    const mat = new ShaderMaterial({ uniforms: U, vertexShader: withDisplace(strokeVertex, this._displace.glsl), fragmentShader: strokeFragment, toneMapped: false });
     const mesh = new Mesh(this._buildStrokeGeo(), mat);
     mesh.frustumCulled = false;
     const size = new Vector2();

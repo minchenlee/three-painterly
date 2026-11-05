@@ -44,6 +44,12 @@ export function validateOptions(o) {
   const w = o.timeWarp;
   if (w != null && (typeof w !== 'object' || (w.burst !== undefined && !(fin(w.burst) && w.burst > 0)) || (w.hover !== undefined && !(fin(w.hover) && w.hover >= 0))))
     fail('timeWarp', 'null or { burst > 0, hover >= 0 }', w);
+  const h = o.displace;
+  if (h != null) {
+    if (typeof h !== 'object' || typeof h.glsl !== 'string' || !/\bdebrisDisplace\s*\(/.test(h.glsl))
+      fail('displace', 'null or { glsl, uniforms } where glsl defines vec3 debrisDisplace(vec3 p, DebrisInfo d)', h && typeof h === 'object' ? { glsl: typeof h.glsl } : h);
+    if (h.uniforms != null && typeof h.uniforms !== 'object') fail('displace.uniforms', 'an object of { value } uniforms', h.uniforms);
+  }
   if (!Array.isArray(o.bursts)) fail('bursts', 'an array', o.bursts);
   if (!Array.isArray(o.pieces)) fail('pieces', 'an array', o.pieces);
   o.bursts.forEach((b, i) => {

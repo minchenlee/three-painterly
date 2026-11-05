@@ -53,6 +53,7 @@ Requires three.js r160 or later (WebGL 2).
 | `sizeScale` | `1` | Resize pieces once they fly. Also `setSizeScale()`. |
 | `seed` | `4242` | Same seed, same explosion. |
 | `castShadow`, `receiveShadow` | `true` | Shadow flags for `boom.mesh`. Turning off `castShadow` skips the shadow-map passes for all pieces. |
+| `displace` | `null` | `{ glsl, uniforms }`: a GPU offset per piece. See [Displace hook](#displace-hook). |
 | `material` | new `MeshStandardMaterial` | Material for the cubes. BakedDebris patches a **clone** (`boom.mesh.material`), so the material you pass is not changed and stays usable elsewhere; `dispose()` disposes only the clone. Its `onBeforeCompile` and `customProgramCacheKey` are called on every compile and run after the debris patch, seeing the moved `transformed` and `objectNormal`. Other changes to the passed material after construction (colour, roughness, …) do not reach the clone: change `boom.mesh.material` instead. |
 
 Bursts: `{ position, radius, time = 0, direction = [0, 1, 0], strength = 1 }`. A burst with `radius: 0` launches nothing by itself; use it with pieces that carry their own launch.
@@ -83,6 +84,47 @@ Flying pieces are then drawn as brush strokes on top of the painting, stretched 
 `createStrokes` options: `strokeScale` (1.25), `maxWidth` in CSS pixels (34), `jitter` (0.16), `lookAhead` (−0.03 s: the stroke points from where the piece was a moment ago; use a positive value when you play the clock backwards).
 
 To give your own effects (fire, sparks) the same brush look, import the stroke fragment shader: `import { strokeFragment } from 'baked-debris'`. The GLSL pieces and patch functions are also available as `baked-debris/shaders`; that entry is lower-level and may change between versions.
+
+## Displace hook
+
+Add your own motion on the GPU on top of the bake: a swirl, wind, a wobble. Pass GLSL that defines one function with a fixed signature:
+
+```js
+const boom = new BakedDebris({
+  pieces, bursts, solid,
+  displace: {
+    uniforms: { uSwirl: { value: 1.5 }, uCenter: { value: new Vector3(0, 4, 0) } },
+    glsl: /* glsl */`
+      uniform float uSwirl;
+      uniform vec3 uCenter;
+      // p: baked position (world space). Return the offset to add.
+      vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+        if (d.local <= 0.0) return vec3(0.0);            // not launched yet: stay in place
+        vec3 r = p - uCenter;
+        float a = uSwirl * d.local / (1.0 + length(r.xz));
+        return vec3(r.x * cos(a) - r.z * sin(a) - r.x, 0.0, r.x * sin(a) + r.z * cos(a) - r.z);
+      }`,
+  },
+});
+boom.uniforms.uSwirl.value = 3;   // live, no recompile
+boom.setDisplace(null);           // remove; or pass a new { glsl, uniforms } (recompiles)
+```
+
+`DebrisInfo` fields:
+
+| Field | Meaning |
+|---|---|
+| `time` | Global time of this sample. Strokes sample twice (see `lookAhead`), so use `d.time`, not `uTime`, and the stroke direction follows your motion. |
+| `local` | Physics time since launch (after the time warp); `<= 0` = not launched yet. |
+| `kind` | 0 = piece, 1 = fragment of a secondary blast. |
+| `burst` | Index of the burst that launched it, −1 = none. |
+| `index` | The piece's row in the segment texture: stable, usable as a random seed. |
+| `rest` | Local time from which the piece rests. |
+
+- The offset moves the whole piece, so cubes stay rigid. Cubes, both shadow materials and strokes use the same hook.
+- The hook's uniforms are added to `boom.uniforms`. A name that is already used (`uTime`, `uLookAhead`, …) throws an error.
+- GLSL errors appear in the three.js console output between `// --- baked-debris displace hook ---` markers.
+- **Collisions do not know the offset.** The bake ran without it, so a large offset pushes pieces through walls and the floor. Keep offsets small near geometry, or fade them out as `d.local` approaches `d.rest`.
 
 ## How it works
 

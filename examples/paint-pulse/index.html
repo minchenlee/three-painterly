@@ -50,6 +50,11 @@ button:disabled { opacity: .5; cursor: default; }
 .seg button { background: transparent; min-height: 26px; padding: 3px 8px; border-radius: 6px; }
 .seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
+.seekrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.seekrow output { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 32px; }
+.seekrow output:last-child { text-align: right; }
+.vol { display: flex; flex: 1; min-width: 120px; gap: 8px; align-items: center; color: var(--muted); }
+button[aria-pressed="true"].tog { background: var(--panel); border-color: var(--line); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .meta { margin: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .track { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -64,6 +69,7 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
 .foot button { background: transparent; padding: 0; min-height: 0; color: var(--muted); }
 .foot button:hover { color: var(--ink); border-color: transparent; }
 [hidden] { display: none !important; }
+html[data-ui-hidden] #liteNote, html[data-ui-hidden] #toast, html[data-ui-hidden] #keys { display: none !important; }   /* H hides every overlay */
 
 #keys { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100% - 32px)); max-height: calc(100% - 32px);
   overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; z-index: 20;
@@ -100,6 +106,8 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   <div class="keys-head"><span>Keyboard shortcuts</span><button type="button" id="keysClose" aria-label="Close">✕</button></div>
   <table>
     <tr><td><kbd>Space</kbd></td><td>Play / pause (starts the demo track)</td></tr>
+    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward 5 seconds</td></tr>
+    <tr><td><kbd>L</kbd></td><td>Loop on / off</td></tr>
     <tr><td><kbd>D</kbd></td><td>Play the demo track from the start</td></tr>
     <tr><td><kbd>O</kbd></td><td>Open a music file</td></tr>
     <tr><td><kbd>P</kbd></td><td>Painted / plain cubes</td></tr>
@@ -122,8 +130,13 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
     <div class="row">
       <button type="button" id="bDemo" class="primary">▶ Play demo</button>
       <button type="button" id="bFile">Open file…</button>
-      <button type="button" id="bPause" disabled>Pause</button>
+      <button type="button" id="bPause" disabled title="Play / pause (Space)">Pause</button>
     </div>
+    <div class="seekrow"><output id="tCur">0:00</output>
+      <input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled aria-label="Position in the track">
+      <output id="tDur">0:00</output></div>
+    <div class="row"><button type="button" id="bLoop" class="tog" aria-pressed="true" title="Loop the track (L)">Loop</button>
+      <label class="vol"><span>Volume</span><input type="range" id="vol" min="0" max="100" step="1" value="85" aria-label="Volume"></label></div>
     <p class="meta track" id="track">No music yet. Play the demo or drop a file anywhere.</p>
     <input type="file" id="file" accept="audio/*" hidden>
   </div>
@@ -135,10 +148,10 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   </div>
 
   <div class="grp">
-    <div class="lab"><span>Sensitivity</span><output id="sensOut">130%</output></div>
-    <input type="range" id="sens" min="40" max="250" step="5" value="130" aria-label="Sensitivity">
-    <div class="lab"><span>Stroke size</span><output id="strokeOut">7 px</output></div>
-    <input type="range" id="stroke" min="3" max="40" step="1" value="7" aria-label="Stroke size">
+    <div class="lab"><span>Sensitivity</span><output id="sensOut">150%</output></div>
+    <input type="range" id="sens" min="40" max="250" step="5" value="150" aria-label="Sensitivity">
+    <div class="lab"><span>Stroke size</span><output id="strokeOut">23 px</output></div>
+    <input type="range" id="stroke" min="3" max="30" step="1" value="23" aria-label="Stroke size">
     <div class="row"><span class="lab">Look</span>
       <div class="seg" role="group" aria-label="Look" id="lookSeg">
         <button type="button" data-v="1" aria-pressed="true">Painted</button>
@@ -179,7 +192,7 @@ const TEXT = {
   demoName: 'Demo track (120 BPM, synthesised)', demoFailed: 'The demo track failed to render', badFile: 'This file cannot be decoded. Try MP3, WAV, M4A or OGG.',
   notAudio: 'That is not an audio file', noFull: 'Full screen is not available here', fullDenied: 'Full screen is not allowed here',
   painted: 'Painted', cubes: 'Plain cubes', swirl: 'Swirling paths', straight: 'Straight paths', rotateOn: 'Auto-rotate on', rotateOff: 'Auto-rotate off',
-  sensitivity: 'Sensitivity', pieces: 'pieces', lite: 'Lite mode · full version on desktop', tap: 'Tap to start · sound on',
+  sensitivity: 'Sensitivity', pieces: 'pieces', lite: 'Lite mode · full version on desktop', tap: 'Tap to start · sound on', loopOn: 'Loop on', loopOff: 'Loop off', play: 'Play', pause: 'Pause',
 };
 // Lite mode for phones and small screens: pixel ratio 1, about a quarter of the pieces. ?full=1 turns it off, ?lite=1 forces it.
 const QS = new URLSearchParams(location.search);
@@ -313,8 +326,9 @@ boom.setDisplace(flow);
 scene.add(boom.mesh);
 boom.mesh.castShadow = boom.mesh.receiveShadow = false;
 
-const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04, sky: false });
-let strokes = null, painted = true, strokeK = 1;   // strokeK: flying strokes scale with the Stroke size slider (7 px = 1)
+const STROKE0 = LITE ? 12 : 23;   // default Stroke size in CSS px (lite: the ball is about a third as wide); flying strokes start at the matching scale
+const painter = new PainterlyPass(scene, camera, { strokeSize: STROKE0, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04, sky: false });
+let strokes = null, painted = true, strokeK = STROKE0 / 7;   // strokeK: flying strokes scale with the Stroke size slider (7 px = 1)
 function setPainted(on) {
   painted = on;
   if (on && !strokes) { strokes = boom.createStrokes({ painter, strokeScale: 0.85 * strokeK, maxWidth: 16 * strokeK }); painter.overlayScene.add(strokes); }
@@ -324,33 +338,59 @@ function setPainted(on) {
 setPainted(true);
 
 /* ---------- audio ---------- */
-let ctx = null, analyser = null, master = null, src = null, track = null, paused = false, busy = false, genId = 0;
+let ctx = null, analyser = null, master = null, src = null, track = null, last = null, paused = false, busy = false, genId = 0;
+let volume = 0.85, quietUntil = -1;   // quietUntil: no onsets just after a seek, so a jump does not read as a beat
 const freq = new Uint8Array(1024);
 function ensureAudio() {
   if (ctx) return;
   ctx = new (window.AudioContext || window.webkitAudioContext)();
-  master = ctx.createGain(); master.gain.value = 0.85;
+  master = ctx.createGain(); master.gain.value = volume;
   const comp = ctx.createDynamicsCompressor();
   analyser = ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.3;   // low smoothing: onsets show up within a frame or two
   master.connect(comp); comp.connect(analyser); analyser.connect(ctx.destination);
 }
 function stopTrack() { if (src) { src.onended = null; try { src.stop(); } catch {} src.disconnect(); src = null; } }
-function startTrack(buf, name, loop, offset = 0) {
-  stopTrack(); paused = false; ctx.resume();
+// startTrack also serves seeking: it restarts the source at an offset and keeps the pause state when asked to.
+function startTrack(buf, name, loop, offset = 0, env = null, keepPause = false) {
+  const stayPaused = keepPause && paused;
+  stopTrack(); paused = stayPaused; if (!stayPaused) ctx.resume();
   src = ctx.createBufferSource(); src.buffer = buf; src.loop = loop; src.connect(master); src.start(0, offset);
   const id = ++genId;
-  track = { buf, name, loop, start: ctx.currentTime - offset, env: envelope(buf) };
+  track = last = { buf, name, loop, start: ctx.currentTime - offset, env: env || envelope(buf) };
   src.onended = () => { if (id === genId) { track = null; src = null; updateTransport(); toast(TEXT.finished); } };
   updateTransport();
 }
 const position = () => { if (!track) return 0; const p = ctx.currentTime - track.start; return track.loop ? p % track.buf.duration : Math.min(p, track.buf.duration); };
+function seekTo(t) {
+  const T = track || last; if (!T || busy) return;
+  t = Math.max(0, Math.min(T.buf.duration - 0.05, t));
+  startTrack(T.buf, T.name, T.loop, t, T.env, !!track);
+  quietUntil = performance.now() / 1000 + 0.35;
+}
+function setLoop(on) {
+  const T = track || last; if (!T) return;
+  if (track) { const p = position(); track.start = ctx.currentTime - p; if (src) src.loop = on; }   // re-anchor so the position stays right
+  T.loop = on; updateTransport();
+}
 function togglePause() {
-  if (!track) { playDemo(); return; }
+  if (!track) { if (last) seekTo(0); else playDemo(); return; }   // after the end, Play starts the same track again
   paused = !paused; paused ? ctx.suspend() : ctx.resume(); updateTransport();
 }
 function updateTransport() {
-  $('bPause').disabled = !track; $('bPause').textContent = paused ? 'Resume' : 'Pause';
-  $('track').textContent = track ? `${paused ? TEXT.paused : TEXT.playing} · ${track.name}` : TEXT.noMusic;
+  const T = track || last;
+  $('bPause').disabled = !T; $('bPause').textContent = track && !paused ? TEXT.pause : TEXT.play;
+  $('seek').disabled = !T; $('bLoop').disabled = !T; $('bLoop').setAttribute('aria-pressed', String(T ? T.loop : true));
+  $('tDur').textContent = clock(T ? T.buf.duration : 0);
+  $('track').textContent = track ? `${paused ? TEXT.paused : TEXT.playing} · ${track.name}` : last ? `${TEXT.finished} · ${last.name}` : TEXT.noMusic;
+  updateSeek(true);
+}
+const clock = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+let seeking = false, shownSec = -1;
+function updateSeek(force) {   // per frame; touches the DOM only when the shown second or slider step changes
+  if (seeking) return;
+  const T = track || last, d = T ? T.buf.duration : 0, p = track ? position() : 0, sec = Math.floor(p), v = d ? Math.round(p / d * 1000) : 0;
+  if (force || sec !== shownSec) { $('tCur').textContent = clock(p); shownSec = sec; }
+  if (force || +$('seek').value !== v) $('seek').value = v;
 }
 
 // Loudness of the whole track, in 50 ms steps, smoothed over ~2 s and ranked 0..1 within the track.
@@ -436,7 +476,7 @@ function listen(now, dt) {
   const k = Math.min(1, dt * 2.5);   // ~0.4 s memory for the onset thresholds
   const onset = (s, flux) => {        // adaptive threshold: an onset is a jump well above the recent average
     const thr = s.fluxAvg + Math.max(0.012, 2 * s.fluxDev); let hit = 0;
-    if (live && flux > thr && now - s.last > 0.16) { s.last = now; hit = Math.min(1, 0.55 + 0.45 * (flux - thr) / (thr + 0.02)); }
+    if (live && flux > thr && now - s.last > 0.16 && now > quietUntil) { s.last = now; hit = Math.min(1, 0.55 + 0.45 * (flux - thr) / (thr + 0.02)); }
     s.fluxAvg += (flux - s.fluxAvg) * k; s.fluxDev += (Math.abs(flux - s.fluxAvg) - s.fluxDev) * k; return hit;
   };
   let sum = 0;
@@ -460,7 +500,7 @@ function listen(now, dt) {
 }
 
 /* ---------- driving the band clocks ---------- */
-let sens = 1.3, hold = null;   // hold: fixed debris times (a number or one per band), for tests and screenshots
+let sens = 1.5, hold = null;   // hold: fixed debris times (a number or one per band), for tests and screenshots
 const tRaw = new Float32Array(NB);
 function drive(dt) {
   // each band: loud passages and its own loudness open it, its onsets kick it outward at once, quiet parts pull it back
@@ -475,7 +515,7 @@ function drive(dt) {
       s.punch = Math.min(0.45, s.punch + (0.12 + 0.16 * s.kick) * B.kick * loud); s.kick = 0;
     }
     const target = Math.min(T_MAX, base + T_MAX * s.punch);
-    const rate = target > s.t ? 6 : 2.8;                 // scatter fast, gather nearly as fast
+    const rate = target > s.t ? 6 : paused ? 0.7 : 2.8;   // scatter fast, gather nearly as fast; on pause, drift back slowly
     s.t += Math.max(-rate * dt, Math.min(rate * dt, (target - s.t) * Math.min(1, dt * 9)));
     s.t = Math.min(T_MAX, Math.max(0, s.t));
     s.punch = Math.max(0, s.punch - dt * 2.2);
@@ -492,8 +532,16 @@ $('bDemo').onclick = () => playDemo();
 $('bFile').onclick = () => $('file').click();
 $('file').onchange = e => { playFile(e.target.files[0]); e.target.value = ''; };
 $('bPause').onclick = () => togglePause();
+const seekEl = $('seek');
+seekEl.addEventListener('pointerdown', () => { seeking = true; });
+addEventListener('pointerup', () => { if (seeking) setTimeout(() => { seeking = false; }, 0); });   // after the slider's change event
+seekEl.oninput = () => { const T = track || last; if (T) $('tCur').textContent = clock(seekEl.value / 1000 * T.buf.duration); };
+seekEl.onchange = () => { seeking = false; const T = track || last; if (T) seekTo(seekEl.value / 1000 * T.buf.duration); };
+$('bLoop').onclick = () => { const T = track || last; if (T) { setLoop(!T.loop); toast(T.loop ? TEXT.loopOn : TEXT.loopOff); } };
+$('vol').oninput = e => { volume = e.target.value / 100; if (master) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.02); };
 $('sens').oninput = e => { sens = e.target.value / 100; $('sensOut').textContent = e.target.value + '%'; };
 let strokeTimer = 0;
+$('stroke').value = STROKE0; $('strokeOut').textContent = STROKE0 + ' px';
 $('stroke').oninput = e => { const v = +e.target.value; painter.strokeSize = v; $('strokeOut').textContent = v + ' px';
   strokeK = v / 7; if (strokes) strokes.material.uniforms.uStrokeScale.value = 0.85 * strokeK;
   clearTimeout(strokeTimer);   // maxWidth is fixed per stroke mesh: rebuild it once the slider settles
@@ -523,6 +571,8 @@ addEventListener('keydown', e => {
   switch (e.code) {
     case 'Space': e.preventDefault(); togglePause(); break;
     case 'KeyD': playDemo(); break;
+    case 'ArrowLeft': case 'ArrowRight': if (track || last) { e.preventDefault(); seekTo((track ? position() : 0) + (e.code === 'ArrowRight' ? 5 : -5)); } break;
+    case 'KeyL': $('bLoop').click(); break;
     case 'KeyO': $('file').click(); break;
     case 'KeyP': setPainted(!painted); toast(painted ? TEXT.painted : TEXT.cubes); break;
     case 'KeyW': setFlow(!flowOn); toast(flowOn ? TEXT.swirl : TEXT.straight); break;
@@ -587,9 +637,10 @@ renderer.setAnimationLoop(nowMs => {
   if (painted) painter.render(renderer); else renderer.render(scene, camera);
   BS.forEach((s, n) => { specBars[n].style.transform = `scaleY(${(0.04 + 0.96 * clamp01(s.show)).toFixed(3)})`; });
   [A.beat, Math.max(...BS.map(s => s.tShow)) / T_MAX].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
+  if (!$('ui').hidden) updateSeek(false);
   fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
 });
-window.__pp = { boom, painter, A, fps, T_MAX, LITE, setPainted, playDemo, position: () => position(), controls,
+window.__pp = { boom, painter, A, fps, T_MAX, LITE, setPainted, playDemo, position: () => position(), seekTo, setLoop, get track() { return track; }, get paused() { return paused; }, controls,
   BS, BANDS, get t() { return Math.max(...BS.map(s => s.tShow)); }, get ts() { return BS.map(s => s.tShow); }, NB, hold(v) { hold = v; }, flow, setFlow, AQ };
 </script>
 </body>

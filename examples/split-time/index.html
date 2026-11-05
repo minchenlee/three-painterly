@@ -69,6 +69,7 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
 kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--soft); }
 #toast { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--panel);
   border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; pointer-events: none; backdrop-filter: blur(16px); }
+html[data-ui-hidden] #liteNote, html[data-ui-hidden] #toast { display: none !important; }
 #bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
@@ -417,7 +418,7 @@ $('rebuild').oninput = e => { clocks.rebuild = e.target.value / 10; $('rOut').te
 $('upper').oninput = e => { clocks.upper = e.target.value / 10; $('uOut').textContent = `${clocks.upper.toFixed(1)} s`; syncUI(); };
 document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPaint(!!+b.dataset.v));
 
-function setPanel(show) { $('ui').hidden = !show; $('bShow').hidden = show;
+function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey;   // H hides everything; the Hide button leaves Show controls
   document.documentElement.toggleAttribute('data-ui-hidden', !show); }   // lets a host page hide its own overlay (e.g. a back link) too
 $('bHide').onclick = () => setPanel(false);
 $('bShow').onclick = () => setPanel(true);
@@ -437,7 +438,7 @@ addEventListener('keydown', e => {
     case 'BracketLeft': case 'BracketRight': { const i = SPEEDS.indexOf(play.speed) + (e.code === 'BracketRight' ? 1 : -1);
       setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, i))]); toast(`Speed ${play.speed}×`); break; }
     case 'KeyP': setPaint(!paintOn); toast(paintOn ? 'Painterly' : 'Cubes'); break;
-    case 'KeyH': setPanel($('ui').hidden); break;
+    case 'KeyH': setPanel($('ui').hidden, true); break;
   }
 });
 

@@ -2,13 +2,40 @@
   "name": "painterly-pass",
   "version": "0.1.0",
   "description": "A three.js post-processing pass that repaints any scene in impressionist brush strokes anchored to surfaces.",
+  "author": "minchenlee",
+  "homepage": "https://github.com/minchenlee/three-painterly/tree/main/packages/painterly-pass#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minchenlee/three-painterly.git",
+    "directory": "packages/painterly-pass"
+  },
+  "bugs": {
+    "url": "https://github.com/minchenlee/three-painterly/issues"
+  },
   "type": "module",
   "main": "./src/index.js",
-  "exports": { ".": "./src/index.js" },
-  "files": ["src"],
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
-  "peerDependencies": { "three": ">=0.160.0" },
-  "keywords": ["three", "threejs", "postprocessing", "shader", "painterly", "impressionism", "npr"],
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "keywords": [
+    "three",
+    "threejs",
+    "postprocessing",
+    "shader",
+    "painterly",
+    "impressionism",
+    "npr",
+    "webgl"
+  ],
   "license": "MIT",
   "private": true
 }

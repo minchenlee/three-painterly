@@ -2,13 +2,43 @@
   "name": "baked-debris",
   "version": "0.1.0",
   "description": "Scrubbable explosion debris for three.js: collisions are simulated once, then any moment plays back exactly on the GPU.",
+  "author": "minchenlee",
+  "homepage": "https://github.com/minchenlee/three-painterly/tree/main/packages/baked-debris#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minchenlee/three-painterly.git",
+    "directory": "packages/baked-debris"
+  },
+  "bugs": {
+    "url": "https://github.com/minchenlee/three-painterly/issues"
+  },
   "type": "module",
   "main": "./src/index.js",
-  "exports": { ".": "./src/index.js", "./shaders": "./src/shaders.js" },
-  "files": ["src"],
+  "exports": {
+    ".": "./src/index.js",
+    "./shaders": "./src/shaders.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
-  "peerDependencies": { "three": ">=0.160.0" },
-  "keywords": ["three", "threejs", "voxel", "explosion", "debris", "destruction", "baked", "scrub", "instancing"],
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "keywords": [
+    "three",
+    "threejs",
+    "voxel",
+    "explosion",
+    "debris",
+    "destruction",
+    "baked",
+    "scrub",
+    "instancing",
+    "webgl"
+  ],
   "license": "MIT",
   "private": true
 }

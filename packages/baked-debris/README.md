@@ -28,7 +28,7 @@ boom.setTime(seconds);
 - `solid` is called for every probe of every simulation step: millions of times per bake. Keep it cheap. For voxels, look up a typed array (`grid[i + nx * (j + ny * k)]`); a `Set` of `"i,j,k"` strings builds a string per call and can make the bake many times slower.
 - Changing physics options needs a new bake: `boom.rebake({ restitution: 0.5 })`. `rebake` accepts any option; `gravity`, `sizeScale` and `timeWarp` passed to it also update the GPU. Changing time, time warp or size alone does not need a bake: use `setTime`, `setTimeWarp`, `setSizeScale`.
 
-Requires three.js r160 or later (WebGL 2).
+Requires three.js r160 or later (WebGL 2). Last tested with three.js r160.
 
 ## Options
 

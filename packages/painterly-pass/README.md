@@ -30,7 +30,7 @@ painter.setSize(innerWidth * devicePixelRatio, innerHeight * devicePixelRatio);
 painter.render(renderer);   // draws to the screen
 ```
 
-Requires three.js r160 or later and a `PerspectiveCamera`.
+Requires three.js r160 or later and a `PerspectiveCamera`. Last tested with three.js r160.
 
 ## Options
 

@@ -241,6 +241,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { BakedDebris, voxelCollider } from '../../packages/baked-debris/src/index.js';
 import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
+import { strokeFragment } from '../../packages/baked-debris/src/shaders.js';   // reuse the debris brush look for fireballs
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);
@@ -763,11 +764,14 @@ function drawFrame(){
   painter.exposure = renderer.toneMappingExposure;
   if (boom.strokes){ const u = boom.strokes.material.uniforms;
     u.uBright.value = 1 - 0.65*nightU.value; u.uTint.value.copy(sun.color).lerp(new THREE.Color(1, 1, 1), 0.6); }
+  if (fireStrokes) fireStrokes.material.uniforms.uBright.value = 1 - 0.4*nightU.value;
   painter.render(renderer);
 }
 function setArt(on){ const was = paint.on; paint.on = !!on;
   if (paint.on && !boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, jitter: 0.16 }));
   if (!paint.on) boom.removeStrokes();
+  if (fire){ if (!fireStrokes){ fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); }
+    fire.visible = !paint.on; fireStrokes.visible = paint.on; }
   if (was !== paint.on) setPieces(+$('pieces').value);   // painterly mode uses fewer, larger strokes
   markDirty(false); }
 
@@ -895,6 +899,51 @@ function makeFire(recs){
     fogPatch(sh);
   };
   fire = new THREE.Mesh(g, m); fire.frustumCulled = false; scene.add(fire);
+}
+// painterly mode: the same fireballs as thin, glowing brush flicks in the overlay (cubes would show as solid blocks)
+let fireStrokes = null;
+function makeFireStrokes(){
+  const src = fire.geometry, plane = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
+  g.index = plane.index; g.setAttribute('position', plane.attributes.position);
+  for (const k of ['fP', 'fV', 'fA', 'fT', 'fCol']) g.setAttribute(k, src.attributes[k]);
+  g.instanceCount = src.instanceCount;
+  const B = boom.uniforms, U = { uTime: B.uTime, uWarp: B.uWarp, uBurstT: B.uBurstT, uHover: B.uHover, uShift: B.uBurstShift,
+    tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) }, uPixK: { value: 500 },
+    uMaxWidth: { value: 34 }, uBright: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uJitter: { value: 0.16 } };
+  const m = new THREE.ShaderMaterial({ uniforms: U, toneMapped: false, fragmentShader: strokeFragment, vertexShader: `
+    attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT; attribute vec3 fCol;
+    uniform float uTime; uniform float uWarp; uniform float uBurstT; uniform float uHover; uniform float uShift[32];
+    uniform vec2 uRes; uniform float uPixK; uniform float uMaxWidth;
+    varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+    float fLocal(float off){ float tl = uTime + off - fT.x - uShift[int(fT.w + 0.5)];
+      if (uWarp > 0.5 && tl > 0.0) tl = uBurstT*(1.0 - exp(-tl/uBurstT)) + uHover*tl; return tl; }
+    vec3 fPos(float tl){ return fP + fV*(1.0 - exp(-1.6*tl))/1.6; }
+    void main(){
+      float tl = fLocal(0.0);
+      if (tl <= 0.0 || tl >= fT.y){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      float sc = fA.w * min(1.0, tl/0.12) * (1.0 - tl/fT.y);
+      mat4 VP = projectionMatrix * viewMatrix;
+      vec4 c0 = VP * vec4(fPos(tl), 1.0), c1 = VP * vec4(fPos(max(fLocal(-0.03), 0.0)), 1.0);
+      if (c0.w <= 0.1 || c1.w <= 0.1){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec2 dv = (c0.xy/c0.w - c1.xy/c1.w) * 0.5 * uRes; float spd = length(dv) / 0.03;
+      vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+      vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed*6.283), sin(vSeed*6.283));
+      float tw = 0.35 * sin(fT.z * tl); dir = vec2(dir.x*cos(tw) - dir.y*sin(tw), dir.x*sin(tw) + dir.y*cos(tw));
+      float wid = 0.5 * clamp(sc * uPixK / c0.w * 1.25, 1.5, uMaxWidth);   // thin flicks
+      float len = wid * (2.2 + min(spd * 0.004, 5.0));
+      vec2 off = dir * position.x * len + vec2(-dir.y, dir.x) * position.y * wid;
+      gl_Position = c0 + vec4(off / (0.5 * uRes) * c0.w, 0.0, 0.0);
+      vQ = position.xy * 2.0; vCol = fCol / 2.2; vGlow = 0.55 * (1.0 - tl/fT.y);
+    }` });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false;
+  const size = new THREE.Vector2();
+  mesh.onBeforeRender = (r, sc, cam) => {
+    r.getDrawingBufferSize(size); const t = r.getRenderTarget(); if (t) size.set(t.width, t.height);
+    U.uRes.value.copy(size); U.uPixK.value = size.y / (2*Math.tan(cam.fov*Math.PI/360) / (cam.zoom || 1));
+    U.uMaxWidth.value = 34 * r.getPixelRatio();
+    const dt = painter.sceneTarget?.depthTexture ?? null; U.tDepth.value = dt; U.uUseDepth.value = !!dt;
+  };
+  return mesh;
 }
 
 const chunkMeshes = new Map();

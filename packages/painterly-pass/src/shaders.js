@@ -25,7 +25,7 @@ uniform float uJitter;
 uniform float uCanvas;
 uniform float uLength;
 uniform float uWidth;
-uniform int uSearch;          // cells per side tested around each pixel (4..7), from the longest stroke
+// SEARCH (a #define, 4..7): cells per side tested around each pixel; a constant so the loops unroll
 uniform float uReach;         // longest stroke reach from its centre, in cells (fits the search window)
 uniform float uContrast;
 uniform bool uSky;
@@ -82,15 +82,15 @@ vec3 planeToWorld(vec2 q, int axis, float a) {
 }
 
 // Strokes on one plane at cell size C (world units, or radians for the sky).
-// Each cell holds one stroke; the uSearch x uSearch cells around the pixel are tested and the topmost wins.
+// Each cell holds one stroke; the SEARCH x SEARCH cells around the pixel are tested and the topmost wins.
 // The window is large enough for the longest stroke (uReach), so strokes are never cut off at its edge.
 // Only the winning stroke is coloured, after the loop: one scene lookup per plane instead of one per hit.
 vec4 paintPlane(vec2 q, float C, int axis, float a, float seed, float baseAng, vec3 under) {
-  vec2 cell = floor(q / C - 0.5 * float(uSearch - 1));
+  vec2 cell = floor(q / C - 0.5 * float(SEARCH - 1));
   float bestZ = -1.0, bestE = 0.0, bestV = 0.0, reach2 = uReach * uReach * C * C, cap = uReach / 1.0607;
   vec2 bestK = vec2(0.0), bestQ = vec2(0.0);
-  for (int j = 0; j < 7; j++) { if (j >= uSearch) break;
-  for (int i = 0; i < 7; i++) { if (i >= uSearch) break;
+  for (int j = 0; j < SEARCH; j++) {
+  for (int i = 0; i < SEARCH; i++) {
     vec2 c = cell + vec2(float(i), float(j));
     vec2 k = c + vec2(seed, C * 7.13);
     float z = h1(k + 31.7);

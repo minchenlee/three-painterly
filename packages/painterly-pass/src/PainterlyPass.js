@@ -72,11 +72,12 @@ export class PainterlyPass extends Pass {
         tScene: { value: null }, tDepth: { value: null }, uRes: { value: new Vector2() }, uS: { value: 7 },
         uAmount: { value: 1 }, uExposure: { value: 1 }, uToneMap: { value: 1 }, uSaturation: { value: 1.3 },
         uShadowTint: { value: new Vector3() }, uShadowAmount: { value: 0.55 }, uWarmth: { value: 0.6 },
-        uJitter: { value: 0.07 }, uCanvas: { value: 0.035 }, uLength: { value: 1 }, uWidth: { value: 1 }, uSearch: { value: 5 }, uReach: { value: 2 },
+        uJitter: { value: 0.07 }, uCanvas: { value: 0.035 }, uLength: { value: 1 }, uWidth: { value: 1 }, uReach: { value: 2 },
         uContrast: { value: 1.1 }, uSky: { value: true },
         uInvProj: { value: new Matrix4() }, uCamWorld: { value: new Matrix4() }, uViewProj: { value: new Matrix4() },
         uCamPos: { value: new Vector3() }, uPixAng: { value: 0.001 },
       },
+      defines: { SEARCH: 4 },
       vertexShader: quadVertex, fragmentShader: paintFragment,
       depthTest: false, depthWrite: false, blending: NoBlending, toneMapped: false,
     });
@@ -124,11 +125,12 @@ export class PainterlyPass extends Pass {
     u.uLength.value = this.strokeLength;
     u.uWidth.value = this.strokeWidth;
     // Longest stroke reach in cells: half-length up to 1.85 x strokeLength (half-width 0.58 x strokeWidth),
-    // x 1.0607 for the ragged edge. Test enough cells to cover it, up to 7 x 7; beyond that, strokes are capped.
+    // x 1.0607 for the ragged edge. Up to strokeLength 1 the 4 x 4 search is kept for speed (the longest tips
+    // can be clipped). Longer strokes test more cells, up to 7 x 7; beyond that, strokes are capped to fit.
     const reach = 1.0607 * Math.max(1.85 * this.strokeLength, 0.58 * this.strokeWidth);
-    const search = Math.min(7, Math.max(4, Math.ceil(2 * reach + 1)));
-    u.uSearch.value = search;
-    u.uReach.value = Math.min(reach, (search - 1) / 2);
+    const search = this.strokeLength <= 1 ? 4 : Math.min(7, Math.max(4, Math.ceil(2 * reach + 1)));
+    if (this._paint.defines.SEARCH !== search) { this._paint.defines.SEARCH = search; this._paint.needsUpdate = true; }   // recompiles only when the window size changes
+    u.uReach.value = search === 7 ? Math.min(reach, 3) : reach;   // also the early-out radius
     u.uContrast.value = this.contrast;
     u.uSky.value = this.sky;
     u.uInvProj.value.copy(cam.projectionMatrixInverse);

@@ -3,7 +3,7 @@ import {
   MeshDepthMaterial, MeshStandardMaterial, NearestFilter, PlaneGeometry, RGBADepthPacking, RGBAFormat,
   Color, ShaderMaterial, Vector2,
 } from 'three';
-import { launchPieces, addSecondary, simulate, mulberry32 } from './bake.js';
+import { launchPieces, addSecondary, simulate, mulberry32, validateOptions } from './bake.js';
 import { patchCube, patchDepth, strokeVertex, strokeFragment } from './shaders.js';
 
 const MAX_BURSTS = 32;   // must match MAX_BURSTS in shaders.js
@@ -68,6 +68,7 @@ export class BakedDebris {
    * Any option can be passed; gravity, sizeScale and timeWarp also update the GPU side.
    */
   rebake(changes = {}) {
+    validateOptions(Object.assign({}, this.o, changes));   // throws before anything changes
     Object.assign(this.o, changes);
     const o = this.o, rnd = mulberry32(o.seed);
     let recs = launchPieces(o.pieces, o.bursts, o, rnd);

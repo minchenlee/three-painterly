@@ -1,7 +1,7 @@
 // CPU tests for the bake: no three.js, no GPU. Run with `node --test packages/baked-debris/test/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { launchPieces, simulate, mulberry32, SEGMENTS } from '../src/bake.js';
+import { launchPieces, simulate, mulberry32, SEGMENTS, validateOptions } from '../src/bake.js';
 
 const base = {
   pieceSize: 0.25, gravity: 9.81, speed: [7, 18], stagger: 1, spin: 9, restitution: 0.35, friction: 0.6, stopSpeed: 0.6,
@@ -47,4 +47,20 @@ test('a piece that bounces more often than it has segments never goes through th
     assert.ok(y > o.ground - 0.05, `below the floor at t=${t.toFixed(3)}: y=${y}`);
     assert.ok(Math.abs(x) < 0.6 + 0.2, `through a wall at t=${t.toFixed(3)}: x=${x}`);
   }
+});
+
+test('bad options are rejected before the bake, naming the field', () => {
+  const ok = Object.assign({}, base, { pieces: [{ position: [0, 1, 0] }], bursts: [{ position: [0, 0, 0], radius: 1 }] });
+  assert.doesNotThrow(() => validateOptions(ok));
+  const bad = [
+    [{ step: 0 }, /step/], [{ step: NaN }, /step/], [{ duration: Infinity }, /duration/], [{ duration: -1 }, /duration/],
+    [{ gravity: 'x' }, /gravity/], [{ speed: [5] }, /speed/], [{ pieceSize: 0 }, /pieceSize/], [{ solid: 3 }, /solid/],
+    [{ ground: NaN }, /ground/], [{ secondary: 2 }, /secondary/], [{ timeWarp: { burst: -1 } }, /timeWarp/],
+    [{ pieces: [{ position: [0, NaN, 0] }] }, /pieces\[0\]\.position/],
+    [{ pieces: [{ position: [0, 1, 0], velocity: [1, 2] }] }, /pieces\[0\]\.velocity/],
+    [{ pieces: [{ position: [0, 1, 0], burst: 5 }] }, /pieces\[0\]\.burst/],
+    [{ bursts: [{ position: [0, 0, 0], radius: -1 }] }, /bursts\[0\]\.radius/],
+    [{ bursts: null }, /bursts/],
+  ];
+  for (const [change, re] of bad) assert.throws(() => validateOptions(Object.assign({}, ok, change)), re, JSON.stringify(change));
 });

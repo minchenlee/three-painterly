@@ -13,6 +13,61 @@ export function mulberry32(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+const fin = v => typeof v === 'number' && Number.isFinite(v);
+const vec3 = v => Array.isArray(v) && v.length === 3 && v.every(fin);
+const range = v => Array.isArray(v) && v.length === 2 && v.every(fin) && v[0] <= v[1];
+
+/**
+ * Check options, pieces and bursts before any memory is allocated. Throws an Error that names the bad field,
+ * e.g. "BakedDebris: step must be a finite number > 0 (got 0)". A step of 0 would otherwise loop forever.
+ */
+export function validateOptions(o) {
+  const fail = (field, rule, got) => { throw new Error(`BakedDebris: ${field} must be ${rule} (got ${JSON.stringify(got)})`); };
+  const num = (k, rule, ok) => { if (!fin(o[k]) || !ok(o[k])) fail(k, rule, o[k]); };
+  num('step', 'a finite number > 0', v => v > 0);
+  num('duration', 'a finite number >= 0', v => v >= 0);
+  num('gravity', 'a finite number', () => true);
+  num('pieceSize', 'a finite number > 0', v => v > 0);
+  num('stagger', 'a finite number >= 0', v => v >= 0);
+  num('spin', 'a finite number', () => true);
+  num('restitution', 'a finite number >= 0', v => v >= 0);
+  num('friction', 'a finite number >= 0', v => v >= 0);
+  num('stopSpeed', 'a finite number >= 0', v => v >= 0);
+  num('snap', 'a finite number >= 0', v => v >= 0);
+  num('killY', 'a finite number', () => true);
+  num('secondary', 'a number from 0 to 1', v => v >= 0 && v <= 1);
+  num('seed', 'a finite number', () => true);
+  if (o.sizeScale !== undefined) num('sizeScale', 'a finite number >= 0', v => v >= 0);
+  for (const k of ['speed', 'secondaryDelay', 'secondarySpeed']) if (!range(o[k])) fail(k, '[min, max] with finite min <= max', o[k]);
+  if (o.ground !== null && !fin(o.ground)) fail('ground', 'a finite number or null', o.ground);
+  if (o.solid !== null && typeof o.solid !== 'function') fail('solid', 'a function (x, y, z) => boolean or null', o.solid);
+  const w = o.timeWarp;
+  if (w != null && (typeof w !== 'object' || (w.burst !== undefined && !(fin(w.burst) && w.burst > 0)) || (w.hover !== undefined && !(fin(w.hover) && w.hover >= 0))))
+    fail('timeWarp', 'null or { burst > 0, hover >= 0 }', w);
+  if (!Array.isArray(o.bursts)) fail('bursts', 'an array', o.bursts);
+  if (!Array.isArray(o.pieces)) fail('pieces', 'an array', o.pieces);
+  o.bursts.forEach((b, i) => {
+    const f = k => `bursts[${i}].${k}`;
+    if (!b || !vec3(b.position)) fail(f('position'), '3 finite numbers', b?.position);
+    if (!fin(b.radius) || b.radius < 0) fail(f('radius'), 'a finite number >= 0', b.radius);
+    if (b.time !== undefined && !fin(b.time)) fail(f('time'), 'a finite number', b.time);
+    if (b.direction !== undefined && !vec3(b.direction)) fail(f('direction'), '3 finite numbers', b.direction);
+    if (b.strength !== undefined && !fin(b.strength)) fail(f('strength'), 'a finite number', b.strength);
+  });
+  const nb = o.bursts.length;
+  for (let i = 0; i < o.pieces.length; i++) {
+    const p = o.pieces[i], f = k => `pieces[${i}].${k}`;
+    if (!p || !vec3(p.position)) fail(f('position'), '3 finite numbers', p?.position);
+    if (p.size !== undefined && !(fin(p.size) && p.size > 0)) fail(f('size'), 'a finite number > 0', p.size);
+    if (p.velocity !== undefined && !vec3(p.velocity)) fail(f('velocity'), '3 finite numbers', p.velocity);
+    if (p.launchTime !== undefined && !fin(p.launchTime)) fail(f('launchTime'), 'a finite number', p.launchTime);
+    if (p.burst !== undefined && !(Number.isInteger(p.burst) && p.burst >= -1 && p.burst < nb)) fail(f('burst'), `an integer from -1 to ${nb - 1}`, p.burst);
+    if (p.spin !== undefined && !fin(p.spin)) fail(f('spin'), 'a finite number', p.spin);
+    if (p.axis !== undefined && !vec3(p.axis)) fail(f('axis'), '3 finite numbers', p.axis);
+    if (p.lifetime !== undefined && !(fin(p.lifetime) && p.lifetime >= 0)) fail(f('lifetime'), 'a finite number >= 0', p.lifetime);
+  }
+}
+
 const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 
 /**

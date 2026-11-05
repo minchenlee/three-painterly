@@ -152,6 +152,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BakedDebris, voxelCollider } from '../../packages/baked-debris/src/index.js';
 import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
+import { strokeFragment } from '../../packages/baked-debris/src/shaders.js';   // the debris brush look, reused for fire
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);
@@ -242,6 +243,95 @@ const upperBoom = new BakedDebris({
 });
 scene.add(lowerBoom.mesh, upperBoom.mesh);
 
+/* ---------- fire: glowing puffs and a light flash at each upper burst ----------
+   Not baked (no collisions): each puff drifts out of its burst, rises a little, grows, then fades.
+   Cubes mode draws them as glowing cubes; painterly mode draws thin glowing brush flicks instead. */
+const FIRE_BURSTS = [{ p: [0, 11.2, 0.3], t: 0 }, { p: [0, 15.6, 0.3], t: 0.25 }];
+const fireGeo = (() => {
+  const box = new THREE.BoxGeometry(1, 1, 1), g = new THREE.InstancedBufferGeometry(), N = 380 * FIRE_BURSTS.length;
+  g.index = box.index; g.setAttribute('position', box.attributes.position);
+  const P = new Float32Array(N * 3), V = new Float32Array(N * 3), A = new Float32Array(N * 4), T = new Float32Array(N * 4);
+  let i = 0;
+  for (const b of FIRE_BURSTS) for (let n = 0; n < 380; n++, i++) {
+    const u = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - u * u), d = [r * Math.cos(a) * 1.3, u * 0.8 + 0.25, r * Math.sin(a) + 0.35];
+    const off = 0.4 + rnd() * 2.2, sp = 2.5 + rnd() * 7;
+    P.set([b.p[0] + d[0] * off, b.p[1] + d[1] * off, b.p[2] + d[2] * off], i * 3);
+    V.set([d[0] * sp, d[1] * sp, d[2] * sp], i * 3);
+    A.set([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5, 0.35 + rnd() * 0.75], i * 4);              // spin axis, size
+    T.set([b.t + rnd() * 0.18, 0.45 + rnd() * 0.9, (rnd() * 2 - 1) * 5, rnd()], i * 4);   // start, life, spin, heat
+  }
+  for (const [k, arr, n] of [['fP', P, 3], ['fV', V, 3], ['fA', A, 4], ['fT', T, 4]]) g.setAttribute(k, new THREE.InstancedBufferAttribute(arr, n));
+  g.instanceCount = N;
+  return g;
+})();
+const fireU = { uFireT: { value: -1 } };   // seconds since the upper blast
+const fireGLSL = /* glsl */`
+  attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT;
+  uniform float uFireT;
+  vec3 frot(vec3 v, vec3 a, float t){ float c = cos(t), s = sin(t); return v*c + cross(a, v)*s + a*dot(a, v)*(1.0 - c); }
+  float fLocal(float off){ return uFireT + off - fT.x; }
+  vec3 fPos(float tl){ return fP + fV*(1.0 - exp(-2.2*tl))/2.2 + vec3(0.0, 0.9*tl*tl, 0.0); }
+  float fSize(float tl){ return tl <= 0.0 || tl >= fT.y ? 0.0 : fA.w * min(1.0, tl/0.08) * (1.0 + 0.8*tl/fT.y) * (1.0 - tl/fT.y); }
+  vec3 fColor(float tl){ float k = clamp(tl/fT.y, 0.0, 1.0);   // white-hot, then orange, then deep red
+    vec3 c = mix(vec3(2.6, 1.1, 0.22), vec3(1.7, 0.32, 0.04), smoothstep(0.0, 0.3, k + 0.2*fT.w));
+    return mix(c, vec3(0.55, 0.05, 0.01), smoothstep(0.45, 1.0, k)); }`;
+const fireCubes = new THREE.Mesh(fireGeo, new THREE.ShaderMaterial({ uniforms: fireU, toneMapped: true, vertexShader: `
+  ${fireGLSL}
+  varying vec3 vCol;
+  void main(){ float tl = fLocal(0.0), sc = fSize(tl);
+    vec3 p = frot(position * sc, normalize(fA.xyz), fT.z * tl) + fPos(tl);
+    vCol = fColor(tl); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
+  fragmentShader: `varying vec3 vCol; void main(){ gl_FragColor = vec4(vCol, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }` }));
+fireCubes.frustumCulled = false; scene.add(fireCubes);
+// painterly mode: the same puffs as thin, glowing flicks in the overlay, shaded by the debris stroke fragment shader
+function makeFireStrokes(){
+  const plane = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
+  g.index = plane.index; g.setAttribute('position', plane.attributes.position);
+  for (const k of ['fP', 'fV', 'fA', 'fT']) g.setAttribute(k, fireGeo.attributes[k]);
+  g.instanceCount = fireGeo.instanceCount;
+  const U = Object.assign({}, fireU, { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) },
+    uPixK: { value: 500 }, uMaxWidth: { value: 30 }, uBright: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uJitter: { value: 0.1 } });
+  const m = new THREE.ShaderMaterial({ uniforms: U, toneMapped: false, fragmentShader: strokeFragment, vertexShader: `
+    ${fireGLSL}
+    uniform vec2 uRes; uniform float uPixK; uniform float uMaxWidth;
+    varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+    void main(){
+      float tl = fLocal(0.0), sc = fSize(tl);
+      if (sc <= 0.0){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      mat4 VP = projectionMatrix * viewMatrix;
+      vec4 c0 = VP * vec4(fPos(tl), 1.0), c1 = VP * vec4(fPos(max(fLocal(-0.03), 0.0)), 1.0);
+      if (c0.w <= 0.1 || c1.w <= 0.1){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec2 dv = (c0.xy/c0.w - c1.xy/c1.w) * 0.5 * uRes; float spd = length(dv) / 0.03;
+      vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+      vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed*6.283), sin(vSeed*6.283));
+      float wid = 0.85 * clamp(sc * uPixK / c0.w, 2.0, uMaxWidth);       // thin flicks, not solid blocks
+      float len = wid * (2.6 + min(spd * 0.004, 5.0));
+      vec2 off = dir * position.x * len + vec2(-dir.y, dir.x) * position.y * wid;
+      gl_Position = c0 + vec4(off / (0.5 * uRes) * c0.w, 0.0, 0.0);
+      vQ = position.xy * 2.0; vCol = fColor(tl) * 0.75; vGlow = 0.3 * (1.0 - tl/fT.y);
+    }` });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false;
+  const size = new THREE.Vector2();
+  mesh.onBeforeRender = (r, sc, cam) => {
+    r.getDrawingBufferSize(size); const t = r.getRenderTarget(); if (t) size.set(t.width, t.height);
+    U.uRes.value.copy(size); U.uPixK.value = size.y / (2*Math.tan(cam.fov*Math.PI/360) / (cam.zoom || 1));
+    U.uMaxWidth.value = 30 * r.getPixelRatio();
+    const dt = painter.sceneTarget?.depthTexture ?? null; U.tDepth.value = dt; U.uUseDepth.value = !!dt;
+  };
+  return mesh;
+}
+let fireStrokes = null;
+// one flash light per burst: a sharp peak that fades in about half a second, with a little flicker
+const flashes = FIRE_BURSTS.map(b => { const L = new THREE.PointLight(0xffa650, 0, 60, 1.6); L.position.set(b.p[0], b.p[1], b.p[2] + 1.2); scene.add(L); return L; });
+function applyFire(tu){
+  fireU.uFireT.value = tu;
+  FIRE_BURSTS.forEach((b, i) => { const tl = tu - b.t;
+    flashes[i].intensity = tl > 0 ? 1400 * Math.exp(-tl / 0.22) * (0.85 + 0.15 * Math.sin(tl * 61 + i * 2)) + 160 * Math.exp(-tl / 1.2) : 0; });
+}
+
 /* ---------- timeline ---------- */
 const T_END = 11, SPEEDS = [0.25, 0.5, 1, 2];
 const play = { t: 0, dir: 0, speed: 0.5 };
@@ -253,6 +343,7 @@ function applyTime(t) {
   lowerBoom.setTime(lowerTime(t));
   upperBoom.setTime(t);
   upperBoom.setBurstOffsets([clocks.upper, clocks.upper]);   // move both upper bursts to the chosen moment
+  applyFire(upperTime(t));
 }
 
 /* ---------- painterly mode ---------- */
@@ -269,6 +360,8 @@ function setPaint(on) {
     painter.overlayScene.add(s);
   }
   if (!paintOn) { upperBoom.removeStrokes(); lowerBoom.removeStrokes(); }
+  if (paintOn && !fireStrokes) { fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); }
+  fireCubes.visible = !paintOn; if (fireStrokes) fireStrokes.visible = paintOn;
   document.querySelectorAll('#lookSeg button').forEach(b => b.setAttribute('aria-pressed', String(!!+b.dataset.v === paintOn)));
 }
 

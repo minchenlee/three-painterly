@@ -8,7 +8,7 @@ import { patchCube, patchDepth, strokeVertex, strokeFragment, withDisplace } fro
 
 const MAX_BURSTS = 32;   // must match MAX_BURSTS in shaders.js
 // uniforms of the stroke material, besides the debris uniforms; hook uniforms must not reuse these names
-const STROKE_UNIFORMS = ['tDepth', 'uUseDepth', 'uRes', 'uPixK', 'uStrokeScale', 'uMaxWidth', 'uBright', 'uTint', 'uJitter', 'uLookAhead', 'uHideFlying'];
+const STROKE_UNIFORMS = ['tDepth', 'uUseDepth', 'uRes', 'uPixK', 'uStrokeScale', 'uMaxWidth', 'uBright', 'uTint', 'uJitter', 'uLookAhead', 'uKeep', 'uHideFlying'];
 const hashString = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 
 // a misspelt option is otherwise silently ignored
@@ -206,13 +206,16 @@ export class BakedDebris {
    * e.g. painter.overlayScene.add(boom.createStrokes({ painter })). While strokes are on, flying cubes are hidden.
    * lookAhead: seconds between the two samples that point the stroke (default -0.03, a moment back). Use a positive
    * value when the clock runs backwards, so strokes still point the way pieces move on screen.
+   * keep: the share of flying pieces drawn as strokes (0..1, default 1). Each piece's choice is fixed, so nothing
+   * flickers; with large strokes, a lower keep saves overdraw. Change it later with mesh.material.uniforms.uKeep.value.
    */
-  createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03 } = {}) {
+  createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 } = {}) {
+    if (!(keep >= 0 && keep <= 1)) throw new Error(`BakedDebris: createStrokes keep must be between 0 and 1, got ${keep}`);
     this.removeStrokes();                                     // one stroke mesh at a time
     const U = Object.assign({}, this.uniforms, {
       tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new Vector2(1, 1) }, uPixK: { value: 500 },
       uStrokeScale: { value: strokeScale }, uMaxWidth: { value: maxWidth }, uBright: { value: 1 }, uTint: { value: new Color(1, 1, 1) },
-      uJitter: { value: jitter }, uLookAhead: { value: lookAhead },
+      uJitter: { value: jitter }, uLookAhead: { value: lookAhead }, uKeep: { value: keep },
     });
     const mat = new ShaderMaterial({ uniforms: U, vertexShader: withDisplace(strokeVertex, this._displace.glsl), fragmentShader: strokeFragment, toneMapped: false });
     const mesh = new Mesh(this._buildStrokeGeo(), mat);

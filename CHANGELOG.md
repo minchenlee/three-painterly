@@ -17,6 +17,7 @@ Both packages share one version number until the first public release.
 - Options are validated before the bake; invalid values throw with the option name.
 - Point-light shadows (`customDistanceMaterial`).
 - `createStrokes()` replaces existing strokes; new `lookAhead` option.
+- New `createStrokes` option `keep` (default 1): draw only a fixed share of flying pieces, to save overdraw with large strokes.
 - The passed material is cloned before it is patched; only materials the library creates are disposed.
 - Shader patches throw when a three.js chunk is missing.
 - `strokeFragment` is exported from `baked-debris/shaders`.

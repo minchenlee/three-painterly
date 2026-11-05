@@ -138,6 +138,8 @@ export interface CreateStrokesOptions {
   jitter?: number;
   /** Seconds to the second sample that points the stroke; > 0 when the clock runs backwards. Default -0.03. */
   lookAhead?: number;
+  /** Share of flying pieces drawn as strokes, 0..1; each piece's choice is fixed. Lower it for large strokes to save overdraw. Live: material.uniforms.uKeep. Default 1. */
+  keep?: number;
 }
 
 /**

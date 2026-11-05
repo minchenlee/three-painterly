@@ -83,7 +83,7 @@ Methods:
 - `setTime(t)`, `setTimeWarp({ burst, hover } | null)`, `setSizeScale(s)`: no rebake.
 - `setBurstOffsets([dt0, dt1, …])`: move bursts in time without a rebake (first 32 bursts).
 - `rebake(changes)`: needed after any physics change (speed, restitution, friction, solid, pieces, bursts, seed, …).
-- `createStrokes({ painter, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. Use a positive `lookAhead` when the clock plays backwards. `removeStrokes()` switches back.
+- `createStrokes({ painter, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. Use a positive `lookAhead` when the clock plays backwards. `keep` (0–1) draws only that share of flying pieces, fixed per piece; lower it for large strokes (live: `mesh.material.uniforms.uKeep.value`). `removeStrokes()` switches back.
 - `setDisplace({ glsl, uniforms } | null)`: GPU offset on top of the bake (see below).
 - `dispose()`.
 - `boom.stats`: `{ pieces, flying, secondary }`. `boom.uniforms`: shader uniforms, including the displace hook's.

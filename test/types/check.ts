@@ -19,7 +19,7 @@ const boom = new BakedDebris({
 scene.add(boom.mesh);
 boom.setTime(1.5);
 const stats: DebrisStats = boom.rebake({ restitution: 0.5 });
-painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03 }));
+painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, keep: 0.5 }));
 boom.setDisplace(null);
 const s: string = strokeFragment;
 void stats; void s;

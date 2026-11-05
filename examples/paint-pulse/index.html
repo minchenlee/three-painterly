@@ -328,10 +328,12 @@ boom.mesh.castShadow = boom.mesh.receiveShadow = false;
 
 const STROKE0 = LITE ? 12 : 23;   // default Stroke size in CSS px (lite: the ball is about a third as wide); flying strokes start at the matching scale
 const painter = new PainterlyPass(scene, camera, { strokeSize: STROKE0, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04, sky: false });
-let strokes = null, painted = true, strokeK = STROKE0 / 7;   // strokeK: flying strokes scale with the Stroke size slider (7 px = 1)
+let strokes = null, painted = true, strokeK = STROKE0 / 7;
+// Large strokes overlap a lot: draw fewer of them, so the cover stays about the same and the overdraw drops.
+const KEEP_K = 2.5, keepFor = px => Math.min(1, KEEP_K * (7 / px) ** 2);   // strokeK: flying strokes scale with the Stroke size slider (7 px = 1)
 function setPainted(on) {
   painted = on;
-  if (on && !strokes) { strokes = boom.createStrokes({ painter, strokeScale: 0.85 * strokeK, maxWidth: 16 * strokeK }); painter.overlayScene.add(strokes); }
+  if (on && !strokes) { strokes = boom.createStrokes({ painter, strokeScale: 0.85 * strokeK, maxWidth: 16 * strokeK, keep: keepFor(7 * strokeK) }); painter.overlayScene.add(strokes); }
   if (!on && strokes) { boom.removeStrokes(); strokes = null; }
   document.querySelectorAll('#lookSeg button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === (on ? 1 : 0))));
 }
@@ -543,7 +545,7 @@ $('sens').oninput = e => { sens = e.target.value / 100; $('sensOut').textContent
 let strokeTimer = 0;
 $('stroke').value = STROKE0; $('strokeOut').textContent = STROKE0 + ' px';
 $('stroke').oninput = e => { const v = +e.target.value; painter.strokeSize = v; $('strokeOut').textContent = v + ' px';
-  strokeK = v / 7; if (strokes) strokes.material.uniforms.uStrokeScale.value = 0.85 * strokeK;
+  strokeK = v / 7; if (strokes) { strokes.material.uniforms.uStrokeScale.value = 0.85 * strokeK; strokes.material.uniforms.uKeep.value = keepFor(v); }
   clearTimeout(strokeTimer);   // maxWidth is fixed per stroke mesh: rebuild it once the slider settles
   strokeTimer = setTimeout(() => { if (painted && strokes) { setPainted(false); setPainted(true); } }, 150); };
 document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPainted(b.dataset.v === '1'));

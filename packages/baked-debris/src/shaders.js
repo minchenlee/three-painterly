@@ -2,6 +2,7 @@
 // Every piece's state is a pure function of uTime, so any moment can be shown directly.
 
 export const debrisState = /* glsl */`
+attribute float aIndex;   // the piece's row in the segment texture
 attribute float aStart;   // launch time (1e9 = never moves)
 attribute float aSize;
 attribute vec3 aAxis;     // spin axis
@@ -40,7 +41,7 @@ float debrisGlow() { if (aKind < 0.5) return 0.0; float ph = debrisLocalTime() -
 void debrisState(out vec3 P, out float ang, out float sc, out float tl0) {
   tl0 = debrisLocalTime();
   float tl = aKind > 0.5 ? tl0 - aSplit : tl0;
-  int base = gl_InstanceID * 12;
+  int base = int(aIndex + 0.5) * 12;
   vec4 A = segTexel(base), B = segTexel(base + 1);
   P = A.yzw; ang = 0.0; sc = aSize;
   if (aKind > 0.5 && tl <= 0.0) { sc = 0.0; return; }
@@ -123,7 +124,7 @@ void main() {
   if (!show || c0.w <= 0.1 || c1.w <= 0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec2 dv = (c0.xy / c0.w - c1.xy / c1.w) * 0.5 * uRes;
   float spd = length(dv) / max(abs(uLookAhead), 1e-4);              // pixels per second
-  vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+  vSeed = fract(sin(aIndex * 12.9898) * 43758.5453);
   vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed * 6.283), sin(vSeed * 6.283));
   float tw = 0.35 * sin(a0);                                        // a gentle curl instead of 3D tumbling
   dir = vec2(dir.x * cos(tw) - dir.y * sin(tw), dir.x * sin(tw) + dir.y * cos(tw));

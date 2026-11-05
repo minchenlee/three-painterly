@@ -98,29 +98,47 @@ export class BakedDebris {
     tex.minFilter = tex.magFilter = NearestFilter; tex.needsUpdate = true;
     this.uniforms.uSeg.value?.dispose(); this.uniforms.uSeg.value = tex; this.uniforms.uSegW.value = seg.width;
 
-    const n = recs.length, start = new Float32Array(n), size = new Float32Array(n), axis = new Float32Array(n * 3),
+    // Instance order (C1): pieces that never move, then flying pieces, then fragments, then hidden ones.
+    // aIndex keeps each piece's row in the texture (fragments start from their parent's row, so rows stay in bake
+    // order). Hidden pieces are never drawn; with strokes on, cubes draw only the first two groups and strokes
+    // draw only the last two drawn groups.
+    const n = recs.length, group = d => d.hidden ? 3 : d.kind === 1 ? 2 : d.t0 < 1e8 ? 1 : 0;
+    const count = [0, 0, 0, 0]; for (const d of recs) count[group(d)]++;
+    const next = [0, count[0], count[0] + count[1], count[0] + count[1] + count[2]], order = new Uint32Array(n);
+    recs.forEach((d, i) => { order[next[group(d)]++] = i; });
+    this._groups = { still: count[0], flying: count[1], fragments: count[2], hidden: count[3] };
+    const index = new Float32Array(n), start = new Float32Array(n), size = new Float32Array(n), axis = new Float32Array(n * 3),
       color = new Float32Array(n * 3), kind = new Float32Array(n), split = new Float32Array(n),
       burst = new Float32Array(n), life = new Float32Array(n), rest = new Float32Array(n), c = new Color();
-    recs.forEach((d, i) => {
-      start[i] = d.t0; size[i] = d.hidden ? 0 : d.size; axis.set(d.axis, i * 3); kind[i] = d.kind;
-      burst[i] = d.burst ?? -1; life[i] = d.life ?? 0; rest[i] = d.restT ?? 1e9;
-      split[i] = d.kind === 1 ? recs[d.parent].split : (d.splitOK ? d.split : 0);
-      c.set(d.color ?? 0xcccccc); color.set([c.r, c.g, c.b], i * 3);   // three converts sRGB hex to linear
-    });
-    const attrs = { aStart: [start, 1], aSize: [size, 1], aAxis: [axis, 3], aColor: [color, 3], aKind: [kind, 1], aSplit: [split, 1],
-      aBurst: [burst, 1], aLife: [life, 1], aRest: [rest, 1] };
-    const build = base => { const g = new InstancedBufferGeometry(); g.index = base.index;
+    for (let j = 0; j < n; j++) {
+      const i = order[j], d = recs[i];
+      index[j] = i; start[j] = d.t0; size[j] = d.hidden ? 0 : d.size; axis.set(d.axis, j * 3); kind[j] = d.kind;
+      burst[j] = d.burst ?? -1; life[j] = d.life ?? 0; rest[j] = d.restT ?? 1e9;
+      split[j] = d.kind === 1 ? recs[d.parent].split : (d.splitOK ? d.split : 0);
+      c.set(d.color ?? 0xcccccc); color.set([c.r, c.g, c.b], j * 3);   // three converts sRGB hex to linear
+    }
+    const attrs = { aIndex: [index, 1], aStart: [start, 1], aSize: [size, 1], aAxis: [axis, 3], aColor: [color, 3], aKind: [kind, 1],
+      aSplit: [split, 1], aBurst: [burst, 1], aLife: [life, 1], aRest: [rest, 1] };
+    const build = (base, from, to) => { const g = new InstancedBufferGeometry(); g.index = base.index;
       for (const k in base.attributes) g.setAttribute(k, base.attributes[k]);
-      for (const k in attrs) g.setAttribute(k, new InstancedBufferAttribute(attrs[k][0], attrs[k][1]));
-      g.instanceCount = n; return g; };
-    this.mesh.geometry.dispose(); this.mesh.geometry = build(new BoxGeometry(1, 1, 1));
-    if (this.strokes){ this.strokes.geometry.dispose(); this.strokes.geometry = build(new PlaneGeometry(1, 1)); }
-    this._buildStrokeGeo = () => build(new PlaneGeometry(1, 1));
+      for (const k in attrs) { const [a, w] = attrs[k]; g.setAttribute(k, new InstancedBufferAttribute(a.subarray(from * w, to * w), w)); }
+      g.instanceCount = to - from; return g; };
+    const drawn = n - count[3];
+    this.mesh.geometry.dispose(); this.mesh.geometry = build(new BoxGeometry(1, 1, 1), 0, drawn);
+    this._buildStrokeGeo = () => build(new PlaneGeometry(1, 1), count[0], drawn);
+    if (this.strokes) { this.strokes.geometry.dispose(); this.strokes.geometry = this._buildStrokeGeo(); }
+    this._syncCounts();
     // keep the GPU in step with the options the bake used
     this.uniforms.uGravity.value = o.gravity;
     if ('sizeScale' in changes) this.setSizeScale(o.sizeScale);
     if ('timeWarp' in changes) this.setTimeWarp(o.timeWarp);
     return this.stats;
+  }
+
+  // cubes skip fragments while strokes draw them (flying pieces stay in: they are cubes until they launch)
+  _syncCounts() {
+    const g = this._groups;
+    this.mesh.geometry.instanceCount = g.still + g.flying + (this.strokes ? 0 : g.fragments);
   }
 
   /** Show the explosion at `t` seconds. Exact for any t, forward or backward. */
@@ -171,7 +189,7 @@ export class BakedDebris {
       U.tDepth.value = dt; U.uUseDepth.value = !!dt;
     };
     this.strokes = mesh;
-    this._hideFlying.value = 1;
+    this._hideFlying.value = 1; this._syncCounts();
     return mesh;
   }
 
@@ -179,7 +197,7 @@ export class BakedDebris {
   removeStrokes() {
     if (!this.strokes) return;
     this.strokes.parent?.remove(this.strokes); this.strokes.geometry.dispose(); this.strokes.material.dispose();
-    this.strokes = null; this._hideFlying.value = 0;
+    this.strokes = null; this._hideFlying.value = 0; this._syncCounts();
   }
 
   dispose() {

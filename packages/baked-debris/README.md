@@ -51,7 +51,7 @@ Requires three.js r160 or later (WebGL 2).
 | `timeWarp` | `null` | `{ burst: 0.3, hover: 1/25 }`: full speed for `burst` s after launch, then the clock slows to `hover`. Also `setTimeWarp()`. |
 | `sizeScale` | `1` | Resize pieces once they fly. Also `setSizeScale()`. |
 | `seed` | `4242` | Same seed, same explosion. |
-| `material` | new `MeshStandardMaterial` | Material to patch for the cubes. If it has its own `onBeforeCompile`, that hook runs after the debris patch and sees the moved `transformed` and `objectNormal`. |
+| `material` | new `MeshStandardMaterial` | Material for the cubes. BakedDebris patches a **clone** (`boom.mesh.material`), so the material you pass is not changed and stays usable elsewhere; `dispose()` disposes only the clone. Its `onBeforeCompile` and `customProgramCacheKey` are called on every compile and run after the debris patch, seeing the moved `transformed` and `objectNormal`. Other changes to the passed material after construction (colour, roughness, …) do not reach the clone: change `boom.mesh.material` instead. |
 
 Bursts: `{ position, radius, time = 0, direction = [0, 1, 0], strength = 1 }`. A burst with `radius: 0` launches nothing by itself; use it with pieces that carry their own launch.
 

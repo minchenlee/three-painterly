@@ -43,7 +43,7 @@ export class BakedDebris {
     seed: 4242,
     timeWarp: null,           // { burst: 0.3, hover: 1/25 }: full speed for `burst` s, then the clock slows to `hover`
     sizeScale: 1,             // resize pieces once they fly
-    material: null,           // a MeshStandardMaterial (or similar) to patch; one is made if omitted
+    material: null,           // a MeshStandardMaterial (or similar) to copy and patch; one is made if omitted
   };
 
   constructor(options) {
@@ -58,8 +58,9 @@ export class BakedDebris {
       uGravity: { value: this.o.gravity }, uSizeScale: { value: this.o.sizeScale }, uSeg: { value: null }, uSegW: { value: 4096 },
       uBurstShift: { value: new Array(MAX_BURSTS).fill(0) },
     };
-    const mat = this.o.material ?? new MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
-    mat.vertexColors = true; mat.userData.debrisUniforms = this.uniforms; patchCube(mat, this._hideFlying);
+    // a passed material is cloned, so it stays usable elsewhere; its hooks still run (see patchCube)
+    const src = this.o.material, mat = src ? src.clone() : new MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+    mat.vertexColors = true; mat.userData.debrisUniforms = this.uniforms; patchCube(mat, this._hideFlying, src);
     const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
     depth.userData.debrisUniforms = this.uniforms; patchDepth(depth, this._hideFlying);
     this.mesh = new Mesh(new InstancedBufferGeometry(), mat);

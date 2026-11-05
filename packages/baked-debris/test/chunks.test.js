@@ -18,10 +18,11 @@ test(`cube patch finds its chunks in ShaderLib.standard (three r${REVISION})`, (
   const v = run(m, 'standard');
   assert.match(v, /debrisState\(dbP, dbA, dbS, dbT\)/);
   assert.match(v, /vec3 transformed = rotAxis/);
-  assert.match(v, /vColor = mix\(aColor/);
+  assert.match(v, /vColor\.rgb = mix\(aColor/);
 });
 
-for (const [name, Mat, lib, key] of [['depth', MeshDepthMaterial, 'depth', undefined], ['distance', MeshDistanceMaterial, 'distanceRGBA', 'baked-debris-distance']]) {
+// ShaderLib.distanceRGBA is called 'distance' in later three releases
+for (const [name, Mat, lib, key] of [['depth', MeshDepthMaterial, 'depth', undefined], ['distance', MeshDistanceMaterial, ShaderLib.distanceRGBA ? 'distanceRGBA' : 'distance', 'baked-debris-distance']]) {
   test(`shadow patch finds its chunks in ShaderLib.${lib} (${name})`, () => {
     const m = new Mat(); patchDepth(m, { value: 0 }, key);
     assert.match(run(m, lib), /vec3 transformed = rotAxis/);

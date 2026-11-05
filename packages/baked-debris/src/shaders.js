@@ -112,7 +112,8 @@ export function patchCube(material, hideFlyingU, source = null) {
         if (uHideFlying > 0.5 && aStart < 1.0e8 && (aKind > 0.5 || dbT > 0.0)) dbS = 0.0;   // drawn as strokes instead
         vec3 objectNormal = rotAxis(normal, aAxis, dbA);`, 'cube');
     v = mustReplace(v, '#include <begin_vertex>', 'vec3 transformed = rotAxis(position * dbS, aAxis, dbA) + dbP;', 'cube');
-    v = mustReplace(v, '#include <color_vertex>', '#if defined(USE_COLOR)\n vColor = mix(aColor, vec3(2.4, 1.3, 0.45), 0.9 * debrisGlow());\n#endif', 'cube');
+    // keep three's chunk (vColor is vec3 before r183 and vec4 from r183), then set only .rgb so both compile
+    v = mustReplace(v, '#include <color_vertex>', '#include <color_vertex>\n#if defined(USE_COLOR)\n vColor.rgb = mix(aColor, vec3(2.4, 1.3, 0.45), 0.9 * debrisGlow());\n#endif', 'cube');
     sh.vertexShader = v;
     src.onBeforeCompile.call(source ?? material, sh, renderer);
   };

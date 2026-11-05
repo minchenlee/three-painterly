@@ -63,7 +63,10 @@ export class BakedDebris {
     this.rebake();
   }
 
-  /** Re-run the simulation, e.g. after changing pieces, bursts, restitution or secondary. */
+  /**
+   * Re-run the simulation, e.g. after changing pieces, bursts, gravity, restitution or secondary.
+   * Any option can be passed; gravity, sizeScale and timeWarp also update the GPU side.
+   */
   rebake(changes = {}) {
     Object.assign(this.o, changes);
     const o = this.o, rnd = mulberry32(o.seed);
@@ -99,6 +102,10 @@ export class BakedDebris {
     this.mesh.geometry.dispose(); this.mesh.geometry = build(new BoxGeometry(1, 1, 1));
     if (this.strokes){ this.strokes.geometry.dispose(); this.strokes.geometry = build(new PlaneGeometry(1, 1)); }
     this._buildStrokeGeo = () => build(new PlaneGeometry(1, 1));
+    // keep the GPU in step with the options the bake used
+    this.uniforms.uGravity.value = o.gravity;
+    if ('sizeScale' in changes) this.setSizeScale(o.sizeScale);
+    if ('timeWarp' in changes) this.setTimeWarp(o.timeWarp);
     return this.stats;
   }
 

@@ -21,6 +21,7 @@
   <div class="row"><button id="play">Play</button><button id="rev">Rewind</button><button id="zero">0</button></div>
   <label><span><input type="checkbox" id="warp"> Bullet time</span></label>
   <label><span><input type="checkbox" id="paint"> Painterly + brush-stroke debris</span></label>
+  <label><span><input type="checkbox" id="swirl"> Swirl (displace hook)</span></label>
   <label>Bounce <output id="bOut">0.35</output><input type="range" id="bounce" min="0" max="75" value="35"></label>
   <label>Secondary blasts <output id="sOut">0%</output><input type="range" id="sec" min="0" max="60" value="0"></label>
   <div id="stats" style="color:#99a"></div>
@@ -111,6 +112,22 @@ $('rev').onclick = () => { if (play.t <= 0) play.t = T_END; play.dir = play.dir 
 $('zero').onclick = () => { play.t = 0; play.dir = 0; sync(); };
 $('warp').onchange = e => boom.setTimeWarp(e.target.checked ? { burst: 0.3, hover: 1 / 25 } : null);
 $('paint').onchange = e => setPaint(e.target.checked);
+// displace hook: a GPU swirl on top of the bake. The angle stops growing when a piece comes to rest, so resting
+// pieces stay put; y is untouched, so pieces stay on the floor (the bake does not know the swirl, walls can be crossed).
+const swirl = {
+  uniforms: { uSwirl: { value: 1.4 }, uCenter: { value: new THREE.Vector3(0.6, 0, 0.6) } },
+  glsl: /* glsl */`
+    uniform float uSwirl;
+    uniform vec3 uCenter;
+    vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+      if (d.local <= 0.0) return vec3(0.0);
+      vec2 r = p.xz - uCenter.xz;
+      float a = uSwirl * min(d.local, d.rest) / (1.0 + 0.25 * length(r));
+      vec2 q = vec2(r.x * cos(a) - r.y * sin(a), r.x * sin(a) + r.y * cos(a));
+      return vec3(q.x - r.x, 0.0, q.y - r.y);
+    }`,
+};
+$('swirl').onchange = e => boom.setDisplace(e.target.checked ? swirl : null);
 let timer;
 $('bounce').oninput = e => { $('bOut').textContent = (e.target.value / 100).toFixed(2); clearTimeout(timer); timer = setTimeout(() => { boom.rebake({ restitution: e.target.value / 100 }); stats(); }, 150); };
 $('sec').oninput = e => { $('sOut').textContent = e.target.value + '%'; clearTimeout(timer); timer = setTimeout(() => { boom.rebake({ secondary: e.target.value / 100 }); stats(); }, 150); };
@@ -127,7 +144,7 @@ renderer.setAnimationLoop(now => {
   controls.update();
   if (strokes) painter.render(renderer); else renderer.render(scene, camera);
 });
-window.__ex = { boom, play, setPaint, camera, controls, sync };
+window.__ex = { boom, play, setPaint, camera, controls, sync, swirl };
 </script>
 </body>
 </html>

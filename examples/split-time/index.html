@@ -150,9 +150,8 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { BakedDebris, voxelCollider } from '../../packages/baked-debris/src/index.js';
+import { BakedDebris, voxelCollider, strokeFragment } from '../../packages/baked-debris/src/index.js';   // strokeFragment: the debris brush look, reused for fire
 import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
-import { strokeFragment } from '../../packages/baked-debris/src/shaders.js';   // the debris brush look, reused for fire
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);

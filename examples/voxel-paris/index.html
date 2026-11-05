@@ -239,9 +239,8 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { BakedDebris, voxelCollider } from '../../packages/baked-debris/src/index.js';
+import { BakedDebris, voxelCollider, strokeFragment } from '../../packages/baked-debris/src/index.js';   // strokeFragment: reuse the debris brush look for fireballs
 import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
-import { strokeFragment } from '../../packages/baked-debris/src/shaders.js';   // reuse the debris brush look for fireballs
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);

@@ -138,6 +138,7 @@ export class BakedDebris {
    * e.g. painter.overlays.push(boom.createStrokes({ painter })). While strokes are on, flying cubes are hidden.
    */
   createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16 } = {}) {
+    this.removeStrokes();                                     // one stroke mesh at a time
     const U = Object.assign({}, this.uniforms, {
       tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new Vector2(1, 1) }, uPixK: { value: 500 },
       uStrokeScale: { value: strokeScale }, uMaxWidth: { value: maxWidth }, uBright: { value: 1 }, uTint: { value: new Color(1, 1, 1) },

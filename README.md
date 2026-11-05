@@ -2,7 +2,13 @@
 
 Two small three.js modules, extracted from a voxel street-corner piece. Plain ES modules, no build step. Both need three.js r160 or later (WebGL 2).
 
-<!-- Screenshot / GIF: to be added -->
+![A voxel Paris street blowing apart into brush strokes, rendered with PainterlyPass and BakedDebris](docs/images/voxel-paris.jpg)
+
+| [split-time](examples/split-time/) | [paint-pulse](examples/paint-pulse/) |
+|---|---|
+| ![One building on two clocks: the upper floors blow apart while the lower floors fly back together](docs/images/split-time.jpg) | ![An oil-paint ball that bursts into brush strokes with the music](docs/images/paint-pulse.jpg) |
+
+*Top: [examples/voxel-paris](examples/voxel-paris/). All three examples use both modules.*
 
 ## PainterlyPass
 

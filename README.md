@@ -54,6 +54,7 @@ python3 -m http.server     # or: npx serve .
 # http://localhost:8000/examples/split-time/
 # http://localhost:8000/examples/paint-pulse/
 # http://localhost:8000/examples/lightspeed-ram/
+# http://localhost:8000/examples/paint-fps/
 ```
 
 `examples/voxel-paris` is a larger demo that uses both modules: a Paris street corner of about 5 million voxels, where 22 bursts along the street blow out the ground floor and chosen upper floors. Drag the time slider to scrub or rewind, change the time of day, and watch flying pieces turn into brush strokes. It loads three.js from a CDN and builds the city in the browser (a few seconds on first load).
@@ -63,6 +64,8 @@ python3 -m http.server     # or: npx serve .
 `examples/paint-pulse` is a music visualizer. An oil-painted ball bursts into brush strokes on loud passages and beats, and pulls itself back together when the music goes quiet. It plays a built-in demo track, or you can open or drop your own audio file (BakedDebris + PainterlyPass + WebAudio).
 
 `examples/lightspeed-ram`: a small cruiser jumps to lightspeed through a wide flagship. The cut wing breaks away, and the debris stream shreds the escorts behind it. There is no gravity: every piece gets its own launch time and velocity from where the ram passes it. A displace hook makes the two halves drift apart, and a material hook makes flying pieces glow white-hot and cool. Sliders set the paint stroke size, the debris stroke size, the debris amount (the cut is re-voxelized and re-baked) and a bloom glow. In painterly mode the stars are brush dabs over a faint painted nebula. The page remembers the last view and settings in the browser; Copy view copies them as text. The ships are original voxel shapes.
+
+`examples/paint-fps` is a first-person proof of concept. You walk a voxel courtyard and shoot fruit, vases, trees and a mural. Every shot removes the cubes near the hit and bakes them into a new BakedDebris, so they splash away as brush strokes and stay on the floor as paint. Cubes that no longer touch the floor through other cubes fall. Aiming walks the voxel grid; one grid also serves as the `voxelCollider` for every bake. It needs a mouse and a keyboard.
 
 ## Use with your AI agent
 

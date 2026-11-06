@@ -6,6 +6,7 @@ Both packages share one version number until the first public release.
 
 ### examples
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
+- `examples/paint-fps`: a first-person proof of concept. Each shot bakes its own small BakedDebris, so what you hit splashes away as brush strokes. Cubes cut off from the floor fall.
 
 ## 0.1.0 (2026-11-05)
 

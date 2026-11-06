@@ -19,6 +19,7 @@ Install: `npm i painterly-pass baked-debris three`
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
 - [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
 - [examples/lightspeed-ram/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/lightspeed-ram/index.html): no gravity, per-piece `velocity` and `launchTime` along a line, displace hook splits a ship in two
+- [examples/paint-fps/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-fps/index.html): first-person shooter POC; each shot bakes a small BakedDebris from the voxels it hits, strokes stay as paint on the floor
 
 ## PainterlyPass
 

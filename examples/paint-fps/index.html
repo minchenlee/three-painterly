@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paint FPS</title>
+<style>
+:root {
+  --bg: #e4e7ea; --panel: rgba(255, 255, 255, 0.9); --ink: #17191c; --muted: #6b7178; --line: rgba(0, 0, 0, 0.09);
+  --soft: rgba(0, 0, 0, 0.05); --accent: #17191c; --accent-ink: #ffffff;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171a; --panel: rgba(24, 26, 30, 0.9); --ink: #eceef0; --muted: #949aa1; --line: rgba(255, 255, 255, 0.09);
+  --soft: rgba(255, 255, 255, 0.06); --accent: #eceef0; --accent-ink: #15171a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15171a; --panel: rgba(24, 26, 30, 0.9); --ink: #eceef0; --muted: #949aa1; --line: rgba(255, 255, 255, 0.09);
+  --soft: rgba(255, 255, 255, 0.06); --accent: #eceef0; --accent-ink: #15171a; color-scheme: dark }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; user-select: none; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#cross { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); pointer-events: none; }
+#cross::before, #cross::after { content: ""; position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45); border-radius: 1px; }
+#cross::before { left: 10px; top: 2px; width: 2px; height: 18px; }
+#cross::after { top: 10px; left: 2px; height: 2px; width: 18px; }
+#cross.big::before { top: -4px; height: 30px; } #cross.big::after { left: -4px; width: 30px; }
+
+#hud { position: fixed; left: calc(14px + env(safe-area-inset-left, 0px)); top: calc(14px + env(safe-area-inset-top, 0px));
+  display: flex; gap: 8px; align-items: center; pointer-events: none; font-variant-numeric: tabular-nums; }
+.pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+#swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: #e04a3a; }
+
+#start { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10, 12, 16, 0.35); z-index: 10; padding: 16px; }
+#card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25); display: grid; gap: 12px; }
+#card h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+#card p { margin: 0; color: var(--muted); }
+#card table { border-collapse: collapse; width: 100%; }
+#card td { padding: 4px 0; border-top: 1px solid var(--line); vertical-align: top; }
+#card td:first-child { white-space: nowrap; padding-right: 12px; }
+kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--soft); }
+button { font: inherit; border: 0; border-radius: 9px; padding: 9px 14px; cursor: pointer; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+#status { color: var(--muted); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="cross"></div>
+<div id="hud"><span class="pill"><span id="swatch"></span><span id="gun">Brush</span></span><span class="pill" id="score">0 cubes painted</span><span class="pill" id="look">Painterly</span></div>
+<div id="start">
+  <div id="card">
+    <h1>Paint FPS</h1>
+    <p>A proof of concept. Everything you shoot turns into paint and splashes away. Shoot out what holds something up and it falls.</p>
+    <table>
+      <tr><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · mouse</td><td>Move · look</td></tr>
+      <tr><td>Left click (hold)</td><td>Brush shot</td></tr>
+      <tr><td>Right click</td><td>Bucket shot (large)</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>6</kbd> · wheel</td><td>Paint colour (for walls and floor)</td></tr>
+      <tr><td><kbd>Space</kbd> · <kbd>Shift</kbd></td><td>Jump · run</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Painterly on / off</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Rebuild the courtyard</td></tr>
+    </table>
+    <button type="button" id="play" disabled>Loading…</button>
+    <p id="status">Needs a mouse and a keyboard.</p>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { BakedDebris, voxelCollider, boxCollider, anyCollider } from '../../packages/baked-debris/src/index.js';
+import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
+
+const $ = id => document.getElementById(id);
+addEventListener('error', e => { $('status').textContent = 'Failed: ' + (e.message || 'script error'); });
+
+// seeded random numbers, so the courtyard and every shot are reproducible
+let seed = 1;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+const hash = (i, j, k) => { let h = (i * 374761393 + j * 668265263 + k * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
+/* ---------- renderer, camera, light ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // plain path only; PainterlyPass tone-maps by itself
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fc2e2);
+scene.fog = new THREE.Fog(0x9fc2e2, 30, 70);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
+camera.rotation.order = 'YXZ';
+scene.add(camera);   // the gun is a child of the camera
+
+scene.add(new THREE.HemisphereLight(0xe2ecf8, 0x8a7560, 1.15));
+const sun = new THREE.DirectionalLight(0xffe0b8, 3.1);
+sun.position.set(-14, 22, 10); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005;
+Object.assign(sun.shadow.camera, { left: -19, right: 19, top: 19, bottom: -19, near: 1, far: 70 });
+scene.add(sun);
+
+// floor: terracotta tiles from a small canvas texture
+const tile = document.createElement('canvas'); tile.width = tile.height = 128;
+{ const g = tile.getContext('2d'); g.fillStyle = '#b9a58c'; g.fillRect(0, 0, 128, 128);
+  const cols = ['#b88f72', '#ad8368', '#bf9a7c', '#a87f66'];
+  for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = cols[(x + 2 * y) % 4]; g.fillRect(x * 64 + 2, y * 64 + 2, 60, 60); } }
+const tileTex = new THREE.CanvasTexture(tile); tileTex.colorSpace = THREE.SRGBColorSpace;
+tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping; tileTex.repeat.set(20, 20); tileTex.anisotropy = 8;
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ map: tileTex, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+// courtyard walls: plain boxes, not destructible; the debris bounces off them
+const HALF = 15, WALLS = [];
+function wallBox(min, max, color) {
+  const g = new THREE.BoxGeometry(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
+  m.position.set((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
+  m.castShadow = m.receiveShadow = true; scene.add(m); WALLS.push({ min, max });
+}
+wallBox([-HALF - 0.5, 0, -HALF - 0.5], [HALF + 0.5, 3, -HALF], 0xe6d6bd);
+wallBox([-HALF - 0.5, 0, HALF], [HALF + 0.5, 3, HALF + 0.5], 0xe6d6bd);
+wallBox([-HALF - 0.5, 0, -HALF], [-HALF, 3, HALF], 0xdcc8ab);
+wallBox([HALF, 0, -HALF], [HALF + 0.5, 3, HALF], 0xdcc8ab);
+const wallSolid = boxCollider(WALLS);
+
+/* ---------- the voxel world: one grid for everything you can shoot ---------- */
+const S = 0.125, NX = 256, NY = 48, NZ = 256, OX = -NX * S / 2, OZ = -NZ * S / 2;   // 32 x 6 x 32 m
+const N = NX * NY * NZ;
+const filled = new Uint8Array(N);          // 1 = a standing cube
+const slotOf = new Int32Array(N);          // cell -> instance slot in the static mesh
+const stamp = new Int32Array(N); let gen = 0;   // BFS visit marks
+const idx = (i, j, k) => i + NX * (j + NY * k);
+const inside = (i, j, k) => i >= 0 && j >= 0 && k >= 0 && i < NX && j < NY && k < NZ;
+const filledAt = (i, j, k) => inside(i, j, k) && filled[idx(i, j, k)] === 1;
+const solid = anyCollider(voxelCollider(filledAt, S, [OX, 0, OZ]), wallSolid);   // what the debris hits
+
+let cubes = null, slotCell = null, live = 0;
+const buildCells = [], buildColors = [];
+const tmpC = new THREE.Color();
+function put(i, j, k, hex, vary = 0.06) {
+  if (!inside(i, j, k)) return;
+  const c = idx(i, j, k); if (filled[c]) return;
+  filled[c] = 1; buildCells.push(c);
+  tmpC.set(hex).offsetHSL((hash(i, j, k) - 0.5) * 0.02, 0, (hash(k, i, j) - 0.5) * vary);
+  buildColors.push(tmpC.r, tmpC.g, tmpC.b);
+}
+// fill every cell of a world box whose centre f(x, y, z) gives a colour for
+function shape(min, max, f) {
+  const i0 = Math.floor((min[0] - OX) / S), i1 = Math.ceil((max[0] - OX) / S), j0 = Math.max(0, Math.floor(min[1] / S)), j1 = Math.ceil(max[1] / S);
+  const k0 = Math.floor((min[2] - OZ) / S), k1 = Math.ceil((max[2] - OZ) / S);
+  for (let k = k0; k < k1; k++) for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) {
+    const x = OX + (i + 0.5) * S, y = (j + 0.5) * S, z = OZ + (k + 0.5) * S, col = f(x, y, z, i, j, k);
+    if (col != null) put(i, j, k, col);
+  }
+}
+
+// ---- the things to shoot ----
+function mural(x0, x1, z0, z1, h) {   // a painted wall: sunset, sun, sea
+  shape([x0, 0, z0], [x1, h, z1], (x, y) => {
+    const u = (x - x0) / (x1 - x0), v = y / h, sx = (u - 0.5) * (x1 - x0), sy = y - h * 0.48;
+    if (v < 0.04 || v > 0.96) return 0x8a6b55;                                  // frame
+    if (v < 0.42) { const w = Math.sin(u * 40 + v * 30) > 0.6 ? 0x6fb3d9 : 0x2d6fa8; return v < 0.2 ? 0x1f4f86 : w; }   // sea
+    if (Math.hypot(sx, sy) < 0.75) return 0xffd23a;                            // sun
+    return [0xf2a541, 0xee6c3f, 0xd94a5a, 0x9b3f84, 0x4b3b8f][Math.min(4, Math.floor((v - 0.42) / 0.11))];   // sky bands
+  });
+}
+function pedestal(cx, cz, w, h) { shape([cx - w / 2, 0, cz - w / 2], [cx + w / 2, h, cz + w / 2], (x, y) => y > h - 0.13 ? 0xf0ebe0 : 0xd8d0c2); }
+function apple(cx, cy, cz, r) {
+  shape([cx - r, cy - r, cz - r], [cx + r, cy + r + 0.3, cz + r], (x, y, z) => {
+    const dx = x - cx, dy = (y - cy) * 1.1, dz = z - cz, d = Math.hypot(dx, dy, dz);
+    if (Math.hypot(dx, dz) < 0.07 && y > cy && y < cy + r + 0.2) return 0x5a3a22;                 // stem
+    if (d > r) return null;
+    if (d > r - 0.13) return Math.sin(Math.atan2(dz, dx) * 9 + dy * 6) > 0.7 ? 0xf2b33d : 0xc8262c;   // skin
+    return Math.hypot(dx, dz) < 0.12 ? 0x6b4a2a : 0xf3e7b8;                                     // flesh, core
+  });
+}
+function orange(cx, cy, cz, r) {
+  shape([cx - r, cy - r, cz - r], [cx + r, cy + r, cz + r], (x, y, z) => {
+    const dx = x - cx, dy = y - cy, dz = z - cz, d = Math.hypot(dx, dy, dz);
+    if (d > r) return null;
+    if (d > r - 0.13) return 0xf08a1c;
+    return Math.abs(Math.sin(Math.atan2(dz, dx) * 5)) < 0.12 || d < 0.08 ? 0xfbe6b4 : 0xf6a83a;   // segments
+  });
+}
+function melon(cx, cz, rx, ry, rz, rot = 0) {
+  const c = Math.cos(rot), s = Math.sin(rot);
+  shape([cx - rx - ry, 0, cz - rx - ry], [cx + rx + ry, 2 * ry, cz + rx + ry], (x, y, z) => {
+    const px = (x - cx) * c - (z - cz) * s, pz = (x - cx) * s + (z - cz) * c, py = y - ry;
+    const d = Math.hypot(px / rx, py / ry, pz / rz);
+    if (d > 1) return null;
+    const a = Math.atan2(pz, py);
+    if (d > 0.86) return Math.sin(a * 8 + px * 2) > 0.2 ? 0x2f6b2c : 0x7fb24a;                  // striped rind
+    if (d > 0.78) return 0xe9f1cf;                                                           // white rind
+    return hash(Math.round(px * 9), Math.round(py * 9), Math.round(pz * 9)) < 0.05 ? 0x1d1712 : 0xe23a4b;   // flesh, seeds
+  });
+}
+function tree(cx, cz) {
+  shape([cx - 0.25, 0, cz - 0.25], [cx + 0.25, 2.0, cz + 0.25], (x, y, z) => Math.hypot(x - cx, z - cz) < 0.22 ? (hash(Math.floor(y * 6), 1, 2) < 0.3 ? 0x6b4b33 : 0x7d5a3e) : null);
+  const R = 1.15, cy = 2.75;
+  shape([cx - R, cy - R, cz - R], [cx + R, cy + R, cz + R], (x, y, z, i, j, k) => {
+    const d = Math.hypot(x - cx, (y - cy) * 1.15, z - cz) + (hash(i >> 1, j >> 1, k >> 1) - 0.5) * 0.25;
+    if (d > R) return null;
+    if (d > R - 0.2 && hash(i >> 1, k >> 1, j >> 1) < 0.05) return 0xf28a22;               // oranges in the leaves
+    return d > R - 0.25 ? (hash(i, j, k) < 0.5 ? 0x4f8f3a : 0x6aa845) : 0x2f5e2b;
+  });
+}
+function vase(cx, cz, h, colA, colB) {
+  shape([cx - 0.6, 0, cz - 0.6], [cx + 0.6, h, cz + 0.6], (x, y, z) => {
+    const v = y / h, r = 0.22 + 0.28 * Math.sin(Math.PI * Math.min(1, v * 1.25)) + (v > 0.85 ? 0.12 * (v - 0.85) / 0.15 : 0);
+    const d = Math.hypot(x - cx, z - cz);
+    if (d > r) return null;
+    if (d < r - 0.2 && v > 0.12) return 0x3a2a22;                                            // hollow inside, dark
+    return Math.floor(v * 9) % 3 === 1 ? colB : (Math.sin(Math.atan2(z - cz, x - cx) * 6 + v * 12) > 0.85 ? colB : colA);
+  });
+}
+function cans(cx, cz) {   // a pyramid of paint cans
+  const cols = [0xd8342c, 0x2a62c9, 0xf2c230, 0x2e9a57, 0xc23a9a, 0xf4f1ea], r = 0.24, h = 0.42;
+  let n = 0;
+  for (let row = 0; row < 3; row++) for (let c = 0; c < 3 - row; c++) {
+    const x = cx + (c - (2 - row) / 2) * 0.5, y0 = row * h, col = cols[n++ % cols.length];
+    shape([x - r, y0, cz - r], [x + r, y0 + h, cz + r], (px, py, pz) => {
+      const d = Math.hypot(px - x, pz - cz); if (d > r) return null;
+      if (py > y0 + h - 0.13) return d > r - 0.13 ? 0xb8bcc2 : col;                            // lid
+      return py > y0 + 0.13 && py < y0 + 0.3 && d > r - 0.13 ? 0xf4f1ea : col;                // label
+    });
+  }
+}
+function beachBall(cx, cz, r) {
+  const cols = [0xe23a3a, 0xf4f1ea, 0x2f6fd6, 0xf2c230, 0xf4f1ea, 0x2e9a57];
+  shape([cx - r, 0, cz - r], [cx + r, 2 * r, cz + r], (x, y, z) => {
+    const dx = x - cx, dy = y - r, dz = z - cz, d = Math.hypot(dx, dy, dz);
+    if (d > r) return null;
+    if (Math.abs(dy) > r * 0.9) return 0xf4f1ea;
+    return cols[Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 6) % 6];
+  });
+}
+
+function buildWorld() {
+  filled.fill(0); buildCells.length = 0; buildColors.length = 0; seed = 7;
+  mural(-4, 4, -9.2, -8.825, 3);
+  const fruit = [apple, orange, apple, orange, apple];
+  [-6, -3, 0, 3, 6].forEach((x, n) => { pedestal(x, -3, 1.0, 0.9); fruit[n](x, 0.9 + 0.45, -3, 0.45); });
+  melon(-8, 3, 0.95, 0.62, 0.62, 0.4); melon(8.5, 4, 0.9, 0.6, 0.6, -0.7);
+  for (const [x, z] of [[-11, -10], [11, -10], [-11, 10], [11, 9]]) tree(x, z);
+  vase(-13, -3, 1.5, 0x2c5fa8, 0xf2efe6); vase(-13, 2, 1.2, 0xb8562e, 0xf0d8a8);
+  vase(13, -3, 1.3, 0x2e8a7a, 0xf2efe6); vase(13, 2, 1.6, 0x8a3a7a, 0xf4c84a);
+  cans(-3.5, 5); beachBall(4, 6.5, 0.8);
+
+  // the static cubes: one instanced mesh; removing a cube moves the last instance into its slot
+  if (cubes) { scene.remove(cubes); cubes.geometry.dispose(); cubes.material.dispose(); cubes.dispose(); }
+  live = buildCells.length;
+  cubes = new THREE.InstancedMesh(new THREE.BoxGeometry(S, S, S), new THREE.MeshStandardMaterial({ roughness: 0.8 }), live);
+  cubes.castShadow = cubes.receiveShadow = true; cubes.frustumCulled = false;
+  const m = cubes.instanceMatrix.array, col = new Float32Array(buildColors);
+  cubes.instanceColor = new THREE.InstancedBufferAttribute(col, 3);
+  slotCell = new Int32Array(live);
+  for (let s = 0; s < live; s++) {
+    const c = buildCells[s], i = c % NX, j = Math.floor(c / NX) % NY, k = Math.floor(c / (NX * NY));
+    slotOf[c] = s; slotCell[s] = c;
+    m.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, OX + (i + 0.5) * S, (j + 0.5) * S, OZ + (k + 0.5) * S, 1], s * 16);
+  }
+  scene.add(cubes);
+}
+
+// take a cube out of the world; returns its colour
+function removeCell(c) {
+  const s = slotOf[c], last = --live, col = cubes.instanceColor.array, m = cubes.instanceMatrix.array;
+  const color = new THREE.Color(col[s * 3], col[s * 3 + 1], col[s * 3 + 2]);
+  if (s !== last) {
+    m.copyWithin(s * 16, last * 16, last * 16 + 16); col.copyWithin(s * 3, last * 3, last * 3 + 3);
+    const moved = slotCell[last]; slotCell[s] = moved; slotOf[moved] = s;
+  }
+  filled[c] = 0;
+  return color;
+}
+const cellCentre = c => [OX + (c % NX + 0.5) * S, (Math.floor(c / NX) % NY + 0.5) * S, OZ + (Math.floor(c / (NX * NY)) + 0.5) * S];
+
+/* ---------- aiming: a voxel DDA walk plus the floor and the walls ---------- */
+function castGrid(o, d, maxDist) {
+  const G = [(o.x - OX) / S, o.y / S, (o.z - OZ) / S], D = [d.x, d.y, d.z], L = [NX, NY, NZ];
+  let t0 = 0, t1 = maxDist / S;
+  for (let a = 0; a < 3; a++) {
+    if (Math.abs(D[a]) < 1e-9) { if (G[a] < 0 || G[a] >= L[a]) return null; continue; }
+    let ta = -G[a] / D[a], tb = (L[a] - G[a]) / D[a]; if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+  }
+  if (t0 > t1) return null;
+  const p = [0, 0, 0], step = [0, 0, 0], tMax = [0, 0, 0], tDel = [0, 0, 0];
+  for (let a = 0; a < 3; a++) {
+    p[a] = Math.min(L[a] - 1, Math.max(0, Math.floor(G[a] + D[a] * (t0 + 1e-6))));
+    step[a] = D[a] > 0 ? 1 : D[a] < 0 ? -1 : 0;
+    tMax[a] = step[a] > 0 ? (p[a] + 1 - G[a]) / D[a] : step[a] < 0 ? (p[a] - G[a]) / D[a] : Infinity;
+    tDel[a] = step[a] ? Math.abs(1 / D[a]) : Infinity;
+  }
+  let t = t0, axis = -1;
+  for (let guard = 0; guard < 2000 && t <= t1; guard++) {
+    const c = idx(p[0], p[1], p[2]);
+    if (filled[c]) { const n = new THREE.Vector3(); if (axis >= 0) n.setComponent(axis, -step[axis]); else n.copy(d).negate(); return { dist: t * S, cell: c, normal: n }; }
+    axis = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : (tMax[1] < tMax[2] ? 1 : 2);
+    t = tMax[axis]; p[axis] += step[axis]; tMax[axis] += tDel[axis];
+    if (p[axis] < 0 || p[axis] >= L[axis]) break;
+  }
+  return null;
+}
+function castStatic(o, d) {   // floor and walls: nearest hit with its normal
+  let best = { dist: Infinity, normal: new THREE.Vector3(0, 1, 0) };
+  if (d.y < 0) best.dist = -o.y / d.y;
+  for (const b of WALLS) {
+    let t0 = 0, t1 = Infinity, ax = -1;
+    for (let a = 0; a < 3; a++) {
+      const oa = o.getComponent(a), da = d.getComponent(a);
+      if (Math.abs(da) < 1e-9) { if (oa < b.min[a] || oa > b.max[a]) { t0 = Infinity; break; } continue; }
+      let ta = (b.min[a] - oa) / da, tb = (b.max[a] - oa) / da; if (ta > tb) [ta, tb] = [tb, ta];
+      if (ta > t0) { t0 = ta; ax = a; } t1 = Math.min(t1, tb);
+    }
+    if (t0 <= t1 && t0 < best.dist && ax >= 0) { const n = new THREE.Vector3(); n.setComponent(ax, -Math.sign(d.getComponent(ax))); best = { dist: t0, normal: n }; }
+  }
+  return best;
+}
+
+/* ---------- paint: every shot is its own small bake ---------- */
+const painter = new PainterlyPass(scene, camera, { strokeSize: 6, saturation: 1.25, colorJitter: 0.08 });
+let painted = true;
+const booms = [];   // { boom, born }
+const MAX_BOOMS = 70;
+let clock = 0, shots = 0, paintedCount = 0;
+
+function addBoom(opts) {
+  const boom = new BakedDebris(Object.assign({ solid, ground: 0, pieceSize: S, duration: 8, castShadow: false, seed: 1000 + shots }, opts));
+  scene.add(boom.mesh);
+  if (painted) painter.overlayScene.add(boom.createStrokes({ painter, strokeScale: 1.35 }));
+  booms.push({ boom, born: clock });
+  while (booms.length > MAX_BOOMS) { const old = booms.shift(); scene.remove(old.boom.mesh); old.boom.dispose(); }
+  return boom;
+}
+
+// cubes no longer connected to the floor through other cubes: returns their cells
+function looseFrom(seeds) {
+  const loose = [], queue = [];
+  for (const s0 of seeds) {
+    if (!filled[s0] || stamp[s0] === gen) continue;
+    const comp = [s0]; queue.length = 0; queue.push(s0); stamp[s0] = gen;
+    let grounded = false;
+    for (let q = 0; q < queue.length && !grounded; q++) {
+      const c = queue[q], i = c % NX, j = Math.floor(c / NX) % NY, k = Math.floor(c / (NX * NY));
+      if (j === 0) { grounded = true; break; }
+      for (const [di, dj, dk] of NB) {
+        const a = i + di, b = j + dj, e = k + dk;
+        if (!inside(a, b, e)) continue;
+        const n = idx(a, b, e);
+        if (filled[n] && stamp[n] !== gen) { stamp[n] = gen; queue.push(n); comp.push(n); }
+      }
+      if (queue.length > 200000) grounded = true;   // too big to drop; keep it standing
+    }
+    if (!grounded) loose.push(...comp);
+  }
+  return loose;
+}
+const NB = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+
+function blast(hit, point, dir, R) {
+  const pieces = [], seeds = [];
+  const ci = Math.floor((point.x - OX) / S), cj = Math.floor(point.y / S), ck = Math.floor((point.z - OZ) / S), r = Math.ceil(R * 1.3 / S);
+  for (let k = ck - r; k <= ck + r; k++) for (let j = Math.max(0, cj - r); j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+    if (!filledAt(i, j, k)) continue;
+    const c = idx(i, j, k), p = cellCentre(c);
+    const d = Math.hypot(p[0] - point.x, p[1] - point.y, p[2] - point.z);
+    if (d > R * (0.75 + 0.55 * hash(i >> 1, j >> 1, k >> 1))) continue;   // ragged edge
+    pieces.push({ position: p, color: removeCell(c) });
+  }
+  if (!pieces.length) pieces.push({ position: cellCentre(hit.cell), color: removeCell(hit.cell) });
+  // neighbours of the hole: anything they hold that no longer touches the floor falls
+  for (const pc of pieces) {
+    const i = Math.floor((pc.position[0] - OX) / S), j = Math.floor(pc.position[1] / S), k = Math.floor((pc.position[2] - OZ) / S);
+    for (const [di, dj, dk] of NB) if (filledAt(i + di, j + dj, k + dk)) seeds.push(idx(i + di, j + dj, k + dk));
+  }
+  gen++;
+  const blown = pieces.length;
+  for (const c of looseFrom(seeds)) {
+    const p = cellCentre(c), away = new THREE.Vector3(p[0] - point.x, 0, p[2] - point.z).normalize().multiplyScalar(0.6);
+    pieces.push({ position: p, color: removeCell(c), launchTime: 0.03 + rnd() * 0.08,
+      velocity: [away.x + (rnd() - 0.5) * 0.5 + dir.x * 0.8, 0.4 + rnd() * 0.6, away.z + (rnd() - 0.5) * 0.5 + dir.z * 0.8], spin: 2 + rnd() * 3 });
+  }
+  cubes.count = live; cubes.instanceMatrix.needsUpdate = true; cubes.instanceColor.needsUpdate = true;
+  const big = R > 0.8;
+  // the burst sits just in front of the surface, so the paint blows out through the far side and up
+  const bp = point.clone().addScaledVector(dir, -0.12);
+  addBoom({
+    pieces, snap: S, stagger: 0.12, spin: 12, restitution: 0.25, friction: 0.5, secondary: big ? 0.3 : 0.45,
+    speed: big ? [4, 13] : [3, 9], secondarySpeed: [2, 5],
+    bursts: [{ position: bp.toArray(), radius: R * 1.7, direction: [dir.x * 0.9, 0.55, dir.z * 0.9], strength: 1 }],
+  });
+  paintedCount += pieces.length;
+  return { blown, fell: pieces.length - blown };
+}
+
+// a shot that hits the floor or a wall leaves a splash of the gun's colour
+function splash(point, normal, dir) {
+  const base = new THREE.Color(PALETTE[colorIdx]), pieces = [], up = normal.clone();
+  const refl = dir.clone().reflect(normal);
+  for (let n = 0; n < 34; n++) {
+    const v = up.clone().multiplyScalar(1.2 + rnd() * 2.6).addScaledVector(refl, 1.5 + rnd() * 2)
+      .add(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(3));
+    const p = point.clone().addScaledVector(normal, 0.06).add(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.12));
+    pieces.push({ position: p.toArray(), size: 0.05 + rnd() * 0.06, velocity: v.toArray(), launchTime: rnd() * 0.04,
+      color: base.clone().offsetHSL((rnd() - 0.5) * 0.04, 0, (rnd() - 0.5) * 0.12) });
+  }
+  addBoom({ pieces, bursts: [{ position: point.toArray(), radius: 0 }], restitution: 0.1, friction: 0.2, duration: 4 });
+}
+
+/* ---------- the gun ---------- */
+const PALETTE = [0xe04a3a, 0x2f6fd6, 0xf2c230, 0x2e9a57, 0xc23a9a, 0xf4f1ea];
+let colorIdx = 0;
+const gun = new THREE.Group();
+const gm = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.1 });
+const tank = new THREE.Mesh(new THREE.SphereGeometry(0.032, 20, 14), gm(PALETTE[0]));
+{ const body = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.065, 0.3), gm(0x3a3f48));
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.05), gm(0x6b4b33)); grip.position.set(0, -0.07, 0.08); grip.rotation.x = 0.3;
+  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, 0.12, 12), gm(0xb8bcc2)); nozzle.rotation.x = Math.PI / 2; nozzle.position.z = -0.2;
+  tank.position.set(0, 0.06, -0.02);
+  gun.add(body, grip, nozzle, tank); }
+gun.position.set(0.24, -0.22, -0.5);
+camera.add(gun);
+let recoil = 0;
+function setColor(n) { colorIdx = (n + PALETTE.length) % PALETTE.length; tank.material.color.set(PALETTE[colorIdx]); $('swatch').style.background = '#' + PALETTE[colorIdx].toString(16).padStart(6, '0'); }
+
+// a short "splat" from filtered noise
+let audio = null, noise = null;
+function splat(big) {
+  if (!audio) { try { audio = new AudioContext(); noise = audio.createBuffer(1, audio.sampleRate * 0.4, audio.sampleRate);
+    const ch = noise.getChannelData(0); for (let n = 0; n < ch.length; n++) ch[n] = (Math.random() * 2 - 1) * Math.pow(1 - n / ch.length, 3); } catch { return; } }
+  const src = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain(), t = audio.currentTime;
+  src.buffer = noise; f.type = 'lowpass'; f.frequency.setValueAtTime(big ? 1400 : 2600, t); f.frequency.exponentialRampToValueAtTime(big ? 200 : 500, t + 0.25);
+  g.gain.setValueAtTime(big ? 0.5 : 0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + (big ? 0.4 : 0.2));
+  src.connect(f).connect(g).connect(audio.destination); src.start(t);
+}
+
+const BRUSH = { R: 0.42, cool: 0.11 }, BUCKET = { R: 1.15, cool: 0.55 };
+let cooldown = 0;
+function shoot(big = false) {
+  const w = big ? BUCKET : BRUSH;
+  if (cooldown > 0) return null;
+  cooldown = w.cool; shots++; recoil = big ? 1 : 0.5; $('gun').textContent = big ? 'Bucket' : 'Brush';
+  camera.updateMatrixWorld();
+  const o = camera.getWorldPosition(new THREE.Vector3()), d = camera.getWorldDirection(new THREE.Vector3());
+  const sp = 0.004; d.x += (rnd() - 0.5) * sp; d.y += (rnd() - 0.5) * sp; d.normalize();
+  const st = castStatic(o, d), g = castGrid(o, d, Math.min(st.dist, 80));
+  splat(big);
+  if (g && g.dist <= st.dist) return blast(g, o.clone().addScaledVector(d, g.dist), d, w.R);
+  if (st.dist < 80) splash(o.clone().addScaledVector(d, st.dist), st.normal, d);
+  return null;
+}
+
+/* ---------- player ---------- */
+const player = { pos: new THREE.Vector3(0, 0, 11), vy: 0, yaw: 0, pitch: -0.05 };
+const keys = new Set();
+const EYE = 1.6, RAD = 0.28;
+function blocked(x, y, z) {
+  for (const h of [0.35, 0.9, 1.5]) for (const [ox, oz] of [[-RAD, -RAD], [RAD, -RAD], [-RAD, RAD], [RAD, RAD]])
+    if (filledAt(Math.floor((x + ox - OX) / S), Math.floor((y + h) / S), Math.floor((z + oz - OZ) / S))) return true;
+  return false;
+}
+function move(dt) {
+  const run = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 8 : 4.5;
+  const f = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), s = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+  const l = Math.hypot(f, s) || 1, sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+  const vx = ((-sy * f) + (cy * s)) / l * run, vz = ((-cy * f) - (sy * s)) / l * run;
+  const p = player.pos, lim = HALF - RAD - 0.05;
+  const nx = Math.max(-lim, Math.min(lim, p.x + vx * dt)); if (!blocked(nx, p.y, p.z)) p.x = nx;
+  const nz = Math.max(-lim, Math.min(lim, p.z + vz * dt)); if (!blocked(p.x, p.y, nz)) p.z = nz;
+  player.vy -= 22 * dt; p.y += player.vy * dt;
+  if (p.y <= 0) { p.y = 0; player.vy = 0; if (keys.has('Space')) player.vy = 7.5; }
+  camera.position.set(p.x, p.y + EYE, p.z);
+  camera.rotation.set(player.pitch, player.yaw, 0);
+}
+
+/* ---------- input ---------- */
+const canvas = renderer.domElement;
+let locked = false, mouse = [false, false];
+$('play').onclick = () => { canvas.requestPointerLock?.(); };
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; $('start').hidden = locked; if (!locked) mouse = [false, false]; });
+document.addEventListener('mousemove', e => {
+  if (!locked) return;
+  player.yaw -= e.movementX * 0.0022; player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch - e.movementY * 0.0022));
+});
+canvas.addEventListener('mousedown', e => {
+  if (!locked) return;
+  if (e.button === 0) { mouse[0] = true; shoot(false); }
+  if (e.button === 2) { mouse[1] = true; shoot(true); }
+});
+addEventListener('mouseup', e => { if (e.button === 0) mouse[0] = false; if (e.button === 2) mouse[1] = false; });
+addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('wheel', e => { if (locked) setColor(colorIdx + Math.sign(e.deltaY)); }, { passive: true });
+addEventListener('keydown', e => {
+  keys.add(e.code);
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code >= 'Digit1' && e.code <= 'Digit6') setColor(+e.code.slice(5) - 1);
+  if (e.code === 'KeyP' && !e.repeat) setPainted(!painted);
+  if (e.code === 'KeyR' && !e.repeat) reset();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+
+function setPainted(on) {
+  painted = on;
+  for (const { boom } of booms) { if (on) painter.overlayScene.add(boom.createStrokes({ painter, strokeScale: 1.35 })); else boom.removeStrokes(); }
+  $('look').textContent = on ? 'Painterly' : 'Cubes';
+}
+function reset() {
+  for (const { boom } of booms) { scene.remove(boom.mesh); boom.dispose(); }
+  booms.length = 0; paintedCount = 0; buildWorld();
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y);
+}
+addEventListener('resize', resize); resize();
+
+/* ---------- start ---------- */
+buildWorld();
+move(0);
+// compile the debris and stroke shaders now, so the first shot does not stall
+{ const warm = new BakedDebris({ pieces: [{ position: [0, -5, 0], velocity: [0, 1, 0] }], bursts: [{ position: [0, -5, 0], radius: 0 }], castShadow: false });
+  scene.add(warm.mesh); painter.overlayScene.add(warm.createStrokes({ painter }));
+  painter.render(renderer); renderer.render(scene, camera);
+  scene.remove(warm.mesh); warm.dispose(); }
+$('play').disabled = false; $('play').textContent = 'Click to play';
+
+let prev = performance.now(), frameMs = 0;
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.05, (now - prev) / 1000); prev = now; clock += dt;
+  cooldown -= dt;
+  if (locked && mouse[0]) shoot(false);
+  move(dt);
+  recoil = Math.max(0, recoil - dt * 6);
+  gun.position.set(0.24, -0.22 + recoil * 0.015, -0.5 + recoil * 0.06); gun.rotation.x = recoil * 0.25;
+  $('cross').className = recoil > 0.6 ? 'big' : '';
+  for (const b of booms) b.boom.setTime(clock - b.born);
+  const t0 = performance.now();
+  if (painted) painter.render(renderer); else renderer.render(scene, camera);
+  frameMs = frameMs * 0.95 + (performance.now() - t0) * 0.05;
+  $('score').textContent = paintedCount.toLocaleString('en') + ' cubes painted';
+});
+
+// for tests and the console
+window.__fps = { player, shoot: big => { cooldown = 0; move(0); return shoot(big); }, setPainted, reset, booms, get live() { return live; }, get frameMs() { return frameMs; }, renderer };
+</script>
+</body>
+</html>

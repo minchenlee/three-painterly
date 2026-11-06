@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lightspeed Ram</title>
+<style>
+:root {
+  --bg: #e4e7ea; --panel: rgba(255, 255, 255, 0.92); --ink: #17191c; --muted: #6b7178; --line: rgba(0, 0, 0, 0.09);
+  --soft: rgba(0, 0, 0, 0.04); --accent: #17191c; --accent-ink: #ffffff; --rev: #2f6fb3; --fwd: #c4522f;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171a; --panel: rgba(24, 26, 30, 0.92); --ink: #eceef0; --muted: #949aa1; --line: rgba(255, 255, 255, 0.09);
+  --soft: rgba(255, 255, 255, 0.05); --accent: #eceef0; --accent-ink: #15171a; --rev: #6fa6e0; --fwd: #e88a63; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15171a; --panel: rgba(24, 26, 30, 0.92); --ink: #eceef0; --muted: #949aa1; --line: rgba(255, 255, 255, 0.09);
+  --soft: rgba(255, 255, 255, 0.05); --accent: #eceef0; --accent-ink: #15171a; --rev: #6fa6e0; --fwd: #e88a63; color-scheme: dark }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#ui { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 300px; max-height: calc(100dvh - 32px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12); }
+#ui::-webkit-scrollbar { display: none; }
+@media (max-width: 600px) {
+  #ui { left: 0; right: 0; bottom: 0; width: auto; max-height: 62%; border-width: 1px 0 0; border-radius: 16px 16px 0 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
+  header p { display: none; }
+}
+header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); }
+
+.grp { display: grid; gap: 8px; }
+.lab { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
+.lab output { color: var(--ink); font-variant-numeric: tabular-nums; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row .lab { flex: 1; }
+button { font: inherit; color: var(--ink); background: var(--soft); border: 1px solid transparent; border-radius: 8px; padding: 5px 10px;
+  cursor: pointer; min-height: 30px; }
+button:hover { border-color: var(--line); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); min-width: 80px; font-weight: 500; }
+.seg { display: inline-flex; background: var(--soft); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { background: transparent; min-height: 26px; padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
+.clocks { display: grid; gap: 4px; padding: 8px 10px; background: var(--soft); border-radius: 10px; font-variant-numeric: tabular-nums; }
+.clock { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.clock span:first-child::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+.clock span:last-child { color: var(--muted); }
+.meta { margin: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.foot button { background: transparent; padding: 0; min-height: 0; color: var(--muted); }
+.foot button:hover { color: var(--ink); border-color: transparent; }
+[hidden] { display: none !important; }
+
+#keys { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100% - 32px)); max-height: calc(100% - 32px);
+  overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; z-index: 20;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
+.keys-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 600; }
+#keys table { border-collapse: collapse; width: 100%; }
+#keys td { padding: 5px 0; vertical-align: top; border-top: 1px solid var(--line); }
+#keys td:first-child { white-space: nowrap; padding-right: 12px; }
+kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--soft); }
+#toast { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; pointer-events: none; backdrop-filter: blur(16px); }
+html[data-ui-hidden] #liteNote, html[data-ui-hidden] #toast { display: none !important; }
+#bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
+#status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 16; max-width: calc(100vw - 140px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+body { background: #020306; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="status">Baking debris…</div>
+<div id="liteNote" hidden></div>
+<div id="toast" hidden role="status"></div>
+<button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
+<div id="keys" hidden role="dialog" aria-label="Keyboard shortcuts">
+  <div class="keys-head"><span>Keyboard shortcuts</span><button type="button" id="keysClose" aria-label="Close">✕</button></div>
+  <table>
+    <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Play backwards / pause</td></tr>
+    <tr><td><kbd>0</kbd> <kbd>Home</kbd></td><td>Back to 0 s</td></tr>
+    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step 0.25 s (<kbd>Shift</kbd>: 1 s)</td></tr>
+    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Slower / faster</td></tr>
+    <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Camera: director / wide / stream</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Painterly on / off</td></tr>
+    <tr><td><kbd>G</kbd></td><td>Glow on / off</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Fullscreen on / off</td></tr>
+    <tr><td><kbd>H</kbd></td><td>Hide / show all controls</td></tr>
+    <tr><td><kbd>?</kbd> <kbd>Esc</kbd></td><td>This list</td></tr>
+  </table>
+</div>
+
+<div id="ui">
+  <header>
+    <h1>Lightspeed Ram</h1>
+    <p>A small cruiser jumps to lightspeed straight through a flagship. The cut wing breaks away, and the debris stream shreds the escorts behind it.</p>
+  </header>
+
+  <div class="grp">
+    <div class="lab"><span>Time</span><output id="tOut">0.00 / 16.00 s</output></div>
+    <input type="range" id="time" min="0" max="1000" value="0" aria-label="Time">
+    <div class="row">
+      <button type="button" id="bStart" title="Back to the start" aria-label="Back to the start">⏮</button>
+      <button type="button" id="bRev">◀ Reverse</button>
+      <button type="button" id="bPlay" class="primary">▶ Play</button>
+    </div>
+    <div class="row"><span class="lab">Speed</span>
+      <div class="seg" role="group" aria-label="Playback speed" id="speeds">
+        <button type="button" data-s="0.1" aria-pressed="false">0.1×</button>
+        <button type="button" data-s="0.25" aria-pressed="false">¼×</button>
+        <button type="button" data-s="0.5" aria-pressed="false">½×</button>
+        <button type="button" data-s="1" aria-pressed="true">1×</button>
+      </div>
+    </div>
+    <p class="meta" id="phase" aria-live="off"></p>
+  </div>
+
+  <div class="grp">
+    <div class="row"><span class="lab">Camera</span>
+      <div class="seg" role="group" aria-label="Camera" id="camSeg">
+        <button type="button" data-v="director" aria-pressed="false">Director</button>
+        <button type="button" data-v="wide" aria-pressed="true">Wide</button>
+        <button type="button" data-v="stream" aria-pressed="false">Stream</button>
+      </div>
+    </div>
+    <div class="lab"><span>Paint strokes</span><output id="psOut">16 px</output></div>
+    <input type="range" id="paintSize" min="2" max="16" step="1" value="16" aria-label="Paint stroke size">
+    <div class="lab"><span>Debris strokes</span><output id="dsOut">1.8×</output></div>
+    <input type="range" id="debrisSize" min="0.3" max="2.5" step="0.1" value="1.8" aria-label="Debris stroke size">
+    <div class="lab"><span>Debris amount</span><output id="daOut"></output></div>
+    <input type="range" id="debrisAmount" min="0" max="5" step="1" value="1" aria-label="Debris amount">
+    <div class="lab"><span>Glow</span><output id="glOut">0.0</output></div>
+    <input type="range" id="glow" min="0" max="3" step="0.1" value="0" aria-label="Glow">
+    <div class="row"><span class="lab">Stars</span>
+      <div class="seg" role="group" aria-label="Stars" id="starSeg">
+        <button type="button" data-v="painted" aria-pressed="true">Painted</button>
+        <button type="button" data-v="dots" aria-pressed="false">Dots</button>
+      </div>
+    </div>
+    <div class="row"><span class="lab">Look</span>
+      <div class="seg" role="group" aria-label="Look" id="lookSeg">
+        <button type="button" data-v="0" aria-pressed="false">Cubes</button>
+        <button type="button" data-v="1" aria-pressed="true">Painterly</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="text" id="viewText" readonly hidden aria-label="Current view as text" style="font: 11px ui-monospace, monospace; width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--soft); color: var(--ink);">
+  <div class="foot">
+    <p class="meta" id="stats"></p>
+    <div class="row"><button type="button" id="bHide" aria-controls="ui" title="Hide the panel (H)">Hide</button><button type="button" id="bFull" title="Fullscreen (F)">Fullscreen</button><button type="button" id="bCopy" title="Copy the camera and settings as text">Copy view</button><button type="button" id="bReset" title="Back to the default view and settings">Reset</button><button type="button" id="bKeys">Keys</button></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { BakedDebris, strokeFragment } from '../../packages/baked-debris/src/index.js';
+import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
+
+const STR = { liteNote: 'Lite mode · full version on desktop', baking: 'Baking debris…', loadFailed: 'Failed to load: ' };
+addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = STR.loadFailed + (e.message || 'script error'); });
+const $ = id => document.getElementById(id);
+$('status').textContent = STR.baking;
+// lite mode (phones, narrow windows): pixel ratio 1, 2-unit cells (1/4 of the pieces), fewer sparks. ?full=1 turns it off, ?lite=1 forces it.
+const QS = new URLSearchParams(location.search);
+const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
+if (LITE) { $('liteNote').textContent = STR.liteNote; $('liteNote').hidden = false; }
+
+// seeded random numbers: the scene is the same on every load
+const makeRnd = a => () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+let rnd = makeRnd(20171215);
+const hash2 = (x, z) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
+
+/* ---------- renderer, camera, light ---------- */
+const PR_MAX = LITE ? 1 : Math.min(devicePixelRatio, 2);
+const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(PR_MAX);
+renderer.shadowMap.enabled = !LITE; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
+
+const scene = new THREE.Scene();
+const BG_DARK = new THREE.Color(0x020306), BG_HAZE = new THREE.Color(0x0f1c2c), BG_FLASH = new THREE.Color(0xd8e6ff);
+scene.background = BG_DARK.clone();
+scene.fog = new THREE.FogExp2(0x020306, 0.0007);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 6000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 10; controls.maxDistance = 1400;
+
+scene.add(new THREE.HemisphereLight(0x33405c, 0x07080b, 0.7));
+const key = new THREE.DirectionalLight(0xd6e2ff, 3.6);   // a distant star: front, left, above
+key.position.set(-160, 140, -120); key.castShadow = !LITE;
+key.shadow.mapSize.set(4096, 4096); key.shadow.bias = -0.0006; key.shadow.normalBias = 0.4;
+Object.assign(key.shadow.camera, { left: -300, right: 300, top: 300, bottom: -300, near: 10, far: 900 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x5f7fb8, 0.5); rim.position.set(120, -60, 200); scene.add(rim);
+
+/* ---------- the ram line ----------
+   The cruiser jumps along a straight line L(s) = C0 + D * s. s = 0 is where it crosses the flagship's mid-plane.
+   N is horizontal and perpendicular to the line: the cut is the slab |(p - C0) · N| < CUT around it. */
+const FS = 1.8;                                                    // flagship scale (1 = 260 units across)
+const C0 = new THREE.Vector3(45 * FS, 0, 0);
+const D = new THREE.Vector3(0.18, -0.1, 1).normalize();
+const N = new THREE.Vector3(D.z, 0, -D.x).normalize();
+const lineAt = s => C0.clone().addScaledVector(D, s);
+const T_JUMP = 4, S_START = -300, V_SHIP = 3, V_RAM = 1500;
+const S_JUMP = S_START + V_SHIP * T_JUMP;                        // where the cruiser is when it jumps
+const tRam = s => T_JUMP + (s - S_JUMP) / V_RAM;                  // when the ram passes s
+const T_HIT = tRam(-20 * FS);                                          // the ram reaches the flagship's leading edge
+const T_END = 16;
+
+/* ---------- voxel shells ---------- */
+const CELL = LITE ? 2 : 1, C = CELL;                               // hull cell size
+const CUT = LITE ? 5.5 : 4.5, TORN = LITE ? 11 : 9.5;              // cut slab half-widths: core (stream) and torn edge
+// heightmap shell on the world grid: one column per (x, z); top(x, z) returns null outside.
+// Cells are kept where a column ends or a neighbour column does not cover them; fill(x, z) keeps the whole column.
+function buildShell({ x0, x1, z0, z1, top, bot, color, fill = () => false, out, cell: C = CELL }) {
+  const i0 = Math.floor(x0 / C), k0 = Math.floor(z0 / C), nx = Math.ceil(x1 / C) - i0, nz = Math.ceil(z1 / C) - k0;
+  const JT = new Int32Array(nx * nz), JB = new Int32Array(nx * nz), has = new Uint8Array(nx * nz);
+  for (let a = 0; a < nx; a++) for (let b = 0; b < nz; b++) {
+    const x = (i0 + a + 0.5) * C, z = (k0 + b + 0.5) * C, t = top(x, z);
+    if (t == null) continue;
+    const jt = Math.floor(t / C), jb = Math.min(jt, Math.floor(bot(x, z) / C));
+    const c = a + nx * b; has[c] = 1; JT[c] = jt; JB[c] = jb;
+  }
+  const covers = (a, b, j) => a >= 0 && b >= 0 && a < nx && b < nz && has[a + nx * b] && j <= JT[a + nx * b] && j >= JB[a + nx * b];
+  for (let a = 0; a < nx; a++) for (let b = 0; b < nz; b++) {
+    const c = a + nx * b; if (!has[c]) continue;
+    const x = (i0 + a + 0.5) * C, z = (k0 + b + 0.5) * C, full = fill(x, z);
+    for (let j = JB[c]; j <= JT[c]; j++) {
+      const edge = j === JT[c] || j === JB[c] || !covers(a - 1, b, j) || !covers(a + 1, b, j) || !covers(a, b - 1, j) || !covers(a, b + 1, j);
+      if (!edge && !full) continue;
+      const y = (j + 0.5) * C;
+      out.push({ position: [x, y, z], size: C, color: color(x, y, z, j === JT[c] ? 'top' : j === JB[c] ? 'bot' : 'side', edge) });
+    }
+  }
+}
+const shade = (hex, l) => new THREE.Color(hex).offsetHSL(0, 0, l).getHex();
+
+/* the flagship: a wide flying wing. Nose at z = -40 FS, wingtips at x = ±130 FS. A city of blocks on the centre. */
+const B = 130 * FS;
+function wing(x, z) {
+  const a = Math.abs(x) / B; if (a >= 1) return null;
+  const le = (-40 + 80 * a) * FS, te = (10 + 30 * a) * FS; if (z < le || z > te) return null;
+  const u = (z - le) / (te - le), prof = Math.sqrt(Math.max(0, 4 * u * (1 - u)));
+  return { a, u, th: (1.2 + 8 * Math.pow(1 - a, 0.9) * prof) * FS };
+}
+/* Painting likes large flat areas: PainterlyPass lays strokes per plane, so every voxel terrace starts a new
+   pattern. The hull is built in a few flat decks (TIER high) and the city in big blocks, not a smooth slope. */
+const TIER = 2.4 * FS, tier = h => Math.max(1, Math.round(h / TIER)) * TIER;
+function cityHeight(x, z, w) {
+  const ax = Math.abs(x); if (ax > 46 * FS || w.u < 0.18 || w.u > 0.95) return 0;
+  const bs = 7 * FS, h = hash2(Math.floor(x / bs), Math.floor(z / bs));
+  let e = h < 0.45 ? tier((1 + h / 0.45 * 4) * (1 - 0.6 * ax / (46 * FS)) * FS) : 0;
+  if (ax < 7 * FS && w.u > 0.45) e = Math.max(e, tier(7 * FS * (1 - 0.5 * ax / (7 * FS))));   // central ridge and bridge
+  return e;
+}
+const slab = (x, y, z) => Math.abs((x - C0.x) * N.x + (z - C0.z) * N.z);
+const wingTop = (x, z) => { const w = wing(x, z); return w && tier(w.th * 0.55) + cityHeight(x, z, w); };
+const wingBot = (x, z) => -tier(wing(x, z).th * 0.45);
+const hull = [];   // everything outside the cut: it never launches, it drifts
+buildShell({ x0: -B, x1: B, z0: -41 * FS, z1: 41 * FS, out: hull, color: hullColor,
+  top: (x, z) => slab(x, 0, z) < TORN ? null : wingTop(x, z), bot: wingBot });
+function hullColor(x, y, z, part, edge) {
+  // broad areas of one colour (plates, city blocks, trenches): the painting turns each into a few strokes
+  const w = wing(x, z), ax = Math.abs(x), P = 16 * FS, bs = 7 * FS;
+  const plate = hash2(Math.floor(x / P) + 7, Math.floor(z / P) - 3);
+  let c = part === 'bot' ? 0x3d434b : 0x666d77, l = (plate - 0.5) * 0.07;
+  if (!edge) c = 0x5b5f66;                                                                 // inner decks
+  else if (part !== 'bot' && cityHeight(x, z, w) > 0.5) { const b = hash2(Math.floor(x / bs), Math.floor(z / bs) + 9);
+    c = b < 0.5 ? 0x868d97 : 0x565c65; l = (b - 0.5) * 0.06; }                              // city blocks, two tones
+  else if (part === 'top' && Math.abs(((z / FS) % 22 + 22) % 22 - 11) < 0.8) c = 0x4b5159; // a few wide trenches
+  else if (part === 'side' && hash2(Math.floor(x / 3), Math.floor(z / 3)) < 0.05) c = 0xcfc7aa;   // lit ports, in short rows
+  else if (part === 'top' && w.a > 0.55 && plate < 0.3) c = 0x8d949e;                      // pale plates on the outer wing
+  return shade(c, l);
+}
+
+/* the escorts: small daggers below and behind, all flying the same way (-z) */
+const ESCORTS = [
+  [104, -18, 118, 1.0], [132, -26, 206, 1.15], [110, -31, 262, 1.0], [66, 10, -104, 0.9],
+  [-40, -22, 60, 1.0], [-92, -30, 118, 1.1], [-18, -38, 152, 0.9], [8, -26, 22, 1.0],
+  [150, -30, 40, 1.0], [132, -42, 150, 1.0], [-132, -25, 8, 0.9], [22, -48, 232, 1.2], [-62, -46, 214, 1.0],
+];
+const escorts = [];
+for (const [ex, ey, ez, sc] of ESCORTS) {
+  const L = 26 * sc;
+  const shape = (x, z) => { const u = (z - ez + L / 2) / L; if (u < 0 || u > 1) return null;
+    const w = 0.32 * L * u + 0.4, f = 1 - Math.abs(x - ex) / w; return f <= 0 ? null : { u, f }; };
+  buildShell({ x0: ex - L * 0.35, x1: ex + L * 0.35, z0: ez - L / 2, z1: ez + L / 2, out: escorts,
+    top: (x, z) => { const s = shape(x, z); if (!s) return null;
+      let t = ey + 0.4 + 0.17 * L * s.u * Math.pow(s.f, 1.2);
+      if (s.u > 0.72 && s.u < 0.9 && Math.abs(x - ex) < 0.08 * L) t = Math.max(t, ey + 0.17 * L * 0.9 + 2.4 * sc);   // tower
+      return t; },
+    bot: (x, z) => { const s = shape(x, z); return ey - 0.3 - 0.05 * L * s.u * s.f; },
+    color: (x, y, z, part) => shade(part === 'bot' ? 0x4a5058 : part === 'side' ? 0x6a7079 : 0x8c939c, (rnd() - 0.5) * 0.06 + (hash2(x, z) < 0.08 ? -0.12 : 0)),
+  });
+}
+
+/* ---------- launches ----------
+   Every piece in the cut leaves when the ram passes it: fast along the ram line, a little outwards.
+   Core pieces make the long stream; torn-edge pieces leave slower and a little later. */
+const radial = (p, s) => { const q = new THREE.Vector3(...p).sub(lineAt(s)); q.y *= 0.6; return q.lengthSq() > 1e-6 ? q.normalize() : new THREE.Vector3(0, 1, 0); };
+function launch(pc, s, t0, along, out, side) {
+  const r = radial(pc.position, s), j = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5);
+  const v = D.clone().multiplyScalar(along).addScaledVector(r, out).addScaledVector(j, side);
+  pc.velocity = v.toArray(); pc.launchTime = t0; pc.burst = 0;
+}
+/* the cut: filled (inner decks too) on its own grid, so the debris amount can change without touching the hull.
+   cell < hull cell = more, smaller pieces. Its own seed: the same amount always gives the same debris. */
+const DEBRIS_CELLS = [1.6, 1.3, 1, 0.8, 0.65, 0.5];   // times the hull cell
+function buildCut(cell) {
+  const keep = rnd; rnd = makeRnd(777);
+  const cut = [];
+  buildShell({ x0: C0.x - 30 * FS, x1: C0.x + 30 * FS, z0: -41 * FS, z1: 41 * FS, out: cut, cell, color: hullColor, fill: () => true,
+    top: (x, z) => slab(x, 0, z) < TORN ? wingTop(x, z) : null, bot: wingBot });
+  let core = 0;
+  for (const pc of cut) {
+  const [x, y, z] = pc.position, h = slab(x, y, z);
+  const s = new THREE.Vector3(x, y, z).sub(C0).dot(D);
+  if (h < CUT) { core++;
+    const k = rnd();                                   // a wide spread of speeds stretches the stream
+    launch(pc, s, tRam(s) + rnd() * 0.04, 25 + Math.pow(k, 0.7) * 230, 3 + rnd() * 16, 8 + 20 * rnd());
+  } else {
+    const f = (h - CUT) / (TORN - CUT);
+    launch(pc, s, tRam(s) + 0.03 + f * f * 0.9 + rnd() * 0.25, (1 - f) * 40 + rnd() * 18, 2 + rnd() * 10 * (1 - f), 3 + 6 * rnd());
+    pc.spin = (rnd() * 2 - 1) * 4;
+  }
+  }
+  rnd = keep;
+  return { cut, core };
+}
+// escorts: the ram itself cuts what lies on its line ahead of the flagship; behind it, the debris cone widens
+const S_FRONT = 22 * FS, V_STREAM = 210;
+const coneR = s => s < S_FRONT ? CUT + 0.5 : CUT + 0.07 * (s - S_FRONT);
+for (const pc of escorts) {
+  const p = new THREE.Vector3(...pc.position), s = p.clone().sub(C0).dot(D), rho = p.clone().sub(lineAt(s)).length();
+  if (rho > coneR(s)) continue;
+  const f = rho / coneR(s);
+  const t0 = s < 0 ? tRam(s) : T_HIT + 0.05 + s / V_STREAM + f * 0.15 + rnd() * 0.1;
+  launch(pc, s, t0, (1 - 0.6 * f) * (40 + rnd() * 150), 4 + rnd() * 18, 6 + 14 * rnd());
+}
+
+/* ---------- the halves drift apart after the cut ----------
+   The outer wing (on the +N side) drifts out and rolls about the ram line; the main hull drifts less.
+   The same function moves the cube shell (displace hook), the fires and the engine lights. */
+const T_SPLIT = T_HIT + 0.05;
+const driftU = { uSplitT: { value: T_SPLIT }, uC0: { value: C0 }, uN: { value: N }, uD: { value: D } };
+const DRIFT_GLSL = /* glsl */`
+  uniform float uSplitT; uniform vec3 uC0; uniform vec3 uN; uniform vec3 uD;
+  vec3 drot(vec3 v, vec3 a, float t){ float c = cos(t), s = sin(t); return v*c + cross(a, v)*s + a*dot(a, v)*(1.0 - c); }
+  vec3 driftOff(vec3 p, float t){
+    float k = max(0.0, t - uSplitT);
+    float side = dot(p - uC0, uN) > 0.0 ? 1.0 : -1.0, amt = side > 0.0 ? 1.0 : 0.25;
+    float ang = side * amt * min(0.3, 0.0025 * k * k);
+    vec3 off = uN * side * amt * (0.45 * k + 0.035 * k * k) - vec3(0.0, 0.02 * k * k * amt, 0.0);
+    return drot(p - uC0, uD, ang) + uC0 - p + off;
+  }`;
+function driftJS(p, t, out) {
+  const k = Math.max(0, t - T_SPLIT), side = p.clone().sub(C0).dot(N) > 0 ? 1 : -1, amt = side > 0 ? 1 : 0.25;
+  const ang = side * amt * Math.min(0.3, 0.0025 * k * k);
+  return out.copy(p).sub(C0).applyAxisAngle(D, ang).add(C0).addScaledVector(N, side * amt * (0.45 * k + 0.035 * k * k)).setY(out.y - 0.02 * k * k * amt);
+}
+
+/* ---------- debris ---------- */
+// flying hull pieces glow white-hot at launch and cool over two seconds (a hook on the material that BakedDebris copies)
+const hullMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.3 });
+hullMat.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vHot;')
+    .replace('#include <project_vertex>', 'vHot = (aStart < 1.0e8 && dbT > 0.0) ? exp(-dbT / 1.6) : 0.0;\n#include <project_vertex>');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vHot;')
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vHot * vec3(2.6, 2.9, 3.4);');
+};
+hullMat.customProgramCacheKey = () => 'lightspeed-hot-hull';
+const common = { pieceSize: C, gravity: 0, ground: null, killY: -1e6, duration: T_END + 2, step: 1 / 60, material: hullMat,
+  bursts: [{ position: C0.toArray(), radius: 0, time: T_HIT }] };
+const shipDisplace = { uniforms: driftU, glsl: DRIFT_GLSL + /* glsl */`
+    vec3 debrisDisplace(vec3 p, DebrisInfo d){ return d.burst > -0.5 ? vec3(0.0) : driftOff(p, d.time); }` };
+let ship = null, cutInfo = null, debrisLevel = 2;
+// (re)build the flagship's BakedDebris with the cut at the chosen debris amount
+function buildShip(level) {
+  debrisLevel = level; cutInfo = buildCut(CELL * 1.4 * DEBRIS_CELLS[level]);   // 1.4: the larger flagship has a thicker cut
+  const hadStrokes = !!ship?.strokes;
+  if (ship) { scene.remove(ship.mesh); ship.dispose(); }
+  ship = new BakedDebris({ ...common, pieces: hull.concat(cutInfo.cut), seed: 7, displace: shipDisplace });
+  scene.add(ship.mesh);
+  if (hadStrokes) addStrokes(ship, 5);
+}
+const fleet = new BakedDebris({ ...common, pieces: escorts, seed: 11 });
+scene.add(fleet.mesh);
+
+/* ---------- the cruiser and the lightspeed streak ---------- */
+const cruiser = new THREE.Group();
+{
+  const hull = new THREE.MeshStandardMaterial({ color: 0xb9bec6, roughness: 0.6, metalness: 0.2 });
+  const add = (geo, x, y, z) => { const m = new THREE.Mesh(geo, hull); m.position.set(x, y, z); cruiser.add(m); return m; };
+  add(new THREE.BoxGeometry(2.6, 2.2, 15), 0, 0, 0);
+  add(new THREE.BoxGeometry(8, 1, 3.5), 0, 0.2, 7);              // wide bow
+  add(new THREE.BoxGeometry(1.2, 2.2, 3), 0, 1.8, -3);            // bridge fin
+  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 2.2, 4.5) });
+  for (const x of [-0.8, 0.8]) { const e = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.5, 12), glow); e.rotation.x = Math.PI / 2; e.position.set(x, 0, -7.7); cruiser.add(e); }
+}
+cruiser.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), D);
+scene.add(cruiser);
+const S_FAR = 1400;
+const streak = new THREE.Group();
+const streakCore = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 5.6, 7) }));
+const streakGlow = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x9fc4ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+streak.add(streakCore, streakGlow); streak.quaternion.copy(cruiser.quaternion); scene.add(streak);
+const flash = new THREE.PointLight(0xdfeaff, 0, 0, 0); flash.position.copy(C0); scene.add(flash);
+
+/* ---------- glow particles: sparks along the ram, then fires on the torn edges ----------
+   Not baked: each particle moves on a closed-form path (linear for sparks, damped for fire).
+   Cubes mode draws small glowing boxes; painterly mode draws glowing brush flicks with the debris stroke shader. */
+const NS = LITE ? 900 : 3200, NF = LITE ? 260 : 900, NG = NS + NF;
+const gP = new Float32Array(NG * 3), gV = new Float32Array(NG * 3), gT = new Float32Array(NG * 4), gK = new Float32Array(NG * 4);
+for (let i = 0; i < NG; i++) {
+  if (i < NS) {   // sparks: born on the ram line inside the flagship, stream along it
+    const s = (-18 + rnd() * 42) * FS, p = lineAt(s).add(new THREE.Vector3((rnd() - 0.5) * 2 * CUT, (rnd() - 0.5) * 6 * FS, 0));
+    const k = rnd(), v = D.clone().multiplyScalar(60 + Math.pow(k, 0.6) * 300).add(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(40 + 60 * rnd()));
+    gP.set(p.toArray(), i * 3); gV.set(v.toArray(), i * 3);
+    gT.set([tRam(s) + rnd() * 0.08, 0.6 + rnd() * 2.8, 0.25 + rnd() * 0.6, rnd()], i * 4); gK.set([0, 0, 0, (rnd() - 0.5) * 12], i * 4);
+  } else {        // fires: on both torn edges, flaring over several seconds and drifting with their half
+    const s = (-15 + rnd() * 36) * FS, side = rnd() < 0.5 ? -1 : 1, base = lineAt(s);
+    const p = base.addScaledVector(N, side * (TORN + rnd() * 2)); p.y = (rnd() - 0.5) * 7 * FS;
+    const v = N.clone().multiplyScalar(side * (1 + rnd() * 4)).add(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(5));
+    gP.set(p.toArray(), i * 3); gV.set(v.toArray(), i * 3);
+    gT.set([T_HIT + 0.3 + Math.pow(rnd(), 1.5) * (T_END - T_HIT - 1), 0.8 + rnd() * 1.6, 0.8 + rnd() * 1.6, rnd()], i * 4); gK.set([1.2, 1, 1, (rnd() - 0.5) * 6], i * 4);
+  }
+}
+const glowU = Object.assign({ uT: { value: 0 } }, driftU);
+const GLOW_GLSL = /* glsl */`
+  attribute vec3 gP; attribute vec3 gV; attribute vec4 gT; attribute vec4 gK;
+  uniform float uT;
+  ${DRIFT_GLSL}
+  float gLocal(float off){ return uT + off - gT.x; }
+  vec3 gPos(float tl){ vec3 p = gP + (gK.x > 0.0 ? gV * (1.0 - exp(-gK.x * tl)) / gK.x : gV * tl);
+    return gK.z > 0.5 ? p + driftOff(gP, uT) : p; }
+  float gSize(float tl){ if (tl <= 0.0 || tl >= gT.y) return 0.0; float k = tl / gT.y;
+    return gT.z * min(1.0, tl / 0.06) * (gK.y > 0.5 ? (1.0 + 1.2 * k) * (1.0 - k) : sqrt(1.0 - k)); }
+  vec3 gColor(float tl){ float k = clamp(tl / gT.y, 0.0, 1.0);
+    if (gK.y < 0.5) return mix(vec3(4.0, 4.4, 5.2), vec3(0.35, 0.6, 1.4), smoothstep(0.0, 0.7, k + 0.3 * gT.w));   // white-hot, then blue
+    vec3 c = mix(vec3(2.6, 1.1, 0.22), vec3(1.7, 0.32, 0.04), smoothstep(0.0, 0.3, k + 0.2 * gT.w));                 // fire
+    return mix(c, vec3(0.45, 0.05, 0.01), smoothstep(0.45, 1.0, k)); }`;
+const glowGeo = new THREE.InstancedBufferGeometry();
+{ const box = new THREE.BoxGeometry(1, 1, 1); glowGeo.index = box.index; glowGeo.setAttribute('position', box.attributes.position); }
+for (const [k, arr, n] of [['gP', gP, 3], ['gV', gV, 3], ['gT', gT, 4], ['gK', gK, 4]]) glowGeo.setAttribute(k, new THREE.InstancedBufferAttribute(arr, n));
+glowGeo.instanceCount = NG;
+const glowCubes = new THREE.Mesh(glowGeo, new THREE.ShaderMaterial({ uniforms: glowU, vertexShader: `
+  ${GLOW_GLSL}
+  varying vec3 vCol;
+  void main(){ float tl = gLocal(0.0), sc = gSize(tl);
+    vec3 p = drot(position * sc, normalize(vec3(gT.w, 0.5, 1.0 - gT.w)), gK.w * tl) + gPos(tl);
+    vCol = gColor(tl); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
+  fragmentShader: `varying vec3 vCol; void main(){ gl_FragColor = vec4(vCol, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }` }));
+glowCubes.frustumCulled = false; scene.add(glowCubes);
+const glowScaleU = { value: 1 };
+function makeGlowStrokes() {
+  const plane = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
+  g.index = plane.index; g.setAttribute('position', plane.attributes.position);
+  for (const k of ['gP', 'gV', 'gT', 'gK']) g.setAttribute(k, glowGeo.attributes[k]);
+  g.instanceCount = NG;
+  const U = Object.assign({}, glowU, { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) },
+    uPixK: { value: 500 }, uMaxWidth: { value: 26 }, uScaleK: glowScaleU, uBright: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uJitter: { value: 0.08 } });
+  const m = new THREE.ShaderMaterial({ uniforms: U, toneMapped: false, fragmentShader: strokeFragment, vertexShader: `
+    ${GLOW_GLSL}
+    uniform vec2 uRes; uniform float uPixK; uniform float uMaxWidth; uniform float uScaleK;
+    varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+    void main(){
+      float tl = gLocal(0.0), sc = gSize(tl);
+      if (sc <= 0.0){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      mat4 VP = projectionMatrix * viewMatrix;
+      vec4 c0 = VP * vec4(gPos(tl), 1.0), c1 = VP * vec4(gPos(max(gLocal(-0.03), 0.0)), 1.0);
+      if (c0.w <= 0.1 || c1.w <= 0.1){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec2 dv = (c0.xy / c0.w - c1.xy / c1.w) * 0.5 * uRes; float spd = length(dv) / 0.03;
+      vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+      vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed * 6.283), sin(vSeed * 6.283));
+      float wid = 0.8 * clamp(sc * uScaleK * uPixK / c0.w, 1.5, uMaxWidth);
+      float len = wid * (2.4 + min(spd * 0.006, 9.0));                // fast sparks become long streaks
+      vec2 off = dir * position.x * len + vec2(-dir.y, dir.x) * position.y * wid;
+      gl_Position = c0 + vec4(off / (0.5 * uRes) * c0.w, 0.0, 0.0);
+      vQ = position.xy * 2.0; vCol = gColor(tl) * 0.8; vGlow = 0.0;
+    }` });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false;
+  const size = new THREE.Vector2();
+  mesh.onBeforeRender = (r, sc, cam) => {
+    r.getDrawingBufferSize(size); const t = r.getRenderTarget(); if (t) size.set(t.width, t.height);
+    U.uRes.value.copy(size); U.uPixK.value = size.y / (2 * Math.tan(cam.fov * Math.PI / 360) / (cam.zoom || 1));
+    U.uMaxWidth.value = 26 * r.getPixelRatio();
+    const dt = painter.sceneTarget?.depthTexture ?? null; U.tDepth.value = dt; U.uUseDepth.value = !!dt;
+  };
+  return mesh;
+}
+
+/* engine lights along the flagship's trailing edge (they drift with their half; the ones in the cut go out) */
+const ENGINES = [];
+for (let x = -120 * FS; x <= 120 * FS; x += 7.5 * FS) {
+  const ax = Math.abs(x), z = (10 + 30 * ax / B) * FS - 1.5, w = wing(x, z); if (!w) continue;   // along the trailing edge
+  const p = new THREE.Vector3(x, -0.6, z + 1.2);
+  if (slab(p.x, 0, p.z) > TORN + 1 && hash2(x, 1) < 0.7) ENGINES.push(p);
+}
+const engines = new THREE.InstancedMesh(new THREE.SphereGeometry(1.6, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.55, 0.15) }), ENGINES.length);
+scene.add(engines);
+
+/* stars: far points; in painterly mode they move to the overlay so the painting does not smear them */
+const stars = (() => {
+  const n = 5000, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { const u = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - u * u), b = 0.35 + Math.pow(rnd(), 4) * 1.4;
+    pos.set([r * Math.cos(a) * 3000, u * 3000, r * Math.sin(a) * 3000], i * 3); col.set([b * 0.9, b * 0.95, b], i * 3); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, fog: false, toneMapped: false }));
+})();
+scene.add(stars);
+
+/* painted sky (painterly mode): every star is a small brush dab, and a faint band of nebula is laid in
+   with large dim strokes behind it. Same stroke fragment shader as the debris; hidden behind ships by the scene depth. */
+const skyScaleU = { value: 1 }, nebulaU = { value: 1 };   // nebula opacity: it fades in the flash and the haze
+function makeSky() {
+  const R = 3000, nStars = LITE ? 1600 : 3800, nNeb = LITE ? 260 : 700, n = nStars + nNeb;
+  const P = new Float32Array(n * 3), A = new Float32Array(n * 4), Cc = new Float32Array(n * 3);
+  const r = makeRnd(4242), v = new THREE.Vector3();
+  // the band: a great circle tilted across the sky
+  const bandN = new THREE.Vector3(0.35, 1, -0.2).normalize(), e1 = new THREE.Vector3(1, 0, 0).cross(bandN).normalize(), e2 = bandN.clone().cross(e1);
+  const pal = [[0.95, 0.97, 1.0], [0.75, 0.85, 1.0], [1.0, 0.86, 0.66], [0.85, 0.8, 1.0]];
+  for (let i = 0; i < n; i++) {
+    if (i < nNeb) {   // nebula: near the band, wide and dim, blue to violet with a little teal
+      const a = r() * 6.283, off = (r() + r() + r() - 1.5) * 0.28;
+      v.copy(e1).multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a)).addScaledVector(bandN, off).normalize();
+      const k = r(), b = (0.5 + 0.5 * r()) * (1 - Math.min(1, Math.abs(off) * 2.5));
+      Cc.set([b * (0.010 + 0.012 * k), b * (0.016 + 0.008 * r()), b * (0.045 + 0.02 * k)], i * 3);   // linear: deep blue to violet
+      A.set([a + Math.PI / 2 + (r() - 0.5) * 0.9, 2.5 + r() * 2, 20 + r() * 40, r()], i * 4);   // angle, length / width, width px, seed
+    } else {          // stars: denser near the band, a few bright ones get longer dabs
+      v.set(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1);
+      if (r() < 0.45) v.addScaledVector(bandN, -v.dot(bandN) * 0.8);
+      v.normalize();
+      const big = Math.pow(r(), 6), c = pal[Math.floor(r() * pal.length)], b = 0.45 + 0.55 * r() + big * 0.8;
+      Cc.set([c[0] * b, c[1] * b, c[2] * b], i * 3);
+      A.set([r() * 6.283, 1.3 + r() * 0.8 + big * 1.2, 1.1 + r() * 1.2 + big * 2.5, r()], i * 4);
+    }
+    P.set([v.x * R, v.y * R, v.z * R], i * 3);
+  }
+  const plane = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
+  g.index = plane.index; g.setAttribute('position', plane.attributes.position);
+  g.setAttribute('sP', new THREE.InstancedBufferAttribute(P, 3)); g.setAttribute('sA', new THREE.InstancedBufferAttribute(A, 4));
+  g.setAttribute('sC', new THREE.InstancedBufferAttribute(Cc, 3)); g.instanceCount = n;
+  const U = { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) }, uPR: { value: 1 },
+    uScaleK: skyScaleU, uNeb: nebulaU };
+  // own brush fragment: the debris one lifts dark colours, which turns a dim nebula into bright violet
+  const m = new THREE.ShaderMaterial({ uniforms: U, toneMapped: false, transparent: true, depthWrite: false, fragmentShader: /* glsl */`
+    uniform sampler2D tDepth; uniform bool uUseDepth; uniform vec2 uRes; uniform float uNeb;
+    varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+    float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    void main(){
+      float u = vQ.x, v = vQ.y, neb = vGlow;
+      float rag = (h1(vec2(floor(v * 6.0), vSeed * 37.0)) - 0.5) * 0.35;
+      float hw = sqrt(max(0.0, 1.0 - u * u)) * (0.55 + 0.45 * (u * 0.5 + 0.5));
+      if (abs(v) > hw * (0.82 + 0.18 * h1(vec2(floor(u * 14.0), vSeed * 7.0))) || u < -0.85 + rag || u > 0.95 + rag * 0.3) discard;
+      if (uUseDepth && gl_FragCoord.z > texture2D(tDepth, gl_FragCoord.xy / uRes).x + 1e-5) discard;
+      float bristle = 0.75 + 0.25 * sin(v * 24.0 + vSeed * 6.283) * h1(vec2(floor(v * 9.0), vSeed));
+      float a = neb > 0.5 ? uNeb * 0.55 * bristle * smoothstep(0.0, 0.35, hw - abs(v)) * smoothstep(-0.85, -0.2, u) : 1.0;
+      gl_FragColor = vec4(vCol * (neb > 0.5 ? 1.0 : bristle * 1.1), a);
+      #include <colorspace_fragment>
+    }`, vertexShader: /* glsl */`
+    attribute vec3 sP; attribute vec4 sA; attribute vec3 sC;
+    uniform vec2 uRes; uniform float uPR; uniform float uScaleK;
+    varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+    void main(){
+      vec4 c0 = projectionMatrix * viewMatrix * vec4(sP + cameraPosition, 1.0);   // at infinity: rides with the camera
+      if (c0.w <= 0.1){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec2 dir = vec2(cos(sA.x), sin(sA.x));
+      float k = pow(uScaleK, sA.z > 10.0 ? 0.5 : 0.35);               // stars and nebula grow slower than the paint
+      float wid = sA.z * k * uPR, len = wid * sA.y;
+      vec2 off = dir * position.x * len + vec2(-dir.y, dir.x) * position.y * wid;
+      gl_Position = c0 + vec4(off / (0.5 * uRes) * c0.w, 0.0, 0.0);
+      gl_Position.z = 0.9999 * gl_Position.w;                         // behind everything in the scene
+      vQ = position.xy * 2.0; vCol = sC; vSeed = sA.w; vGlow = sA.z > 10.0 ? 1.0 : 0.0;   // vGlow marks nebula strokes here
+    }` });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.renderOrder = -1;
+  const size = new THREE.Vector2();
+  mesh.onBeforeRender = (rr) => {
+    rr.getDrawingBufferSize(size); const t = rr.getRenderTarget(); if (t) size.set(t.width, t.height);
+    U.uRes.value.copy(size); U.uPR.value = rr.getPixelRatio();
+    const dt = painter.sceneTarget?.depthTexture ?? null; U.tDepth.value = dt; U.uUseDepth.value = !!dt;
+  };
+  return mesh;
+}
+let sky = null, starMode = 'painted';
+
+/* ---------- timeline ---------- */
+const play = { t: 0, dir: 0, speed: 1 };
+const _v = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+const bg = new THREE.Color();
+function applyTime(t) {
+  ship.setTime(t); fleet.setTime(t); glowU.uT.value = t;
+  // the cruiser drifts, spools up for half a second, stretches and is gone
+  const sShip = S_START + V_SHIP * Math.min(t, T_JUMP);
+  cruiser.position.copy(lineAt(sShip));
+  const spool = THREE.MathUtils.smoothstep(t, T_JUMP - 0.6, T_JUMP);
+  cruiser.scale.set(1, 1, 1 + spool * 0.4 + Math.max(0, t - T_JUMP) * 600);
+  cruiser.visible = t < T_JUMP + 0.02;
+  // the streak: from the jump point to the ram's front, then it fades
+  const front = Math.min(S_FAR, S_JUMP + V_RAM * Math.max(0, t - T_JUMP)), len = front - S_JUMP;
+  const fade = t < T_HIT ? 1 : Math.exp(-(t - T_HIT) / 0.9);
+  streak.visible = t > T_JUMP && fade > 0.01;
+  streak.position.copy(lineAt(S_JUMP + len / 2));
+  streakCore.scale.set(0.5 + 0.6 * fade, 0.5 + 0.6 * fade, len); streakGlow.scale.set(3.5, 3.5, len);
+  streakCore.material.color.setRGB(5 * fade, 5.6 * fade, 7 * fade); streakGlow.material.opacity = 0.3 * fade;
+  // impact flash, then a blue haze of dust and gas
+  const dt = t - T_HIT, fl = dt > 0 ? Math.exp(-dt / 0.16) : 0, haze = THREE.MathUtils.smoothstep(dt, 0, 2.5);
+  flash.intensity = 14 * fl + (dt > 0 ? 0.8 * Math.exp(-dt / 4) : 0);
+  bg.copy(BG_DARK).lerp(BG_HAZE, haze).lerp(BG_FLASH, fl * 0.7);
+  nebulaU.value = Math.max(0, 1 - 3 * fl) * (1 - 0.7 * haze);
+  scene.background.copy(bg); scene.fog.color.copy(bg); scene.fog.density = 0.0007 + 0.0016 * haze;
+  // engines drift with their half
+  ENGINES.forEach((p, i) => { driftJS(p, t, _v); _m.compose(_v, _q, _s.setScalar(1)); engines.setMatrixAt(i, _m); });
+  engines.instanceMatrix.needsUpdate = true;
+}
+
+/* ---------- camera: director cuts, or two fixed shots to orbit from ---------- */
+const SHOTS = {
+  wide: { pos: new THREE.Vector3(150, 50, 390), target: new THREE.Vector3(80, 4, 0) },   // from behind, down the ram line: the stream comes at you
+  stream: { pos: lineAt(230).add(new THREE.Vector3(-45, -32, 0)), target: lineAt(0).add(new THREE.Vector3(-25, 4, 0)) },
+};
+let camMode = 'director';
+function directorCam(t) {
+  if (t < T_HIT + 1.1) {   // wide shot, slow push in
+    const k = Math.min(1, t / (T_HIT + 1.1));
+    camera.position.copy(SHOTS.wide.pos).lerp(new THREE.Vector3(146, 47, 365), k);
+    controls.target.copy(SHOTS.wide.target);
+  } else {                 // down the debris stream, drifting back
+    const k = Math.min(1, (t - T_HIT - 1.1) / (T_END - T_HIT - 1.1));
+    camera.position.copy(SHOTS.stream.pos).add(new THREE.Vector3(-10 * k, -4 * k, 30 * k));
+    controls.target.copy(SHOTS.stream.target);
+  }
+}
+function setCam(mode) {
+  camMode = mode;
+  if (SHOTS[mode]) { camera.position.copy(SHOTS[mode].pos); controls.target.copy(SHOTS[mode].target); }
+  document.querySelectorAll('#camSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === mode)));
+}
+controls.addEventListener('start', () => { if (camMode === 'director') setCam('free'); });
+controls.addEventListener('end', () => saveSettings());
+
+/* ---------- painterly mode ---------- */
+const painter = new PainterlyPass(scene, camera, { strokeSize: 6, saturation: 1.1, exposure: 1.25, warmth: 0.3, canvas: 0.02, colorJitter: 0.04, sky: false });
+let paintOn = false, glowStrokes = null, debrisScale = 1;
+// glow: a bloom pass after the painting (threshold on the display-referred image) or after the plain render (on HDR)
+const paintComposer = new EffectComposer(renderer), cubeComposer = new EffectComposer(renderer);
+const paintBloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.9, 0.55, 0.55);
+const cubeBloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.9, 0.55, 1.2);
+paintComposer.addPass(painter); paintComposer.addPass(paintBloom);
+cubeComposer.addPass(new RenderPass(scene, camera)); cubeComposer.addPass(cubeBloom); cubeComposer.addPass(new OutputPass());
+function setGlow(g) { for (const b of [paintBloom, cubeBloom]) { b.strength = g; b.enabled = g > 0; } }
+function addStrokes(b, bright) {
+  const m = b.createStrokes({ painter, strokeScale: 0.8 * debrisScale, maxWidth: 12 * Math.max(1, debrisScale), jitter: 0.05 });
+  m.material.uniforms.uBright.value = bright; m.material.uniforms.uTint.value.setRGB(0.85, 0.95, 1.2);   // lit, cool debris
+  painter.overlayScene.add(m);
+}
+function setDebrisScale(k) {   // size of debris and spark strokes
+  debrisScale = k; glowScaleU.value = k;
+  for (const b of [ship, fleet]) if (b.strokes) { b.strokes.material.uniforms.uStrokeScale.value = 0.8 * k; }
+  if (paintOn) { addStrokes(ship, 5); addStrokes(fleet, 3); }   // maxWidth is fixed per stroke mesh: make new ones
+}
+function syncStars() {
+  const painted = paintOn && starMode === 'painted';
+  if (painted && !sky) { sky = makeSky(); painter.overlayScene.add(sky); }
+  if (sky) sky.visible = painted;
+  (paintOn ? painter.overlayScene : scene).add(stars); stars.visible = !painted;
+  document.querySelectorAll('#starSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === starMode)));
+}
+function setPaint(on) {
+  paintOn = !!on;
+  if (paintOn && !ship.strokes) { addStrokes(ship, 5); addStrokes(fleet, 3); }
+  if (!paintOn) { ship.removeStrokes(); fleet.removeStrokes(); }
+  if (paintOn && !glowStrokes) { glowStrokes = makeGlowStrokes(); painter.overlayScene.add(glowStrokes); }
+  glowCubes.visible = !paintOn; if (glowStrokes) glowStrokes.visible = paintOn;
+  syncStars();
+  document.querySelectorAll('#lookSeg button').forEach(b => b.setAttribute('aria-pressed', String(!!+b.dataset.v === paintOn)));
+}
+
+/* ---------- UI ---------- */
+const bPlay = $('bPlay'), bRev = $('bRev');
+const SPEEDS = [0.1, 0.25, 0.5, 1];
+function phaseText(t) {
+  if (t < T_JUMP - 0.6) return `Fleet holding · jump in ${(T_JUMP - t).toFixed(1)} s`;
+  if (t < T_JUMP) return 'Hyperdrive spooling up';
+  if (t < T_HIT) return 'Jump';
+  if (t < T_HIT + 1.2) return 'Impact';
+  return `Aftermath · +${(t - T_HIT).toFixed(1)} s`;
+}
+function syncUI() {
+  $('time').value = play.t / T_END * 1000;
+  $('tOut').textContent = `${play.t.toFixed(2)} / ${T_END.toFixed(2)} s`;
+  bPlay.textContent = play.dir === 1 ? '❚❚ Pause' : '▶ Play';
+  bRev.textContent = play.dir === -1 ? '❚❚ Pause' : '◀ Reverse';
+  $('phase').textContent = phaseText(play.t);
+}
+let toastTimer = 0;
+function toast(msg) { const el = $('toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, 1200); }
+function setSpeed(s) { play.speed = s; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.s === s))); }
+function seek(d) { play.t = Math.min(T_END, Math.max(0, play.t + d)); play.dir = 0; syncUI(); }
+bPlay.onclick = () => { if (play.dir !== 1 && play.t >= T_END) play.t = 0; play.dir = play.dir === 1 ? 0 : 1; syncUI(); };
+bRev.onclick = () => { if (play.dir !== -1 && play.t <= 0) play.t = T_END; play.dir = play.dir === -1 ? 0 : -1; syncUI(); };
+$('bStart').onclick = () => { play.t = 0; play.dir = 0; syncUI(); };
+$('time').oninput = e => { play.t = e.target.value / 1000 * T_END; play.dir = 0; syncUI(); };
+document.querySelectorAll('#speeds button').forEach(b => b.onclick = () => setSpeed(+b.dataset.s));
+document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPaint(!!+b.dataset.v));
+document.querySelectorAll('#camSeg button').forEach(b => b.onclick = () => setCam(b.dataset.v));
+$('paintSize').oninput = e => { painter.strokeSize = +e.target.value; skyScaleU.value = Math.max(0.6, +e.target.value / 6); $('psOut').textContent = `${e.target.value} px`; };
+$('debrisSize').oninput = e => { $('dsOut').textContent = `${(+e.target.value).toFixed(1)}×`; };
+$('debrisSize').onchange = e => setDebrisScale(+e.target.value);
+$('debrisSize').addEventListener('input', e => { const k = +e.target.value; glowScaleU.value = k;
+  for (const b of [ship, fleet]) if (b.strokes) b.strokes.material.uniforms.uStrokeScale.value = 0.8 * k; });
+$('glow').oninput = e => { setGlow(+e.target.value); $('glOut').textContent = (+e.target.value).toFixed(1); };
+const amountText = () => `${cutInfo.cut.length.toLocaleString('en-US')} pieces`;
+$('debrisAmount').oninput = e => { $('daOut').textContent = 'release to rebuild'; };
+$('debrisAmount').onchange = e => {
+  $('status').textContent = 'Rebuilding debris…'; $('status').hidden = false;
+  setTimeout(() => { buildShip(+e.target.value); $('daOut').textContent = amountText(); $('status').hidden = true; updatePieceText(); }, 30);
+};
+
+function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey;
+  document.documentElement.toggleAttribute('data-ui-hidden', !show); }
+$('bHide').onclick = () => setPanel(false);
+$('bShow').onclick = () => setPanel(true);
+function toggleKeys(show) { const k = $('keys'); k.hidden = show === undefined ? !k.hidden : !show; }
+$('bKeys').onclick = () => toggleKeys();
+// fullscreen: needs a click or key press; some embedded views and phones refuse it
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+function toggleFullscreen() {
+  const el = document.documentElement;
+  try {
+    const req = fsEl() ? (document.exitFullscreen || document.webkitExitFullscreen).call(document)
+      : (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    Promise.resolve(req).catch(() => toast('Fullscreen is not available here'));
+  } catch { toast('Fullscreen is not available here'); }
+}
+const syncFull = () => { $('bFull').textContent = fsEl() ? 'Exit fullscreen' : 'Fullscreen'; };
+document.addEventListener('fullscreenchange', syncFull); document.addEventListener('webkitfullscreenchange', syncFull);
+$('bFull').onclick = toggleFullscreen;
+$('keysClose').onclick = () => toggleKeys(false);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const onSlider = e.target.tagName === 'INPUT';
+  if (e.code === 'Space' && e.target.tagName !== 'BUTTON') { e.preventDefault(); bPlay.click(); return; }
+  if (e.key === '?' || (e.key === '/' && e.shiftKey)) { toggleKeys(); return; }
+  if (e.key === 'Escape') { toggleKeys(false); return; }
+  if (!onSlider && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); seek((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 0.25)); return; }
+  switch (e.code) {
+    case 'KeyR': bRev.click(); break;
+    case 'Digit0': case 'Home': play.t = 0; play.dir = 0; syncUI(); break;
+    case 'Digit1': setCam('director'); saveSettings(); break;
+    case 'Digit2': setCam('wide'); break;
+    case 'Digit3': setCam('stream'); break;
+    case 'BracketLeft': case 'BracketRight': { const i = SPEEDS.indexOf(play.speed) + (e.code === 'BracketRight' ? 1 : -1);
+      setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, i))]); toast(`Speed ${play.speed}×`); break; }
+    case 'KeyP': setPaint(!paintOn); toast(paintOn ? 'Painterly' : 'Cubes'); saveSettings(); break;
+    case 'KeyG': { const g = $('glow'); g.value = +g.value > 0 ? 0 : 0.9; g.oninput({ target: g }); toast(+g.value > 0 ? 'Glow on' : 'Glow off'); break; }
+    case 'KeyF': toggleFullscreen(); break;
+    case 'KeyH': setPanel($('ui').hidden, true); break;
+  }
+});
+
+/* ---------- loop ---------- */
+let pr = PR_MAX;
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  for (const c of [paintComposer, cubeComposer]) { c.setPixelRatio(renderer.getPixelRatio()); c.setSize(innerWidth, innerHeight); } }
+addEventListener('resize', resize); resize();
+const fps = { frames: 0, at: performance.now(), value: 0 };
+let pieceText = '';
+function updatePieceText() { pieceText = `${(hull.length + cutInfo.cut.length + escorts.length).toLocaleString('en-US')} pieces`; }
+function draw() {
+  applyTime(play.t);
+  if (camMode === 'director') directorCam(play.t);
+  controls.update();
+  if (paintOn) { painter.exposure = renderer.toneMappingExposure; paintComposer.render(); } else cubeComposer.render();
+}
+let prev = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+  if (play.dir) { play.t += dt * play.speed * play.dir;
+    if (play.t >= T_END) { play.t = T_END; play.dir = 0; } if (play.t <= 0) { play.t = 0; play.dir = 0; }
+    syncUI(); }
+  draw();
+  fps.frames++;
+  if (now - fps.at >= 1000) { fps.value = fps.frames * 1000 / (now - fps.at); fps.frames = 0; fps.at = now;
+    $('stats').textContent = `${pieceText} · ${Math.round(fps.value)} fps`;
+    if (fps.value < 30 && pr > 1) { pr = Math.max(1, pr - 0.5); renderer.setPixelRatio(pr); resize(); } }
+});
+/* ---------- settings: defaults, remembered per browser, copyable ---------- */
+const DEFAULTS = { paint: 16, debrisSize: 1.8, amount: 1, glow: 0, stars: 'painted', look: 'painterly', cam: 'wide', view: null };
+const KEY = 'lightspeed-ram/settings/v3';   // bumped when the defaults change, so they show once
+function currentSettings() {
+  return { paint: +$('paintSize').value, debrisSize: +$('debrisSize').value, amount: debrisLevel, glow: +$('glow').value, stars: starMode,
+    look: paintOn ? 'painterly' : 'cubes', cam: camMode,
+    view: camMode === 'director' ? null : { pos: camera.position.toArray().map(v => +v.toFixed(2)), target: controls.target.toArray().map(v => +v.toFixed(2)) } };
+}
+let saveTimer = 0;
+function saveSettings() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(currentSettings())); } catch {} }, 300); }
+function loadSettings() { try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return { ...DEFAULTS }; } }
+function applySettings(st, rebuild) {
+  if (rebuild || st.amount !== debrisLevel) buildShip(st.amount);
+  const set = (id, v) => { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); };
+  set('paintSize', st.paint); set('debrisSize', st.debrisSize); set('glow', st.glow);
+  debrisScale = st.debrisSize;
+  $('debrisAmount').value = st.amount;
+  $('daOut').textContent = amountText(); updatePieceText();
+  starMode = st.stars;
+  setCam(st.cam === 'free' ? 'wide' : st.cam);
+  if (st.view && st.cam !== 'director') { camera.position.fromArray(st.view.pos); controls.target.fromArray(st.view.target); camMode = st.cam; }
+  setPaint(st.look !== 'cubes');
+  if (paintOn) setDebrisScale(st.debrisSize);
+}
+for (const id of ['paintSize', 'debrisSize', 'debrisAmount', 'glow']) $(id).addEventListener('change', saveSettings);
+document.querySelectorAll('#camSeg button, #lookSeg button').forEach(b => b.addEventListener('click', saveSettings));
+document.querySelectorAll('#starSeg button').forEach(b => b.onclick = () => { starMode = b.dataset.v; syncStars(); saveSettings(); });
+$('bCopy').onclick = () => {
+  const text = JSON.stringify(currentSettings());
+  const box = $('viewText'); box.value = text;
+  const fallback = () => { box.hidden = false; box.focus(); box.select(); toast('Select the text below and copy it'); };
+  try { navigator.clipboard.writeText(text).then(() => toast('View copied'), fallback); } catch { fallback(); }
+};
+$('bReset').onclick = () => { try { localStorage.removeItem(KEY); } catch {} applySettings(DEFAULTS); toast('Default view'); };
+applySettings(loadSettings(), true);
+$('status').hidden = true;
+syncUI();
+window.__lr = { still: t => { renderer.setAnimationLoop(null); play.t = t; syncUI(); draw(); }, LITE, play, fps, setPaint, setCam, syncUI, renderer, ship, fleet, camera, controls, buildShip, setGlow, painter, stats: () => ({ hull: hull.length, cut: cutInfo.cut.length, core: cutInfo.core, escorts: escorts.length }) };
+</script>
+</body>
+</html>

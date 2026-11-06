@@ -2,6 +2,11 @@
 
 Both packages share one version number until the first public release.
 
+## Unreleased
+
+### examples
+- `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
+
 ## 0.1.0 (2026-11-05)
 
 ### painterly-pass

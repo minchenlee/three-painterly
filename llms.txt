@@ -18,6 +18,7 @@ Install: `npm i painterly-pass baked-debris three`
 - [examples/voxel-paris/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/voxel-paris/index.html): both modules on a large voxel scene, time slider, brush-stroke fire
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
 - [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
+- [examples/paint-body/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-body/index.html): MediaPipe pose tracking; a displace hook skins the bake to the tracked bones; `setBurstOffsets` per body part; camera image as background
 - [examples/lightspeed-ram/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/lightspeed-ram/index.html): no gravity, per-piece `velocity` and `launchTime` along a line, displace hook splits a ship in two
 
 ## PainterlyPass

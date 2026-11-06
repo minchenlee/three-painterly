@@ -5,6 +5,7 @@ Both packages share one version number until the first public release.
 ## Unreleased
 
 ### examples
+- `examples/paint-body`: a person painted as brush strokes that scatter and sway with their motion. MediaPipe pose tracking (camera) or a built-in demo dancer; the camera image stays as the background, with an option to erase the real person.
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
 
 ## 0.1.0 (2026-11-05)

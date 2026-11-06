@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paint Body</title>
+<style>
+:root {
+  --bg: #e4e7ea; --panel: rgba(255, 255, 255, 0.92); --ink: #17191c; --muted: #6b7178; --line: rgba(0, 0, 0, 0.09);
+  --soft: rgba(0, 0, 0, 0.04); --accent: #17191c; --accent-ink: #ffffff;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171a; --panel: rgba(24, 26, 30, 0.92); --ink: #eceef0; --muted: #949aa1; --line: rgba(255, 255, 255, 0.09);
+  --soft: rgba(255, 255, 255, 0.05); --accent: #eceef0; --accent-ink: #15171a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15171a; --panel: rgba(24, 26, 30, 0.92); --ink: #eceef0; --muted: #949aa1; --line: rgba(255, 255, 255, 0.09);
+  --soft: rgba(255, 255, 255, 0.05); --accent: #eceef0; --accent-ink: #15171a; color-scheme: dark }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#ui { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 300px; max-height: calc(100dvh - 32px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12); }
+#ui::-webkit-scrollbar { display: none; }
+@media (max-width: 600px) {
+  #ui { left: 0; right: 0; bottom: 0; width: auto; max-height: 62%; border-width: 1px 0 0; border-radius: 16px 16px 0 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
+  header p { display: none; }
+}
+header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); }
+
+.grp { display: grid; gap: 8px; }
+.lab { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
+.lab output { color: var(--ink); font-variant-numeric: tabular-nums; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row .lab { flex: 1; }
+button { font: inherit; color: var(--ink); background: var(--soft); border: 1px solid transparent; border-radius: 8px; padding: 5px 10px;
+  cursor: pointer; min-height: 30px; }
+button:hover { border-color: var(--line); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+.seg { display: inline-flex; background: var(--soft); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { background: transparent; min-height: 26px; padding: 3px 8px; border-radius: 6px; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
+.meta { margin: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.meters { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center; color: var(--muted); font-size: 12px; }
+.bar { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--ink); border-radius: 3px; }
+.bar.hot i { background: #d9663a; }
+
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.foot button { background: transparent; padding: 0; min-height: 0; color: var(--muted); }
+.foot button:hover { color: var(--ink); border-color: transparent; }
+[hidden] { display: none !important; }
+html[data-ui-hidden] #toast, html[data-ui-hidden] #keys, html[data-ui-hidden] #preview { display: none !important; }
+
+#keys { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100% - 32px)); max-height: calc(100% - 32px);
+  overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; z-index: 20;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
+.keys-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 600; }
+#keys table { border-collapse: collapse; width: 100%; }
+#keys td { padding: 5px 0; vertical-align: top; border-top: 1px solid var(--line); }
+#keys td:first-child { white-space: nowrap; padding-right: 12px; }
+kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--soft); }
+#toast { position: fixed; top: calc(70px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; pointer-events: none; backdrop-filter: blur(16px); z-index: 30; }
+#bShow { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 500;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); }
+#status { position: fixed; inset: 0; display: grid; place-items: center; color: #c9cbd6; pointer-events: none; }
+/* the camera image, mirrored, with the tracked skeleton on top: shows what the tracker sees */
+#preview { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 200px;
+  border-radius: 10px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); z-index: 8; background: #000; }
+#preview video, #preview canvas { display: block; width: 100%; transform: scaleX(-1); }
+#preview canvas { position: absolute; inset: 0; height: 100%; }
+@media (max-width: 600px) { #preview { top: calc(12px + env(safe-area-inset-top, 0px)); bottom: auto; width: 110px; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="status">Mixing paint…</div>
+<div id="toast" hidden role="status"></div>
+<div id="preview" hidden><video id="video" playsinline muted></video><canvas id="bones"></canvas></div>
+<button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
+<div id="keys" hidden role="dialog" aria-label="Keyboard shortcuts">
+  <div class="keys-head"><span>Keyboard shortcuts</span><button type="button" id="keysClose" aria-label="Close">✕</button></div>
+  <table>
+    <tr><td><kbd>C</kbd></td><td>Use the camera</td></tr>
+    <tr><td><kbd>D</kbd></td><td>Demo dancer (no camera)</td></tr>
+    <tr><td><kbd>B</kbd></td><td>Camera / painted background</td></tr>
+    <tr><td><kbd>E</kbd></td><td>Erase / show the real you in the camera image</td></tr>
+    <tr><td><kbd>V</kbd></td><td>Tracking preview on / off</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Painted / plain cubes</td></tr>
+    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Less / more sensitive</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Reset the view (orbit is off over the camera image)</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Full screen</td></tr>
+    <tr><td><kbd>H</kbd></td><td>Hide / show all controls</td></tr>
+    <tr><td><kbd>?</kbd> <kbd>Esc</kbd></td><td>This list</td></tr>
+  </table>
+</div>
+
+<div id="ui">
+  <header>
+    <h1>Paint Body</h1>
+    <p>Your body as a figure of oil-paint strokes. A limb that moves fast breaks into flying strokes and swings behind; when you hold still, the strokes gather back into you.</p>
+  </header>
+
+  <div class="grp">
+    <div class="row"><span class="lab">Source</span>
+      <div class="seg" role="group" aria-label="Source" id="srcSeg">
+        <button type="button" data-v="demo" aria-pressed="true">Demo dancer</button>
+        <button type="button" data-v="camera" aria-pressed="false">Camera</button>
+      </div>
+    </div>
+    <p class="meta" id="track">The demo dancer moves on its own. Choose Camera to paint yourself.</p>
+  </div>
+
+  <div class="grp" id="camGrp" hidden>
+    <div class="row"><span class="lab">Background</span>
+      <div class="seg" role="group" aria-label="Background" id="bgSeg">
+        <button type="button" data-v="camera" aria-pressed="true">Camera</button>
+        <button type="button" data-v="painted" aria-pressed="false">Painted</button>
+      </div>
+    </div>
+    <div class="row"><span class="lab">Real you</span>
+      <div class="seg" role="group" aria-label="The real person in the camera image" id="eraseSeg">
+        <button type="button" data-v="1" aria-pressed="true">Erase</button>
+        <button type="button" data-v="0" aria-pressed="false">Show</button>
+      </div>
+    </div>
+    <p class="meta">Erase fills your outline with the background behind you. Step aside once so the camera sees all of it.</p>
+  </div>
+
+  <div class="meters" aria-label="Motion levels">
+    <span>Motion</span><div class="bar hot"><i id="mMotion"></i></div>
+    <span>Spread</span><div class="bar"><i id="mSpread"></i></div>
+  </div>
+
+  <div class="grp">
+    <div class="lab"><span>Sensitivity</span><output id="sensOut">100%</output></div>
+    <input type="range" id="sens" min="40" max="250" step="5" value="100" aria-label="Sensitivity">
+    <div class="lab"><span>Sway</span><output id="swayOut">100%</output></div>
+    <input type="range" id="sway" min="0" max="200" step="5" value="100" aria-label="Sway">
+    <div class="lab"><span>Stroke size</span><output id="strokeOut">14 px</output></div>
+    <input type="range" id="stroke" min="3" max="30" step="1" value="14" aria-label="Stroke size">
+    <div class="row"><span class="lab">Colours</span>
+      <div class="seg" role="group" aria-label="Colours" id="palSeg">
+        <button type="button" data-v="spectrum" aria-pressed="true">Spectrum</button>
+        <button type="button" data-v="limbs" aria-pressed="false">Limbs</button>
+      </div>
+    </div>
+    <div class="row"><span class="lab">Look</span>
+      <div class="seg" role="group" aria-label="Look" id="lookSeg">
+        <button type="button" data-v="1" aria-pressed="true">Painted</button>
+        <button type="button" data-v="0" aria-pressed="false">Cubes</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p class="meta" id="stats"></p>
+    <div class="row"><button type="button" id="bHide" title="Hide the panel (H)">Hide</button><button type="button" id="bFull">Full screen</button><button type="button" id="bKeys">Keys</button></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { BakedDebris } from '../../packages/baked-debris/src/index.js';
+import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
+
+addEventListener('error', e => { const s = $('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
+const $ = id => document.getElementById(id);
+const QS = new URLSearchParams(location.search);
+const LITE = QS.has('full') ? false : QS.has('lite') || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
+const clamp01 = x => Math.min(1, Math.max(0, x));
+const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+// MediaPipe Pose Landmarker (loaded only when the camera is chosen)
+const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+
+/* ---------- scene ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x242a44);
+const CAM_D = 8.5, FOV = 40;
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
+camera.position.set(0, 0, CAM_D);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.enablePan = false; controls.minDistance = 5; controls.maxDistance = 30;
+
+scene.add(new THREE.HemisphereLight(0xbfd0ff, 0x3a2c48, 0.9));
+const key = new THREE.DirectionalLight(0xffd9a8, 3.2); key.position.set(-6, 7, 6); scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fa6ff, 1.6); rim.position.set(7, -2, -6); scene.add(rim);
+// The same dabbed backdrop as Paint Pulse: it carries its own brush dabs, so the paint pass skips the sky (sky: false).
+const backdrop = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false,
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `varying vec3 vP;
+    float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    vec3 sky(float h) {
+      vec3 c = mix(vec3(0.020, 0.022, 0.034), vec3(0.036, 0.048, 0.092), smoothstep(0.15, 0.85, h));
+      return mix(c, vec3(0.10, 0.06, 0.07), 0.45 * exp(-pow((h - 0.42) * 5.0, 2.0)));
+    }
+    void main(){
+      float h = vP.y * 0.5 + 0.5;
+      vec2 q = vec2(atan(vP.z, vP.x) * 80.0, asin(vP.y) * 70.0);
+      vec2 cell = floor(q - 0.5);
+      vec3 c = sky(h), dab = vec3(0.0); float best = 0.0;
+      for (int j = 0; j <= 1; j++) for (int i = 0; i <= 1; i++) {
+        vec2 id = cell + vec2(i, j), ctr = id + 0.3 + 0.4 * vec2(h21(id), h21(id + 7.3));
+        float a = 0.5 + 0.6 * (h21(id + 3.1) - 0.5);
+        vec2 d = q - ctr; d = vec2(cos(a) * d.x + sin(a) * d.y, -sin(a) * d.x + cos(a) * d.y);
+        float m = 1.0 - smoothstep(0.75, 1.0, length(d / vec2(0.52, 0.17)));
+        if (m > best) { best = m; float r = h21(id + 11.0);
+          dab = r > 0.96 ? vec3(0.17, 0.16, 0.19) : sky(h + 0.25 * (h21(id + 5.0) - 0.5)) * (0.7 + 0.6 * r) + vec3(0.025, 0.0, 0.035) * h21(id + 9.0); }
+      }
+      gl_FragColor = vec4(mix(c * 0.85, dab, best), 1.0);
+    }`,
+}));
+scene.add(backdrop);
+
+/* ---------- the rest pose: MediaPipe landmark ids, in world units ---------- */
+// The figure faces the camera like a mirror: the person's right side is at +x. y is up, +z is towards the camera.
+// Ids: 0 nose, 7/8 ears, 11/12 shoulders, 13/14 elbows, 15/16 wrists, 19/20 index fingers, 23/24 hips, 25/26 knees,
+// 27/28 ankles, 31/32 toes. Odd ids are the person's left side.
+const IDS = [0, 7, 8, 11, 12, 13, 14, 15, 16, 19, 20, 23, 24, 25, 26, 27, 28, 31, 32];
+const REST = { 0: V(0, 1.87, 0.26) };
+for (const [l, p] of [[7, [-0.17, 1.86, 0]], [11, [-0.56, 1.25, 0]], [13, [-0.74, 0.42, 0]], [15, [-0.86, -0.32, 0.08]], [19, [-0.9, -0.62, 0.12]],
+  [23, [-0.36, -0.12, 0]], [25, [-0.36, -1.14, 0.03]], [27, [-0.37, -2.1, 0]], [31, [-0.4, -2.3, 0.3]]]) {
+  REST[l] = V(...p); REST[l + 1] = V(-p[0], p[1], p[2]);   // mirror to the right side
+}
+// a landmark the tracker misses hangs from its parent in the rest pose (legs out of frame, for example)
+const PARENT = { 13: 11, 15: 13, 19: 15, 14: 12, 16: 14, 20: 16, 25: 23, 27: 25, 31: 27, 26: 24, 28: 26, 32: 28, 0: 'sh', 7: 'sh', 8: 'sh' };
+
+/* ---------- regions: each one is a burst with its own clock, and follows one bone ---------- */
+const limb = (name, a, b, r0, r1) => ({ name, bone: [a, b], shape: { a, b, r0: r0 * 1.3, r1: r1 * 1.3 } });   // radii: slim figure × 1.3
+const REGIONS = [
+  { name: 'chest L', bone: 'torso' }, { name: 'chest R', bone: 'torso' }, { name: 'belly L', bone: 'torso' }, { name: 'belly R', bone: 'torso' },
+  { name: 'head', bone: 'head' },
+  limb('upper arm L', 11, 13, 0.16, 0.13), limb('forearm L', 13, 15, 0.13, 0.1), limb('hand L', 15, 19, 0.1, 0.07),
+  limb('upper arm R', 12, 14, 0.16, 0.13), limb('forearm R', 14, 16, 0.13, 0.1), limb('hand R', 16, 20, 0.1, 0.07),
+  limb('thigh L', 23, 25, 0.23, 0.17), limb('shin L', 25, 27, 0.16, 0.11), limb('foot L', 27, 31, 0.11, 0.08),
+  limb('thigh R', 24, 26, 0.23, 0.17), limb('shin R', 26, 28, 0.16, 0.11), limb('foot R', 28, 32, 0.11, 0.08),
+];
+const NR = REGIONS.length;   // 17 (setBurstOffsets handles up to 32)
+// region whose clock pulls on this one a little, so a swinging arm drags its hand along
+const UP = [-1, -1, 0, 1, 0, 0, 5, 6, 1, 8, 9, 2, 11, 12, 3, 14, 15];
+
+// signed distance (approximate) from p to each body part, in rest space
+const segDist = (p, a, b) => { const ab = b.clone().sub(a), t = clamp01(p.clone().sub(a).dot(ab) / ab.lengthSq()); return [p.distanceTo(a.clone().addScaledVector(ab, t)), t]; };
+const TORSO_Y = [-0.32, 1.4];
+function torsoSdf(p) {
+  const t = (p.y - TORSO_Y[0]) / (TORSO_Y[1] - TORSO_Y[0]);
+  if (t < 0 || t > 1) return 1;
+  let w = 0.46 + 0.16 * smooth(0.55, 0.92, t) - 0.07 * Math.exp(-(((t - 0.45) / 0.16) ** 2));
+  const d = 0.29 + 0.06 * Math.sin(Math.PI * t);
+  if (t > 0.9) w *= Math.sqrt(Math.max(0.05, 1 - 0.75 * ((t - 0.9) / 0.1) ** 2));   // round shoulders
+  if (t < 0.06) w *= Math.sqrt(Math.max(0.05, 1 - 0.5 * ((0.06 - t) / 0.06) ** 2));
+  return (Math.hypot(p.x / w, (p.z - 0.02) / d) - 1) * Math.min(w, d);
+}
+const HEAD_C = V(0, 1.97, 0.03), HEAD_R = V(0.23, 0.29, 0.26);
+function headSdf(p) {
+  const e = (Math.hypot((p.x - HEAD_C.x) / HEAD_R.x, (p.y - HEAD_C.y) / HEAD_R.y, (p.z - HEAD_C.z) / HEAD_R.z) - 1) * 0.23;
+  const [nd] = segDist(p, V(0, 1.3, 0), V(0, 1.75, 0));   // the neck goes with the head
+  return Math.min(e, nd - 0.12);
+}
+function regionAt(p) {   // [region index, sdf] of the closest part
+  let best = -1, bd = 0.0001;
+  const ts = torsoSdf(p);
+  if (ts < bd) { bd = ts; best = (p.y > 0.62 ? 0 : 2) + (p.x > 0 ? 1 : 0); }
+  const hs = headSdf(p);
+  if (hs < bd) { bd = hs; best = 4; }
+  for (let r = 5; r < NR; r++) {
+    const { a, b, r0, r1 } = REGIONS[r].shape, [d, t] = segDist(p, REST[a], REST[b]), s = d - (r0 + (r1 - r0) * t);
+    if (s < bd) { bd = s; best = r; }
+  }
+  return [best, bd];
+}
+
+/* ---------- pieces: fill the rest-pose body with cubes, each launched outward from its region ---------- */
+const S = LITE ? 0.05 * Math.cbrt(3) : 0.05;   // lite: a third of the pieces
+const rnd = (s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(31);
+const restC = REGIONS.map(() => V()), restN = new Array(NR).fill(0), pieces = [];
+const HUES = [[0, 0.975], [0.22, 1.06], [0.42, 1.13], [0.55, 1.36], [0.68, 1.55], [0.85, 1.65], [1, 1.75]];   // crimson feet → violet head
+const hueAt = u => { let i = 1; while (i < HUES.length - 1 && u > HUES[i][0]) i++;
+  const [u0, h0] = HUES[i - 1], [u1, h1] = HUES[i]; return (h0 + (h1 - h0) * clamp01((u - u0) / (u1 - u0))) % 1; };
+const satAt = u => 0.62 - 0.2 * Math.exp(-(((u - 0.62) / 0.16) ** 2));
+const LIMB_HUE = [0.08, 0.08, 0.13, 0.13, 0.78, 0.55, 0.5, 0.45, 0.95, 0.0, 0.04, 0.68, 0.62, 0.58, 0.3, 0.25, 0.2];
+const p = V(), col = new THREE.Color();
+for (let x = -1.2; x <= 1.2; x += S) for (let y = -2.45; y <= 2.3; y += S) for (let z = -0.5; z <= 0.62; z += S) {
+  p.set(x, y, z);
+  const [r, sd] = regionAt(p);
+  if (r < 0) continue;
+  const depth = clamp01(-sd / 0.2);   // 0 at the skin, 1 deep inside
+  pieces.push({ r, p: p.toArray(), depth, n: rnd(), j: [rnd(), rnd(), rnd(), rnd(), rnd(), rnd()] });
+  restC[r].add(p); restN[r]++;
+}
+restC.forEach((c, r) => c.divideScalar(Math.max(1, restN[r])));
+// launch: away from the region's centre (from the bone axis for limbs), with a twist; the skin leaves first
+const tmpA = V(), tmpB = V();
+for (const pc of pieces) {
+  const P = tmpA.fromArray(pc.p), R = REGIONS[pc.r];
+  let out;
+  if (R.shape) { const a = REST[R.shape.a], b = REST[R.shape.b], ab = tmpB.copy(b).sub(a), t = clamp01(P.clone().sub(a).dot(ab) / ab.lengthSq());
+    out = P.clone().sub(a.clone().addScaledVector(ab, t)).add(ab.clone().multiplyScalar(0.25 * t)); }   // hands and feet also throw forward
+  else out = P.clone().sub(restC[pc.r]).multiply(V(1, 0.6, 1.4));
+  out.normalize();
+  const tw = V(-out.z, 0, out.x).multiplyScalar(0.4 * (0.4 + pc.j[0]));
+  const sp = (0.45 + 0.75 * pc.j[1]) * (0.7 + 0.5 * (1 - pc.depth));
+  pc.v = [out.x * sp + tw.x + (pc.j[2] - 0.5) * 0.25, out.y * sp + (pc.j[3] - 0.5) * 0.25, out.z * sp + tw.z + (pc.j[4] - 0.5) * 0.25];
+  pc.launch = pc.depth ** 1.5 * 1.1 + pc.j[5] * 0.12;
+}
+function makePieces(palette) {
+  return pieces.map(pc => {
+    const [x, y, z] = pc.p, u = clamp01((y + 2.4) / 4.65);
+    if (palette === 'limbs') col.setHSL(LIMB_HUE[pc.r], 0.58, 0.5 + 0.08 * (1 - pc.depth));
+    else col.setHSL(hueAt(u), satAt(u), 0.45 + 0.05 * Math.sin(x * 6 + y * 2) + 0.1 * (1 - pc.depth));
+    col.offsetHSL((pc.n - 0.5) * 0.02, 0, (pc.n - 0.5) * 0.07);
+    return { position: pc.p, color: col.getHex(), velocity: pc.v, burst: pc.r, launchTime: pc.launch, spin: (pc.j[0] * 2 - 1) * 4 };
+  });
+}
+const T_MAX = 2.4;   // region clock range: 0 = whole, T_MAX = fully scattered
+let palette = 'spectrum';
+const boom = new BakedDebris({ pieces: makePieces(palette), bursts: REGIONS.map(() => ({ position: [0, 0, 0], radius: 0 })), gravity: 0, ground: null,
+  pieceSize: S, duration: T_MAX + 1, step: 1 / 60, seed: 11 });
+
+/* ---------- skinning and sway in the displace hook ---------- */
+// The bake is in rest space. Per region, uBone maps rest space to the tracked pose (rotation, stretch along the
+// bone, body scale). uSway.xyz is the lag of a damped spring driven by the region's acceleration: it trails a
+// moving limb and swings past it when the limb stops. uVel points the strokes along the live motion: d.time is the
+// strokes' look-ahead (uTime stays 0), so the second sample sits where the limb was a moment ago.
+const U = {
+  uBone: { value: REGIONS.map(() => new THREE.Matrix4()) },
+  uVel: { value: REGIONS.map(() => V()) },
+  uSway: { value: REGIONS.map(() => new THREE.Vector4()) },   // xyz: spring lag, w: shiver level
+  uRestC: { value: restC },
+  uFlowT: { value: 0 }, uFlowAmp: { value: 0.7 }, uPulse: { value: 0 },
+};
+const hook = {
+  uniforms: U,
+  glsl: /* glsl */`
+    uniform mat4 uBone[${NR}];
+    uniform vec3 uVel[${NR}];
+    uniform vec4 uSway[${NR}];
+    uniform vec3 uRestC[${NR}];
+    uniform float uFlowT;
+    uniform float uFlowAmp;
+    uniform float uPulse;
+    vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+      int b = int(d.burst + 0.5);
+      float ft = uFlowT + d.time;
+      float h = fract(sin(d.index * 12.9898) * 43758.5453);
+      vec3 rel = p - uRestC[b];
+      vec3 n = rel / max(length(rel), 1e-3);
+      float shiver = 0.35 * sin(ft * 9.0 + dot(n, vec3(5.0, 3.0, 4.0))) + 0.25 * sin(ft * 4.0 + p.y * 3.0);
+      vec3 q = p + n * (0.07 * uSway[b].w * (1.0 + shiver) + 0.06 * uPulse);
+      if (d.local > 0.0) {                                           // flying strokes drift on a slow swirl
+        float k = uFlowAmp * smoothstep(0.0, 1.4, d.local);
+        vec3 s = p * 0.6;
+        q += k * 0.4 * vec3(sin(s.y * 1.9 + ft * 0.9) + sin(s.z * 1.3 - ft * 0.6),
+                            sin(s.z * 1.7 + ft * 0.7) + sin(s.x * 1.1 + ft * 0.8),
+                            sin(s.x * 1.5 - ft * 0.8) + sin(s.y * 1.2 + ft * 0.5));
+      }
+      vec3 posed = (uBone[b] * vec4(q, 1.0)).xyz;
+      float w = (0.35 + 0.65 * h) * (1.0 + 0.6 * smoothstep(0.0, 1.0, d.local));   // loose strokes swing further
+      posed += uSway[b].xyz * w * (1.0 + 0.25 * sin(ft * 6.0 + h * 6.283));
+      posed += uVel[b] * d.time;
+      return posed - p;
+    }`,
+};
+boom.setDisplace(hook);
+scene.add(boom.mesh);
+boom.mesh.castShadow = boom.mesh.receiveShadow = false;
+
+const STROKE0 = LITE ? 9 : 14;
+const painter = new PainterlyPass(scene, camera, { strokeSize: STROKE0, saturation: 1.2, warmth: 0.5, canvas: 0.03, colorJitter: 0.04, sky: false });
+let strokes = null, painted = true, strokeK = STROKE0 / 7;
+const KEEP_K = 2.5, keepFor = px => Math.min(1, KEEP_K * (7 / px) ** 2);
+function setPainted(on) {
+  painted = on;
+  if (on && !strokes) { strokes = boom.createStrokes({ painter, strokeScale: 0.85 * strokeK, maxWidth: 16 * strokeK, keep: keepFor(7 * strokeK) }); painter.overlayScene.add(strokes); }
+  if (!on && strokes) { boom.removeStrokes(); strokes = null; }
+  pressSeg('lookSeg', on ? '1' : '0');
+}
+const pressSeg = (id, v) => document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+setPainted(true);
+
+/* ---------- bone frames ---------- */
+// A frame per region: origin, x (side), y (along the bone, keeps its length, so limbs stretch), z (front).
+// uBone = frame(now) * frame(rest)^-1. Side and front axes are scaled by the body scale s.
+const _x = V(), _y = V(), _z = V(), _o = V(), _t = V(), _f = V(), _u = V();
+const mid = (P, a, b, out) => out.copy(P[a]).add(P[b]).multiplyScalar(0.5);
+function torsoAxes(P, outX, outY, outZ) {   // orthonormal torso axes (y keeps the raw shoulder - hip vector in outY)
+  const hm = mid(P, 23, 24, V()), sm = mid(P, 11, 12, V());
+  outY.copy(sm).sub(hm);
+  outX.copy(P[12]).sub(P[11]).add(P[24]).sub(P[23]);
+  const yn = outY.clone().normalize();
+  outX.addScaledVector(yn, -outX.dot(yn)).normalize();
+  outZ.crossVectors(outX, yn).normalize();
+}
+function frame(P, r, s, out) {
+  const B = REGIONS[r].bone;
+  if (B === 'torso') {
+    torsoAxes(P, _x, _y, _z); mid(P, 23, 24, _o);
+  } else if (B === 'head') {
+    mid(P, 7, 8, _o); _y.copy(_o).sub(mid(P, 11, 12, _t));
+    _x.copy(P[8]).sub(P[7]); const yn = _t.copy(_y).normalize();
+    _x.addScaledVector(yn, -_x.dot(yn)).normalize(); _z.crossVectors(_x, yn).normalize();
+  } else {
+    torsoAxes(P, _f, _u, _z);   // _z: torso front; _u: torso up (raw)
+    _u.normalize();
+    _o.copy(P[B[0]]); _y.copy(P[B[1]]).sub(_o);
+    const yn = _t.copy(_y).normalize();
+    // the bone's front: the torso's front, or the torso's up when the bone points forward (no flip)
+    const a = smooth(0.7, 0.95, Math.abs(yn.dot(_z)));
+    _f.copy(_z).multiplyScalar(1 - a).addScaledVector(_u, a * Math.sign(-yn.dot(_z) || 1));
+    _z.copy(_f).addScaledVector(yn, -_f.dot(yn)).normalize();
+    _x.crossVectors(yn, _z).normalize();
+  }
+  return out.makeBasis(_x.multiplyScalar(s), _y, _z.multiplyScalar(s)).setPosition(_o);
+}
+const REST_INV = REGIONS.map((_, r) => frame(REST, r, 1, new THREE.Matrix4()).invert());
+const REST_TORSO = REST[11].clone().add(REST[12]).sub(REST[23]).sub(REST[24]).length() / 2, REST_SHOULDER = REST[11].distanceTo(REST[12]);
+
+/* ---------- the pose: smoothed landmarks from the demo dancer or the camera ---------- */
+const pose = {};       // smoothed landmarks used for the frames
+const raw = {};        // latest input, before smoothing
+IDS.forEach(i => { pose[i] = REST[i].clone(); raw[i] = REST[i].clone(); });
+let present = 1;       // 0..1, someone is in view
+let bodyS = 1;
+
+// fill landmarks the tracker missed: hang them from their parent in the rest pose, turned with the torso
+const _R = new THREE.Matrix4();
+function fillMissing(P, ok) {
+  if (!ok[23] || !ok[24]) {   // close-up without hips: put them below the shoulders
+    const x = V().copy(P[12]).sub(P[11]), s = x.length() / REST_SHOULDER; x.normalize();
+    const y = V(0, 1, 0).addScaledVector(x, -x.y).normalize(), z = V().crossVectors(x, y);
+    _R.makeBasis(x, y, z);
+    const sm = mid(P, 11, 12, V()), rsm = mid(REST, 11, 12, V());
+    for (const i of [23, 24]) P[i].copy(REST[i]).sub(rsm).applyMatrix4(_R).multiplyScalar(s).add(sm);
+  }
+  torsoAxes(P, _x, _y, _z);
+  const s = _y.length() / REST_TORSO; _R.makeBasis(_x, _y.normalize(), _z);
+  for (const i of IDS) {
+    if (ok[i] || i === 11 || i === 12 || i === 23 || i === 24) continue;
+    const par = PARENT[i], base = par === 'sh' ? mid(P, 11, 12, V()) : P[par], rbase = par === 'sh' ? mid(REST, 11, 12, V()) : REST[par];
+    P[i].copy(REST[i]).sub(rbase).applyMatrix4(_R).multiplyScalar(s).add(base);
+  }
+}
+
+// The demo dancer: a short procedural routine (sway → waves → fast swings → jump → slow), 16 s, looping.
+const DEMO = {};
+IDS.forEach(i => { DEMO[i] = V(); });
+function demoPose(t) {
+  const u = t % 16, beat = t * 2, win = (a, b) => smooth(a - 0.4, a + 0.4, u) * (1 - smooth(b - 0.4, b + 0.4, u));
+  const w = [win(0, 4), win(4, 8), win(8, 11.5), win(11.5, 13), win(13, 16.4)];
+  w[0] += smooth(15.4, 16, u);   // blend the slow end into the next sway
+  w[4] *= 1 - smooth(15.4, 16, u);
+  const sum = w.reduce((a, b) => a + b, 0) || 1, mix = vals => vals.reduce((a, v, i) => a + v * w[i], 0) / sum;
+  const sw = Math.sin(Math.PI * beat), sw2 = Math.sin(Math.PI * beat * 0.75);
+  const jt = clamp01((u - 11.6) / 1.3), crouch = jt < 0.3 ? Math.sin(jt / 0.3 * Math.PI) : 0, jump = jt >= 0.3 ? Math.sin((jt - 0.3) / 0.7 * Math.PI) : 0;
+  const hipX = mix([0.25 * sw, 0.18 * sw, 0.3 * sw2, 0, 0.12 * Math.sin(t * 0.8)]);
+  const lean = mix([-0.06 * sw, -0.05 * sw, -0.12 * sw2, 0, -0.04 * Math.sin(t * 0.8)]);
+  const twist = mix([0.1 * sw, 0.15 * Math.sin(Math.PI * beat * 0.5), 0.55 * sw2, 0, 0.2 * Math.sin(t * 0.5)]);
+  const knee = mix([0.18 + 0.1 * (0.5 + 0.5 * Math.cos(2 * Math.PI * beat)), 0.15 + 0.1 * (0.5 + 0.5 * Math.cos(2 * Math.PI * beat)), 0.25, 0.1 + 0.6 * crouch, 0.12]);
+  const lift = mix([0, 0, 0, 1.1 * jump, 0]);
+  // arm angles: th from straight down in the side plane, ph forward, el elbow bend (right, left)
+  const armR = [mix([0.35 + 0.1 * sw, 2.1 + 0.6 * sw, 1.5 + 1.4 * sw2, 0.6 + 2.2 * jump, 1.1 + 0.3 * Math.sin(t * 0.7)]),
+                mix([0.1, 0.2, 0.7 * Math.cos(Math.PI * beat * 0.75), 0.1, 0.3]),
+                mix([0.35, 0.7 + 0.6 * Math.sin(Math.PI * beat + 1), 0.4, 0.2, 0.5])];
+  const armL = [mix([0.35 - 0.1 * sw, 2.1 - 0.6 * sw, 1.5 - 1.4 * sw2, 0.6 + 2.2 * jump, 1.1 + 0.3 * Math.sin(t * 0.7 + 2)]),
+                mix([0.1, 0.2, -0.7 * Math.cos(Math.PI * beat * 0.75), 0.1, 0.3]),
+                mix([0.35, 0.7 - 0.6 * Math.sin(Math.PI * beat + 1), 0.4, 0.2, 0.5])];
+  const legSpread = mix([0.06, 0.06, 0.12, 0.05 + 0.15 * jump, 0.06]);
+  const P = DEMO, L1 = REST[23].distanceTo(REST[25]), L2 = REST[25].distanceTo(REST[27]);
+  const pelvis = V(hipX, -0.12 - (L1 + L2) * (1 - Math.cos(knee)) * 0.9 + lift, 0);
+  const R = new THREE.Matrix4().makeRotationZ(lean).multiply(new THREE.Matrix4().makeRotationY(twist));
+  const rel = (v, base) => v.clone().applyMatrix4(R).add(base);
+  const hipMid = mid(REST, 23, 24, V());
+  for (const i of [11, 12, 23, 24, 0, 7, 8]) P[i].copy(rel(REST[i].clone().sub(hipMid), pelvis));
+  const arm = (sh, el, wr, fi, side, [th, ph, bend]) => {
+    const dir = (a, f) => V(side * Math.sin(a) * Math.cos(f), -Math.cos(a) * Math.cos(f), Math.sin(f)).applyMatrix4(new THREE.Matrix4().extractRotation(R));
+    P[el].copy(P[sh]).addScaledVector(dir(th, ph), REST[sh].distanceTo(REST[el]));
+    P[wr].copy(P[el]).addScaledVector(dir(th + bend, ph + 0.4 * bend), REST[el].distanceTo(REST[wr]));
+    P[fi].copy(P[wr]).addScaledVector(dir(th + bend * 1.2, ph + 0.4 * bend), REST[wr].distanceTo(REST[fi]));
+  };
+  arm(12, 14, 16, 20, 1, armR); arm(11, 13, 15, 19, -1, armL);
+  const leg = (hp, kn, an, toe, side) => {
+    P[kn].copy(P[hp]).add(V(side * legSpread * L1, -Math.cos(knee) * L1, Math.sin(knee) * L1));
+    P[an].copy(P[kn]).add(V(side * legSpread * 0.3 * L2, -Math.cos(knee) * L2, -Math.sin(knee) * L2));
+    P[toe].copy(P[an]).add(V(side * 0.04, -0.18, 0.3));
+  };
+  leg(24, 26, 28, 32, 1); leg(23, 25, 27, 31, -1);
+  return P;
+}
+
+/* ---------- camera tracking ---------- */
+let source = 'demo', landmarker = null, stream = null, lastVT = -1, camState = '', loadingCam = false;
+const video = $('video');
+async function startCamera() {
+  if (loadingCam) return;
+  if (source === 'camera') return;
+  loadingCam = true; setTrack('Asking for the camera…');
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('This page needs HTTPS (or localhost) to use the camera');
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    video.srcObject = stream; await video.play();
+    if (!landmarker) {
+      setTrack('Loading the pose model (about 6 MB)…');
+      const { FilesetResolver, PoseLandmarker } = await import(`${MP}/vision_bundle.mjs`);
+      const files = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
+      const make = delegate => PoseLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'VIDEO', numPoses: 1, outputSegmentationMasks: true });
+      try { landmarker = await make('GPU'); } catch (err) { console.warn('Paint Body: GPU pose model failed, using CPU', err); landmarker = await make('CPU'); }
+    }
+    source = 'camera'; lastVT = -1; hasMask = false; plateFresh = true; $('preview').hidden = !previewOn; pressSeg('srcSeg', 'camera'); applyBg();
+    setTrack('Step back until your whole body is in view.'); toast('Camera on');
+  } catch (err) {
+    console.error(err); stopCamera();
+    const msg = err.name === 'NotAllowedError' ? 'Camera permission was denied' : err.name === 'NotFoundError' ? 'No camera found' : (err.message || 'The camera failed to start');
+    setTrack(msg); toast(msg);
+  } finally { loadingCam = false; }
+}
+function stopCamera() {
+  stream?.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null;
+  source = 'demo'; $('preview').hidden = true; pressSeg('srcSeg', 'demo'); applyBg();
+}
+function useDemo() { stopCamera(); setTrack('The demo dancer moves on its own. Choose Camera to paint yourself.'); }
+const setTrack = s => { if (camState !== s) { camState = s; $('track').textContent = s; } };
+
+// Video landmarks (0..1 image coordinates) → world: mirrored, on the plane z = 0, where the video covers the whole view
+// (the same layout as the background plane, so the figure sits on the real person).
+function videoHeight() {
+  const va = video.videoWidth / video.videoHeight || 4 / 3, Hv = 2 * camera.position.length() * Math.tan(FOV * Math.PI / 360);
+  return Math.max(Hv, Hv * camera.aspect / va);
+}
+const lmOk = {};
+function readCamera(nowMs) {
+  if (!landmarker || video.readyState < 2 || video.currentTime === lastVT) return null;
+  lastVT = video.currentTime;
+  const res = landmarker.detectForVideo(video, nowMs);
+  const lm = res.landmarks?.[0];
+  readMask(res.segmentationMasks?.[0]);
+  res.segmentationMasks?.forEach(m => m.close());   // masks hold GPU memory until closed
+  drawPreview(lm);
+  if (!lm) return false;
+  const H = videoHeight(), va = video.videoWidth / video.videoHeight;
+  for (const i of IDS) {
+    const l = lm[i];
+    lmOk[i] = (l.visibility ?? 1) > 0.5 && l.x > -0.05 && l.x < 1.05 && l.y > -0.05 && l.y < 1.05;
+    raw[i].set((0.5 - l.x) * H * va, (0.5 - l.y) * H, -l.z * H * va * 0.5);
+  }
+  if (!lmOk[11] || !lmOk[12]) return false;   // no shoulders: nobody to paint
+  fillMissing(raw, lmOk);
+  return true;
+}
+let previewOn = false;
+const bonesCv = $('bones'), bctx = bonesCv.getContext('2d');
+function drawPreview(lm) {
+  if ($('preview').hidden) return;
+  const w = bonesCv.width = video.videoWidth, h = bonesCv.height = video.videoHeight;
+  bctx.clearRect(0, 0, w, h);
+  if (!lm) return;
+  bctx.strokeStyle = '#ffd36b'; bctx.lineWidth = Math.max(3, w / 80);
+  bctx.beginPath();
+  for (const R of REGIONS) if (Array.isArray(R.bone)) { const [a, b] = R.bone; bctx.moveTo(lm[a].x * w, lm[a].y * h); bctx.lineTo(lm[b].x * w, lm[b].y * h); }
+  for (const [a, b] of [[11, 12], [23, 24], [11, 23], [12, 24]]) { bctx.moveTo(lm[a].x * w, lm[a].y * h); bctx.lineTo(lm[b].x * w, lm[b].y * h); }
+  bctx.stroke();
+}
+
+
+/* ---------- the camera image as the background ---------- */
+// A plane behind the figure that fills the view with the mirrored video. It writes no depth, so PainterlyPass takes it
+// for sky and, with sky: false, leaves it unpainted. The pass still applies its ACES fit to the sky, so the plane
+// outputs the inverse of that fit: the video keeps its own colours.
+// Erase: MediaPipe's person mask cuts the real person out of the image. The hole is filled from a background plate,
+// learnt wherever the person is not; until the camera has seen a spot, the real person stays visible there.
+const BG_Z = 6;   // the plane sits this far behind the figure
+let bgMode = 'camera', erase = true, hasMask = false, plateFresh = true, plateDirty = false, maskTex = null, maskBytes = null;
+const vidTex = new THREE.VideoTexture(video);
+vidTex.colorSpace = THREE.NoColorSpace; vidTex.generateMipmaps = false;   // raw sRGB values; the shaders decode them
+const plates = [0, 1].map(() => new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }));
+let plateI = 0;
+const PERSON = /* glsl */`
+  uniform sampler2D tMask;
+  uniform vec2 uMaskPx;
+  float personAt(vec2 uv) {          // the mask's first row is the top of the image; grown a little past the outline
+    vec2 m = vec2(uv.x, 1.0 - uv.y);
+    float v = texture2D(tMask, m).r;
+    for (int i = 0; i < 8; i++) { float a = float(i) * 0.7854; v = max(v, texture2D(tMask, m + vec2(cos(a), sin(a)) * uMaskPx * 14.0).r); }
+    return smoothstep(0.25, 0.6, v);
+  }`;
+const VERT = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+const maskU = { tMask: { value: null }, uMaskPx: { value: new THREE.Vector2(1, 1) } };
+const plateMat = new THREE.ShaderMaterial({
+  uniforms: Object.assign({ tVideo: { value: vidTex }, tPrev: { value: null }, uFresh: { value: 1 } }, maskU),
+  vertexShader: VERT,
+  fragmentShader: /* glsl */`${PERSON}
+    uniform sampler2D tVideo; uniform sampler2D tPrev; uniform float uFresh; varying vec2 vUv;
+    void main() {
+      vec4 prev = uFresh > 0.5 ? vec4(0.0) : texture2D(tPrev, vUv);
+      float bg = 1.0 - personAt(vUv);
+      gl_FragColor = vec4(mix(prev.rgb, texture2D(tVideo, vUv).rgb, bg * (prev.a > 0.0 ? 0.2 : 1.0)), prev.a + (1.0 - prev.a) * bg * 0.5);
+    }`,
+});
+const quadScene = new THREE.Scene(), quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), plateMat));
+const bgMat = new THREE.ShaderMaterial({
+  uniforms: Object.assign({ tVideo: { value: vidTex }, tPlate: { value: null }, uErase: { value: 1 }, uHasMask: { value: 0 }, uPainted: { value: 1 } }, maskU),
+  vertexShader: VERT, depthWrite: false,
+  fragmentShader: /* glsl */`${PERSON}
+    uniform sampler2D tVideo; uniform sampler2D tPlate; uniform float uErase; uniform float uHasMask; uniform float uPainted; varying vec2 vUv;
+    vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+    vec3 acesInv(vec3 y) {   // inverse of PainterlyPass's ACES fit
+      y = clamp(y, 0.0, 0.985);
+      vec3 a = 2.43 * y - 2.51, b = 0.59 * y - 0.03, c = 0.14 * y;
+      return (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a);
+    }
+    void main() {
+      vec2 uv = vec2(1.0 - vUv.x, vUv.y);   // mirror
+      vec3 col = texture2D(tVideo, uv).rgb;
+      if (uErase > 0.5 && uHasMask > 0.5) {
+        vec4 pl = texture2D(tPlate, uv);
+        col = mix(col, pl.rgb, personAt(uv) * smoothstep(0.4, 0.95, pl.a));
+      }
+      gl_FragColor = vec4(uPainted > 0.5 ? acesInv(toLinear(col)) : col, 1.0);   // plain path: straight to the screen
+    }`,
+});
+const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), bgMat);
+bgPlane.renderOrder = -1; bgPlane.frustumCulled = false; bgPlane.visible = false;
+scene.add(bgPlane);
+function readMask(mk) {
+  if (!mk) return;
+  const w = mk.width, h = mk.height, f = mk.getAsFloat32Array();
+  if (!maskTex || maskTex.image.width !== w || maskTex.image.height !== h) {
+    maskTex?.dispose(); maskBytes = new Uint8Array(w * h);
+    maskTex = new THREE.DataTexture(maskBytes, w, h, THREE.RedFormat, THREE.UnsignedByteType);
+    maskTex.minFilter = maskTex.magFilter = THREE.LinearFilter;
+    maskU.tMask.value = maskTex; maskU.uMaskPx.value.set(1 / w, 1 / h);
+  }
+  for (let i = 0; i < f.length; i++) maskBytes[i] = f[i] * 255;
+  maskTex.needsUpdate = true; hasMask = true; plateDirty = true;
+}
+function updatePlate() {   // once per tracked video frame: blend the visible background into the plate
+  const w = video.videoWidth, h = video.videoHeight;
+  if (plates[0].width !== w || plates[0].height !== h) { plates.forEach(p => p.setSize(w, h)); plateFresh = true; }
+  const src = plates[plateI], dst = plates[1 - plateI];
+  plateMat.uniforms.tPrev.value = src.texture; plateMat.uniforms.uFresh.value = plateFresh ? 1 : 0;
+  renderer.setRenderTarget(dst); renderer.render(quadScene, quadCam); renderer.setRenderTarget(null);
+  plateI = 1 - plateI; plateFresh = false; plateDirty = false;
+  bgMat.uniforms.tPlate.value = dst.texture;
+}
+const camBg = () => source === 'camera' && bgMode === 'camera';
+function applyBg() {
+  $('camGrp').hidden = source !== 'camera';
+  const on = camBg();
+  bgPlane.visible = on; backdrop.visible = !on;
+  controls.enabled = !on; if (on) resetView();   // the figure lines up with the person only from the front
+  pressSeg('bgSeg', bgMode); pressSeg('eraseSeg', erase ? '1' : '0');
+}
+function layoutBg() {   // cover the view at z = -BG_Z with the same scale the landmarks use at z = 0
+  const D = camera.position.length(), H = videoHeight(), va = video.videoWidth / video.videoHeight || 4 / 3, k = (D + BG_Z) / D;
+  bgPlane.position.set(0, 0, -BG_Z); bgPlane.scale.set(H * va * k, H * k, 1);
+  bgMat.uniforms.uErase.value = erase ? 1 : 0; bgMat.uniforms.uHasMask.value = hasMask ? 1 : 0; bgMat.uniforms.uPainted.value = painted ? 1 : 0;
+}
+
+/* ---------- motion → region clocks, springs, uniforms ---------- */
+let sens = 1, swayAmt = 1, hold = null;   // hold: fixed region times (number or array), for tests and screenshots
+const RS = REGIONS.map(() => ({ c: V(), cPrev: V(), v: V(), vPrev: V(), a: V(), x: V(), xv: V(), speed: 0, t: 0, tShow: 0, punch: 0, last: -1, first: true }));
+const M = U.uBone.value, _c = V(), _d = V();
+const A = { motion: 0, spread: 0, pulse: 0 };
+function updatePose(dt, now, nowMs) {
+  let src = null;
+  if (source === 'demo') { const d = demoPose(now); for (const i of IDS) raw[i].copy(d[i]); src = true; }
+  else { const r = readCamera(nowMs); if (r === true) src = true; else if (r === false) src = false; }
+  if (src === true) present += (1 - present) * Math.min(1, dt * 4);
+  else if (src === false) present = Math.max(0, present - dt * 1.5);
+  if (source === 'camera' && camState !== 'Loading the pose model (about 6 MB)…') setTrack(present > 0.5 ? 'Tracking. Move, then hold still.' : 'No one in view. Step back so the camera sees your shoulders.');
+  // light one-euro style smoothing: fast moves follow at once, small jitter is damped
+  for (const i of IDS) {
+    _d.copy(raw[i]).sub(pose[i]);
+    const fc = 2 + 6 * Math.min(4, _d.length() / Math.max(dt, 1e-3) / 4);
+    pose[i].addScaledVector(_d, 1 - Math.exp(-2 * Math.PI * fc * dt));
+  }
+  torsoAxes(pose, _x, _y, _z);
+  const sTarget = Math.max(_y.length() / REST_TORSO, pose[11].distanceTo(pose[12]) / REST_SHOULDER * 0.95);
+  bodyS += (sTarget - bodyS) * Math.min(1, dt * 3);
+  REGIONS.forEach((R, r) => { frame(pose, r, bodyS, M[r]).multiply(REST_INV[r]); });
+}
+function drive(dt, now) {
+  let motion = 0;
+  const K = 110, C = 2 * 0.22 * Math.sqrt(K);   // spring: about 1.7 Hz, lightly damped, so it swings a few times
+  RS.forEach((s, r) => {
+    s.c.copy(restC[r]).applyMatrix4(M[r]);
+    if (s.first) { s.cPrev.copy(s.c); s.first = false; }
+    _d.copy(s.c).sub(s.cPrev).divideScalar(Math.max(dt, 1e-3)); s.cPrev.copy(s.c);
+    s.vPrev.copy(s.v); s.v.lerp(_d, Math.min(1, dt * 14));
+    _d.copy(s.v).sub(s.vPrev).divideScalar(Math.max(dt, 1e-3)); s.a.lerp(_d, Math.min(1, dt * 10));
+    // spring lag: x'' = -K x - C x' - a (the limb accelerates, the paint lags behind and then swings through)
+    const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
+    for (let k = 0; k < n; k++) {
+      s.xv.addScaledVector(s.x, -K * h).addScaledVector(s.xv, -C * h).addScaledVector(s.a, -h * swayAmt);
+      s.x.addScaledVector(s.xv, h);
+    }
+    const lim = 0.8 * bodyS; if (s.x.length() > lim) s.x.setLength(lim);
+    s.speed = s.v.length() / bodyS;   // body units per second
+    motion += s.speed / NR;
+    // the clock: speed opens a region, a sudden jerk kicks it out at once; holding still gathers it back
+    const base = T_MAX * 0.5 * smooth(0.9, 5, s.speed * sens);
+    const jerk = s.a.length() / bodyS;
+    if (jerk * sens > 28 && now - s.last > 0.2) { s.last = now; s.punch = Math.min(0.5, s.punch + 0.12 + 0.2 * smooth(28, 80, jerk * sens)); }
+    let target = Math.min(T_MAX, base + T_MAX * s.punch);
+    target = target + (T_MAX * 0.8 - target) * (1 - present);   // nobody in view: the figure drifts apart
+    const rate = target > s.t ? 5 : 1.8;
+    s.t += Math.max(-rate * dt, Math.min(rate * dt, (target - s.t) * Math.min(1, dt * 8)));
+    s.t = Math.min(T_MAX, Math.max(0, s.t));
+    s.punch = Math.max(0, s.punch - dt * 1.6);
+  });
+  RS.forEach((s, r) => { s.tShow = UP[r] >= 0 ? Math.max(s.t, 0.35 * RS[UP[r]].t) : s.t; });   // a moving arm drags its hand
+  if (hold !== null) RS.forEach((s, r) => { s.tShow = Array.isArray(hold) ? hold[r] : hold; });
+  A.motion += (smooth(0.3, 3, motion * sens) - A.motion) * Math.min(1, dt * 6);
+  A.spread = Math.max(...RS.map(s => s.tShow)) / T_MAX;
+}
+
+/* ---------- UI ---------- */
+function toast(msg) { const el = $('toast'); el.textContent = msg; el.hidden = false; clearTimeout(el._h); el._h = setTimeout(() => { el.hidden = true; }, 1800); }
+document.querySelectorAll('#srcSeg button').forEach(b => b.onclick = () => b.dataset.v === 'camera' ? startCamera() : useDemo());
+$('sens').oninput = e => { sens = e.target.value / 100; $('sensOut').textContent = e.target.value + '%'; };
+$('sway').oninput = e => { swayAmt = e.target.value / 100; $('swayOut').textContent = e.target.value + '%'; };
+let strokeTimer = 0;
+$('stroke').value = STROKE0; $('strokeOut').textContent = STROKE0 + ' px';
+$('stroke').oninput = e => { const v = +e.target.value; painter.strokeSize = v; $('strokeOut').textContent = v + ' px';
+  strokeK = v / 7; if (strokes) { strokes.material.uniforms.uStrokeScale.value = 0.85 * strokeK; strokes.material.uniforms.uKeep.value = keepFor(v); }
+  clearTimeout(strokeTimer);
+  strokeTimer = setTimeout(() => { if (painted && strokes) { setPainted(false); setPainted(true); } }, 150); };
+document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => setPainted(b.dataset.v === '1'));
+const setBgMode = v => { bgMode = v; applyBg(); };
+const setErase = on => { erase = on; applyBg(); };
+document.querySelectorAll('#bgSeg button').forEach(b => b.onclick = () => setBgMode(b.dataset.v));
+document.querySelectorAll('#eraseSeg button').forEach(b => b.onclick = () => setErase(b.dataset.v === '1'));
+function setPalette(v) { if (v === palette) return; palette = v; boom.rebake({ pieces: makePieces(v) }); pressSeg('palSeg', v); }
+document.querySelectorAll('#palSeg button').forEach(b => b.onclick = () => setPalette(b.dataset.v));
+function setPanel(show, byKey = false) {
+  $('ui').hidden = !show; $('bShow').hidden = show || byKey;
+  document.documentElement.toggleAttribute('data-ui-hidden', !show);
+}
+$('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
+const showKeys = on => { $('keys').hidden = !on; };
+$('bKeys').onclick = () => showKeys($('keys').hidden); $('keysClose').onclick = () => showKeys(false);
+function fullScreen() { const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (document.fullscreenElement) document.exitFullscreen(); else if (!req) toast('Full screen is not available here');
+  else { const p = req.call(el); if (p && p.catch) p.catch(() => toast('Full screen is not allowed here')); } }
+$('bFull').onclick = fullScreen;
+function resetView() { controls.reset(); resize(); }
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.matches?.('input[type=range]') && e.code.startsWith('Arrow')) return;
+  switch (e.code) {
+    case 'KeyC': startCamera(); break;
+    case 'KeyD': useDemo(); break;
+    case 'KeyB': if (source === 'camera') { setBgMode(bgMode === 'camera' ? 'painted' : 'camera'); toast(bgMode === 'camera' ? 'Camera background' : 'Painted background'); } break;
+    case 'KeyE': if (source === 'camera') { setErase(!erase); toast(erase ? 'Real you: erased' : 'Real you: shown'); } break;
+    case 'KeyV': previewOn = !previewOn; $('preview').hidden = !(previewOn && source === 'camera'); break;
+    case 'KeyP': setPainted(!painted); toast(painted ? 'Painted' : 'Plain cubes'); break;
+    case 'KeyR': resetView(); break;
+    case 'BracketLeft': case 'BracketRight': { const el = $('sens'); el.value = +el.value + (e.code === 'BracketRight' ? 10 : -10);
+      el.dispatchEvent(new Event('input')); toast(`Sensitivity ${el.value}%`); break; }
+    case 'KeyF': fullScreen(); break;
+    case 'KeyH': setPanel($('ui').hidden, true); break;
+    case 'Escape': showKeys(false); break;
+    default: if (e.key === '?') showKeys($('keys').hidden);
+  }
+});
+
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h;
+  camera.position.setLength(CAM_D / Math.min(1, camera.aspect * 1.4));   // portrait: step back so the figure fits
+  camera.updateProjectionMatrix();
+  const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y);
+}
+addEventListener('resize', resize); resize();
+controls.saveState();
+$('status').hidden = true;
+if (LITE && innerWidth <= 600) setPanel(false);
+$('stats').textContent = `${boom.stats.pieces.toLocaleString('en')} pieces · ${NR} regions`;
+
+/* ---------- loop ---------- */
+const bars = ['mMotion', 'mSpread'].map($);
+const fps = { n: 0, t0: performance.now(), value: 0 };
+const AQ = { steps: [painter.resolutionScale, 0.55, 0.45], i: 0, avg: 16.7, slow: 0, calm: 0, wait: 3, upAt: -1e9 };
+function adapt(ms, now) {   // adaptive paint resolution, as in Paint Pulse
+  if (!painted || ms > 250) return;
+  AQ.avg += (ms - AQ.avg) * 0.1;
+  if (AQ.avg > 18) { AQ.slow = Math.min(12, AQ.slow + 1); AQ.calm = 0; } else { AQ.slow = Math.max(0, AQ.slow - 0.5); AQ.calm += ms / 1000; }
+  if (AQ.slow >= 12 && AQ.i < AQ.steps.length - 1) {
+    if (now - AQ.upAt < 2) AQ.wait = Math.min(60, AQ.wait * 2);
+    painter.resolutionScale = AQ.steps[++AQ.i]; AQ.slow = 0; AQ.calm = 0;
+  } else if (AQ.i > 0 && AQ.calm > AQ.wait) { painter.resolutionScale = AQ.steps[--AQ.i]; AQ.calm = 0; AQ.upAt = now; }
+}
+let prev = performance.now(), prevWall = prev, clock = 0, demoSpeed = 1;
+renderer.setAnimationLoop(nowMs => {
+  const realDt = Math.min(0.5, (nowMs - prev) / 1000), dt = Math.min(0.05, realDt); prev = nowMs;
+  clock += dt * demoSpeed; const now = clock;
+  const wall = performance.now(); adapt(wall - prevWall, nowMs / 1000); prevWall = wall;
+  updatePose(realDt, now, nowMs);   // real time: the camera does not wait for slow frames
+  drive(dt, now);
+  boom.setTime(0); boom.setBurstOffsets(RS.map(s => -s.tShow));
+  const live = hold === null ? 1 : 0;
+  RS.forEach((s, r) => {
+    U.uVel.value[r].copy(s.v).multiplyScalar(live);
+    U.uSway.value[r].set(s.x.x * live, s.x.y * live, s.x.z * live, live * smooth(0.5, 4, s.speed * sens));
+  });
+  U.uPulse.value = 0;
+  U.uFlowT.value += dt * (0.5 + 1.5 * A.motion);
+  if (strokes) { strokes.material.uniforms.uBright.value = 1 + 0.25 * A.motion;
+    strokes.material.uniforms.uLookAhead.value = -(0.03 + 0.04 * A.motion); }   // longer strokes on fast moves
+  controls.update();
+  if (camBg()) { if (plateDirty) updatePlate(); layoutBg(); }
+  if (painted) painter.render(renderer); else renderer.render(scene, camera);
+  [A.motion, A.spread].forEach((v, i) => { bars[i].style.width = (clamp01(v) * 100).toFixed(1) + '%'; });
+  fps.n++; if (nowMs - fps.t0 > 1000) { fps.value = fps.n * 1000 / (nowMs - fps.t0); fps.n = 0; fps.t0 = nowMs; }
+});
+window.__pb = { boom, painter, A, RS, fps, REGIONS, pose, T_MAX, LITE, setPainted, setPalette, startCamera, useDemo, U,
+  hold(v) { hold = v; }, setBgMode, setErase, setClock(t) { clock = t; }, setDemoSpeed(v) { demoSpeed = v; }, get source() { return source; } };
+</script>
+</body>
+</html>

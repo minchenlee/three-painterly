@@ -67,6 +67,8 @@ python3 -m http.server     # or: npx serve .
 
 `examples/balloon-house`: thousands of balloons burst through the roof of a wooden house and carry it off over its street, painted with the pointillist brush. Every balloon is one dab of one pigment. The street is a voxel grid like Voxel Paris, meshed with baked ambient occlusion: six houses, gardens, fences, trees, parked cars. The middle of the roof blows off and its shingles tumble down the slopes and onto the porch; at lift-off the turf around the house breaks loose. Both collide with the voxels. The balloons are BakedDebris pieces too; bullet time gives the drag, and a displace hook draws each one to its place in the bunch and moves the bunch with the house. The house is a PainterlyPass anchor, so it carries its dabs as it flies. All the houses are original designs. Controls: four views, time of day, and a Look switch between dabs, oil strokes and plain cubes.
 
+`examples/lib` holds what the voxel demos share. `voxels.js` has a palette, a dense grid and a mesher that bakes ambient occlusion and merges flat faces. `town.js` builds wooden houses, trees, fences, flower beds and cars from options. They are not part of either package. Voxel Paris uses the first; Balloon House uses both.
+
 ## Use with your AI agent
 
 [llms.txt](llms.txt) is a one-file summary of both APIs, options and pitfalls, written for coding agents. [AGENTS.md](AGENTS.md) is for agents that change this repository. Copy one of these prompts into your agent:

@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "node --test packages/*/test/*.test.js",
+    "test": "node --test packages/*/test/*.test.js examples/lib/test/*.test.js",
     "typecheck": "tsc -p test/types"
   },
   "devDependencies": {

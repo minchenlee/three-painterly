@@ -140,6 +140,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { PainterlyPass, impressionist, pointillist } from '../../packages/painterly-pass/src/index.js';
 import { BakedDebris, voxelCollider, anyCollider } from '../../packages/baked-debris/src/index.js';
+import { h01, mulberry32, createPalette, createGrid, meshGrid } from '../lib/voxels.js';
+import { townPalette, createTown } from '../lib/town.js';
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);
@@ -150,163 +152,23 @@ $('liteNote').hidden = !LITE;
 const NARROW = innerWidth <= 600, PORTRAIT = innerWidth / innerHeight < 0.8;
 $('more').open = !NARROW;                                        // on a phone the panel starts short: time and look only
 const T_END = 26, T_BURST = 1.2, T_LIFT = 8.2;
-function h01(a, b, c = 0) { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1442695041); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
-function mulberry32(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const rnd = mulberry32(2009);
 const R = (a, b) => a + (b - a) * rnd(), RI = (a, b) => Math.floor(R(a, b + 1));
 
-/* ---------- palette: every voxel holds an index into it ---------- */
-const PAL = [[0, 0, 0]], HEX = [0], C = {};
-function def(names, ...hexes) { names.split(' ').forEach((n, i) => { const c = new THREE.Color(hexes[i]); C[n] = PAL.length; PAL.push([c.r, c.g, c.b]); HEX.push(hexes[i]); }); }
-def('GRASS1 GRASS2 GRASS3', 0x669848, 0x71a24e, 0x5c8e43); def('DIRT1 DIRT2', 0x6f5137, 0x7c5c40);
-def('ASPH1 ASPH2 PAINT CURB', 0x4a4b50, 0x53545a, 0xe8e2c8, 0xb9b3a6); def('WALK1 WALK2 GRAVEL1 GRAVEL2', 0xc9c2b4, 0xbdb5a6, 0xcdbb97, 0xbfae8b);
-def('TRUNK LEAF1 LEAF2 LEAF3 LEAF4 BLOSSOM1 BLOSSOM2 HEDGE1 HEDGE2 STEM', 0x6a4a33, 0x4f8a3a, 0x5d9a42, 0x437a36, 0x6aa84a, 0xf3a6c0, 0xf7c3d4, 0x3f7438, 0x4a8240, 0x4c8a3c);
-def('FL_R FL_Y FL_P FL_W FL_V FL_O', 0xe9382d, 0xf7c81e, 0xf06aa9, 0xf7f4ea, 0x7a59e0, 0xf58a1f);
-def('TRIM WHITE GLASS1 GLASS2 STONE1 STONE2 BRICK1 BRICK2 MORTAR', 0xf3ecd8, 0xf7f5ee, 0x9cc7dc, 0x7fb0cb, 0x9a9a9e, 0x8b8b90, 0xa5482f, 0x963f2a, 0xc9a08a);
-def('PORCH1 PORCH2 FENCEB1 FENCEB2 METAL LAMP DARK', 0xcdb68e, 0xbfa87f, 0x8a6a48, 0x7d5f40, 0x2e3136, 0xfff0b8, 0x3a2f2a);
-def('TEAL1 TEAL2 DKTEAL SLATE1 SLATE2 SLATE3 MUSTARD', 0x2f8088, 0x2a747c, 0x1f5960, 0x7483ad, 0x6876a2, 0x7f8db6, 0xe2a72e);
-def('BUTTER1 BUTTER2 TERRA1 TERRA2 TERRA3 DOORBLUE SHUTGREEN', 0xf0d684, 0xe6ca76, 0xb5553d, 0xa64b35, 0xc1614a, 0x3f6fb0, 0x4f7a56);
-def('BARN1 BARN2 CHAR1 CHAR2 CHAR3', 0xb7412f, 0xa7392a, 0x4b4a50, 0x434248, 0x55545b);
-def('SAGE1 SAGE2 BROWN1 BROWN2 BROWN3 SHUTBROWN', 0x9db88a, 0x90ab7e, 0x7a5a44, 0x6d4f3b, 0x86654d, 0x5a4636);
-def('DUSTY1 DUSTY2 NAVY LILAC1 LILAC2 PLUM CREAM1 CREAM2', 0x8fb0d0, 0x82a3c4, 0x3d5a80, 0xc7b0d8, 0xbaa2cc, 0x6b5a8a, 0xf1e7cf, 0xe6dbc1);
-def('CARRED CARBLUE TIRE CHROME PUMPKIN POOL', 0xc8382c, 0x3b6fb8, 0x1d1d20, 0xc9ccd2, 0xe8791c, 0x4fb6e0);
-const FLOWERS = [C.FL_R, C.FL_Y, C.FL_P, C.FL_W, C.FL_V, C.FL_O];
-
-/* ---------- voxel grids: 1 voxel = 25 cm. G is the street; HG is the hero house, which has to move ---------- */
+/* ---------- palette and grids (../lib/voxels.js): 1 voxel = 25 cm. `grid` is the street; `heroGrid` is the hero house, which has to move ---------- */
+const { PAL, HEX, C, def } = createPalette();
+townPalette(def); def('PUMPKIN POOL', 0xe8791c, 0x4fb6e0);
 const OX = 160, OY = 4, OZ = 128, NX = 320, NY = 96, NZ = 288;
-const G = new Uint8Array(NX * NY * NZ);
-const I = (x, y, z) => ((x + OX) * NY + (y + OY)) * NZ + (z + OZ);
-const ok = (x, y, z) => x >= -OX && x < NX - OX && y >= -OY && y < NY - OY && z >= -OZ && z < NZ - OZ;
-const get = (x, y, z) => (ok(x, y, z) ? G[I(x, y, z)] : 0);
-const set = (x, y, z, c) => { if (ok(x, y, z)) G[I(x, y, z)] = c; };
-const setE = (x, y, z, c) => { if (ok(x, y, z) && !G[I(x, y, z)]) G[I(x, y, z)] = c; };
-const box = (x0, x1, y0, y1, z0, z1, c) => { for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) set(x, y, z, typeof c === 'function' ? c(x, y, z) : c); };
-const HW = 28, HH = 72, HZ0 = -26, HZ1 = 36, HG = new Uint8Array(2 * HW * HH * (HZ1 - HZ0));
-const hok = (x, y, z) => x >= -HW && x < HW && y >= 0 && y < HH && z >= HZ0 && z < HZ1;
-const HI = (x, y, z) => ((x + HW) * HH + y) * (HZ1 - HZ0) + (z - HZ0);
-const hget = (x, y, z) => (hok(x, y, z) ? HG[HI(x, y, z)] : 0);
-const hset = (x, y, z, c) => { if (hok(x, y, z)) HG[HI(x, y, z)] = c; };
+const grid = createGrid(NX, NY, NZ, OX, OY, OZ), { data: G, get, set, box } = grid;
+const HW = 28, HH = 72, HZ0 = -26, HZ1 = 36;
+const heroGrid = createGrid(2 * HW, HH, HZ1 - HZ0, HW, 0, -HZ0), { data: HG, get: hget, set: hset } = heroGrid;
 const HERO = { x: 0, y: 1, z: -6 };                              // where the hero house stands: its local (0, 0, 0) in the world
-
-/* ---------- a wooden house. put(x, y, z, c): x across, y up from the ground, z towards the front ---------- */
-function house(put, o) {
-  const { hw, hd, floors = 2, axis = 'x', slope = 0.75, sid, trim = C.TRIM, roof, door, shut, porch = 8, chim = null, dormers = [], doorX = 0, gable = null } = o;
-  const wallTop = 2 + floors * 11, over = 2;
-  const run = axis === 'x' ? (x, z) => hd + over - Math.abs(z) : (x, z) => hw + over - Math.abs(x);
-  const roofY = (x, z) => wallTop + Math.floor(run(x, z) * slope);
-  const ridge = wallTop + Math.floor(((axis === 'x' ? hd : hw) + over) * slope);
-  const shingle = (x, y, z) => roof[Math.floor(h01(x >> 1, y, z >> 1) * 3)];
-  const centres = (half, skip) => { const n = Math.max(1, Math.floor((2 * half - 5) / 11)), out = []; for (let i = 0; i < n; i++) { const c = Math.round(-half + (2 * half) * (i + 0.5) / n); if (skip === undefined || Math.abs(c - skip) > 6) out.push(c); } return out; };
-  // a window in a wall plane: glass with a cross bar, a frame, shutters. Returns 0 outside it.
-  const win = (u, y, c, y0, w = 2, h = 6) => {
-    const du = u - c, dy = y - y0;
-    if (dy < -1 || dy > h || Math.abs(du) > w + 2) return 0;
-    if (Math.abs(du) === w + 2) return dy >= 0 && dy < h ? shut : 0;
-    if (Math.abs(du) === w + 1 || dy === -1 || dy === h) return trim;
-    return du === 0 || dy === (h >> 1) ? trim : (h01(c, y0, u + y) < 0.5 ? C.GLASS1 : C.GLASS2);
-  };
-  const wallColour = (x, y, z) => {
-    const ax = Math.abs(x), az = Math.abs(z), front = z === hd, sideWall = ax === hw;
-    if (ax === hw && az === hd) return trim;                                           // corner boards
-    if (floors > 1 && y === 13) return trim;                                           // the band between the floors
-    if (y === wallTop - 1) return trim;                                                // the frieze under the eaves
-    const u = sideWall ? z : x, half = sideWall ? hd : hw;
-    if (y >= wallTop) {                                                                // the gable: an attic window, shingles
-      const a = (Math.abs(u) <= 1 && y >= wallTop + 3 && y <= wallTop + 6) ? (u === 0 || y === wallTop + 3 || y === wallTop + 6 ? trim : C.GLASS1) : 0;
-      return a || (gable ? gable[(u + y) & 1] : sid[y & 1]);
-    }
-    if (front) {
-      const dx = x - doorX;
-      if (dx >= -2 && dx <= 1 && y <= 10) return y >= 8 && y <= 9 ? C.GLASS2 : (dx === -2 || dx === 1 || y === 2 || y === 6 ? door : door);
-      if (dx >= -3 && dx <= 2 && y <= 11) return trim;
-    }
-    for (let f = 0; f < floors; f++) for (const c of centres(half, front && f === 0 ? doorX : undefined)) { const w = win(u, y, c, 5 + f * 11); if (w) return w; }
-    return sid[y & 1];                                                                 // clapboards
-  };
-  // foundation, walls, a floor under the attic
-  for (let x = -hw; x <= hw; x++) for (let z = -hd; z <= hd; z++) {
-    const edge = Math.abs(x) === hw || Math.abs(z) === hd;
-    if (edge) { for (let y = 0; y < 2; y++) put(x, y, z, h01(x, y, z) < 0.5 ? C.STONE1 : C.STONE2);
-      const top = (axis === 'x' ? Math.abs(x) === hw : Math.abs(z) === hd) ? roofY(x, z) : wallTop;
-      for (let y = 2; y < top; y++) put(x, y, z, wallColour(x, y, z)); }
-    else { put(x, wallTop, z, C.DARK); put(x, 1, z, C.DARK); }
-  }
-  // roof: two voxels thick, shingles in three shades, trim boards on the rake
-  for (let x = -hw - over; x <= hw + over; x++) for (let z = -hd - over; z <= hd + over; z++) {
-    const y = roofY(x, z), rake = axis === 'x' ? Math.abs(x) === hw + over : Math.abs(z) === hd + over;
-    put(x, y, z, rake ? trim : shingle(x, y, z)); put(x, y + 1, z, y + 1 >= ridge ? roof[1] : shingle(x, y + 1, z));
-  }
-  // dormers on the front slope (ridge along x only): a small gabled box with a window
-  for (const cx of dormers) {
-    const top = wallTop + 9, zf = hd - 3;
-    for (let dx = -4; dx <= 4; dx++) for (let z = zf; z >= -hd; z--) {
-      const x = cx + dx, ry = top + Math.floor((4 - Math.abs(dx)) * 0.75), base = roofY(x, z);
-      if (ry <= base) break;
-      if (Math.abs(dx) <= 3) for (let y = base + 2; y < ry; y++) if (z === zf || Math.abs(dx) === 3) put(x, y, z, z === zf ? (Math.abs(dx) === 3 || y === top - 1 ? trim : (Math.abs(dx) <= 1 && y >= wallTop + 4 && y <= wallTop + 7 ? C.GLASS1 : sid[y & 1])) : sid[y & 1]);
-      put(x, ry, z, Math.abs(dx) === 4 || z === zf ? trim : shingle(x, ry, z)); if (z < zf || Math.abs(dx) < 4) put(x, ry + 1, z, shingle(x, ry + 1, z));
-    }
-  }
-  // porch across the front: deck, posts, a rail with a gap at the steps, a low roof
-  if (porch) {
-    const z1 = hd + porch, posts = [-hw, hw]; for (let x = -hw + 9; x < hw - 4; x += 9) posts.push(x);
-    for (let x = -hw; x <= hw; x++) for (let z = hd + 1; z <= z1; z++) {
-      put(x, 2, z, (x & 3) === 0 ? C.PORCH2 : C.PORCH1);
-      if (z === z1 || Math.abs(x) === hw) { for (let y = 0; y < 2; y++) if ((x + z + y) & 1) put(x, y, z, trim);                    // lattice skirt
-        const gap = z === z1 && x - doorX >= -3 && x - doorX <= 2;
-        if (!gap) { put(x, 5, z, trim); if ((x + z) & 1) { put(x, 3, z, trim); put(x, 4, z, trim); } } }
-      const ry = 14 - Math.floor((z - hd) / 4); put(x, ry, z, shingle(x, ry, z));
-    }
-    for (let x = -hw - 1; x <= hw + 1; x++) { const ry = 14 - Math.floor((z1 + 1 - hd) / 4); put(x, ry, z1 + 1, trim); put(x, ry - 1, z1, trim); }
-    for (const x of posts) for (let y = 3; y <= 12; y++) put(x, y, z1, trim);
-    for (let s = 0; s < 2; s++) for (let x = doorX - 3; x <= doorX + 2; x++) put(x, 1 - s, z1 + 1 + s, C.PORCH2);                    // steps
-  }
-  // chimney: brick with mortar courses, a stone cap
-  if (chim) { const [cx, cz] = chim, top = ridge + 7;
-    for (let x = cx; x < cx + 4; x++) for (let z = cz; z < cz + 4; z++) for (let y = 0; y < top; y++) put(x, y, z, y % 4 === 3 ? C.MORTAR : (h01(x + (y >> 2 & 1), y >> 2, z) < 0.5 ? C.BRICK1 : C.BRICK2));
-    for (let x = cx - 1; x < cx + 5; x++) for (let z = cz - 1; z < cz + 5; z++) put(x, top, z, C.STONE1);
-    for (let x = cx + 1; x < cx + 3; x++) for (let z = cz + 1; z < cz + 3; z++) put(x, top + 1, z, C.METAL);
-  }
-  return { wallTop, ridge, roofY };
-}
-
-/* ---------- garden things ---------- */
-function tree(x, z, h, r, blossom = false) {
-  for (let y = 1; y <= h; y++) for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) set(x + a, y, z + b, C.TRUNK);
-  const L = blossom ? [C.BLOSSOM1, C.BLOSSOM2, C.BLOSSOM1, C.LEAF4] : [C.LEAF1, C.LEAF2, C.LEAF3, C.LEAF4];
-  for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let c = -r; c <= r; c++) {
-    const d = Math.hypot(a, b * 1.25, c) / r + (h01(x + a >> 1, b >> 1, z + c >> 1) - 0.5) * 0.45;   // a lumpy ball, hollow inside
-    if (d > 1 || d < 0.55) continue;
-    setE(x + a, h + Math.round(r * 0.55) + b, z + c, L[Math.floor(h01(x + a >> 1, b, z + c >> 1) * 4)]);
-  }
-}
-function picket(x0, z0, x1, z1, gap = null) {                    // a white fence along one axis; gap = [from, to] along it
-  const along = x0 !== x1, n = along ? x1 - x0 : z1 - z0;
-  for (let i = 0; i <= n; i++) { const x = along ? x0 + i : x0, z = along ? z0 : z0 + i, u = along ? x : z;
-    if (gap && u > gap[0] && u < gap[1]) continue;
-    set(x, 3, z, C.WHITE); if ((i & 1) === 0) for (let y = 1; y <= 4; y++) set(x, y, z, C.WHITE); }
-}
-function boards(x0, z0, x1, z1, h = 7) { const along = x0 !== x1, n = along ? x1 - x0 : z1 - z0;   // a tall brown fence between back yards
-  for (let i = 0; i <= n; i++) for (let y = 1; y <= h - ((i & 3) === 0 ? 0 : 1); y++) set(along ? x0 + i : x0, y, along ? z0 : z0 + i, (i & 3) === 0 ? C.FENCEB2 : C.FENCEB1); }
-function flowerBed(x0, x1, z0, z1) { for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { set(x, 0, z, h01(x, z) < 0.5 ? C.DIRT1 : C.DIRT2);
-  const r = h01(x, z, 7); if (r < 0.55) { const hgt = 1 + (r < 0.2 ? 1 : 0); for (let y = 1; y < hgt; y++) set(x, y, z, C.STEM); set(x, hgt, z, FLOWERS[Math.floor(h01(x >> 1, z >> 1, 9) * 6)]); } } }
-function hedge(x0, x1, z0, z1, h = 5) { for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) for (let y = 1; y <= h - (h01(x, z, 4) < 0.25 ? 1 : 0); y++) set(x, y, z, h01(x >> 1, y, z >> 1) < 0.5 ? C.HEDGE1 : C.HEDGE2); }
-function car(x, z, body) {                                       // parked along x: 20 long, 9 wide
-  for (let a = 0; a < 20; a++) for (let b = 0; b < 9; b++) {
-    const wheel = (a >= 2 && a <= 5) || (a >= 14 && a <= 17);
-    if (wheel && (b === 0 || b === 8)) { for (let y = 0; y < 3; y++) set(x + a, y, z + b, y === 1 && (a === 3 || a === 4 || a === 15 || a === 16) ? C.CHROME : C.TIRE); }
-    for (let y = 1; y <= 4; y++) if (!(wheel && (b === 0 || b === 8) && y < 3)) set(x + a, y, z + b, y === 1 && (a === 0 || a === 19) ? C.CHROME : body);
-    if (a >= 5 && a <= 14) for (let y = 5; y <= 7; y++) set(x + a, y, z + b, y === 7 ? body : ((a === 5 || a === 14 || b === 0 || b === 8) && (a + b) % 5 ? C.GLASS2 : (b === 0 || b === 8 || a === 5 || a === 14 ? body : 0)));
-  }
-  set(x + 19, 3, z + 1, C.LAMP); set(x + 19, 3, z + 7, C.LAMP); set(x, 3, z + 1, C.FL_R); set(x, 3, z + 7, C.FL_R);
-}
-function lamp(x, z, dz) { for (let y = 1; y <= 20; y++) set(x, y, z, C.METAL); for (let i = 1; i <= 3; i++) set(x, 20, z + dz * i, C.METAL); set(x, 19, z + dz * 3, C.LAMP); set(x, 19, z + dz * 2, C.LAMP); }
-function mailbox(x, z, c) { set(x, 1, z, C.FENCEB1); set(x, 2, z, C.FENCEB1); set(x, 3, z, C.FENCEB1); for (let a = 0; a < 2; a++) for (let b = -1; b <= 1; b++) set(x + a, 4, z + b, c); set(x, 5, z, c); }
+// houses, trees, fences, flower beds, cars (../lib/town.js)
+const { house, place, tree, picket, boards, flowerBed, hedge, car, lamp, mailbox, FLOWERS } = createTown(grid, C);
 
 /* ---------- the street: three lots on each side of a road; the hero stands in the middle of the far side ---------- */
 const ROAD = [70, 100], WALK = [[62, 69], [101, 108]], LOTS = [-106, 0, 106];
 let heroInfo = null;
-const heroPut = (x, y, z, c) => hset(x, y, z, c);
-const at = (cx, cz, flip) => (x, y, z, c) => set(flip ? cx - x : cx + x, 1 + y, flip ? cz - z : cz + z, c);
 function buildWorld() {
   for (let x = -OX; x < NX - OX; x++) for (let z = -OZ; z < NZ - OZ; z++) {
     for (let y = -4; y < -1; y++) set(x, y, z, h01(x >> 1, y, z >> 1) < 0.5 ? C.DIRT1 : C.DIRT2);
@@ -317,7 +179,7 @@ function buildWorld() {
     if (!walk && !curb && h01(x, z, 11) < 0.012) set(x, 1, z, FLOWERS[Math.floor(h01(x, z, 12) * 6)]);   // wild flowers in the grass
   }
   // the hero house, in its own grid: teal clapboards, cream trim, slate roof, two dormers, a brick chimney
-  heroInfo = house(heroPut, { hw: 15, hd: 14, sid: [C.TEAL1, C.TEAL2], roof: [C.SLATE1, C.SLATE2, C.SLATE3], door: C.MUSTARD, shut: C.DKTEAL, dormers: [-8, 8], chim: [-14, -10], porch: 9, gable: [C.TEAL2, C.DKTEAL] });
+  heroInfo = house(hset, { hw: 15, hd: 14, sid: [C.TEAL1, C.TEAL2], roof: [C.SLATE1, C.SLATE2, C.SLATE3], door: C.MUSTARD, shut: C.DKTEAL, dormers: [-8, 8], chim: [-14, -10], porch: 9, gable: [C.TEAL2, C.DKTEAL] });
   for (let x = -17; x <= 17; x++) for (let z = -17; z <= 26; z++) { set(HERO.x + x, 0, HERO.z + z, h01(x, z, 5) < 0.5 ? C.DIRT1 : C.DIRT2); set(HERO.x + x, 1, HERO.z + z, 0); }   // bare earth under it
   // neighbours: [lot centre x, z, flipped to face the road from the near side, options]
   const N = [
@@ -327,7 +189,7 @@ function buildWorld() {
     [2, 142, true, { hw: 12, hd: 14, axis: 'z', slope: 1, sid: [C.LILAC1, C.LILAC2], roof: [C.SLATE1, C.SLATE2, C.SLATE3], door: C.PLUM, shut: C.PLUM, chim: [-12, -4], porch: 7 }],
     [108, 140, true, { hw: 15, hd: 13, floors: 1, sid: [C.DUSTY1, C.DUSTY2], trim: C.WHITE, roof: [C.CHAR1, C.CHAR2, C.CHAR3], door: C.BUTTER1, shut: C.NAVY, dormers: [-6, 6], porch: 8 }],
   ];
-  for (const [cx, cz, flip, o] of N) house(at(cx, cz, flip), o);
+  for (const [cx, cz, flip, o] of N) house(place(cx, cz, flip), o);
   // far side: front fences with gates, paths, flower beds, hedges, back-yard fences
   for (const cx of LOTS) {
     picket(cx - 46, 58, cx + 46, 58, [cx - 4, cx + 3]); picket(cx - 46, 24, cx - 46, 58); picket(cx + 46, 24, cx + 46, 58);
@@ -355,66 +217,6 @@ function buildWorld() {
   for (const x of [-130, -20, 90]) lamp(x, 66, 1); for (const x of [-70, 40, 150]) lamp(x, 104, -1);
   box(34, 35, 1, 3, 66, 67, C.FL_R); set(34, 4, 66, C.FL_R);
   car(-96, 72, C.CARRED); car(70, 90, C.CARBLUE);
-}
-
-/* ---------- mesher: visible faces only, ambient occlusion baked per vertex, same-looking faces merged (up to 2 m) ---------- */
-const AOV = [0.5, 0.68, 0.84, 1.0], DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-const ORD_P = [[0, 0], [1, 0], [1, 1], [0, 1]], ORD_N = [[0, 0], [0, 1], [1, 1], [1, 0]], MAXF = 300000, GREEDY_MAX = 8;
-const sP = new Float32Array(MAXF * 12), sN = new Int8Array(MAXF * 12), sC = new Float32Array(MAXF * 12), sI = new Uint32Array(MAXF * 6);
-function meshGrid(at, lo, hi, noBottomAt = -1e9) {              // at(x, y, z) -> palette index; faces that look down at y <= noBottomAt are skipped
-  let nf = 0;
-  const q = [0, 0, 0], o1 = [0, 0, 0], o2 = [0, 0, 0], ao = [0, 0, 0, 0], cell = [0, 0, 0], v = [0, 0, 0];
-  const emit = (D, d, s, ua, va, ord, bx, by, bz, w, h, col, a4) => {
-    if (nf >= MAXF) return;
-    const vb = nf * 4;
-    for (let i = 0; i < 4; i++) { const cu = ord[i][0], cv = ord[i][1];
-      v[0] = bx; v[1] = by; v[2] = bz; if (s > 0) v[d] += 1; v[ua] += cu * w; v[va] += cv * h;
-      const k = AOV[a4[i]], o = (vb + i) * 3;
-      sP[o] = v[0]; sP[o + 1] = v[1]; sP[o + 2] = v[2]; sN[o] = D[0]; sN[o + 1] = D[1]; sN[o + 2] = D[2];
-      sC[o] = col[0] * k; sC[o + 1] = col[1] * k; sC[o + 2] = col[2] * k; }
-    const ii = nf * 6;
-    if (a4[0] + a4[2] > a4[1] + a4[3]) { sI[ii] = vb; sI[ii + 1] = vb + 1; sI[ii + 2] = vb + 2; sI[ii + 3] = vb; sI[ii + 4] = vb + 2; sI[ii + 5] = vb + 3; }
-    else { sI[ii] = vb + 1; sI[ii + 1] = vb + 2; sI[ii + 2] = vb + 3; sI[ii + 3] = vb + 1; sI[ii + 4] = vb + 3; sI[ii + 5] = vb; }
-    nf++;
-  };
-  for (let f = 0; f < 6; f++) {
-    const D = DIRS[f], d = f >> 1, s = (f & 1) ? -1 : 1, ua = (d + 1) % 3, va = (d + 2) % 3, ord = s > 0 ? ORD_P : ORD_N;
-    const nu = hi[ua] - lo[ua], nv = hi[va] - lo[va], mask = new Int32Array(nu * nv);
-    for (let sl = lo[d]; sl < hi[d]; sl++) {
-      mask.fill(0);
-      for (let a = 0; a < nu; a++) for (let b = 0; b < nv; b++) {
-        cell[d] = sl; cell[ua] = lo[ua] + a; cell[va] = lo[va] + b;
-        const x = cell[0], y = cell[1], z = cell[2], c = at(x, y, z); if (!c) continue;
-        if (at(x + D[0], y + D[1], z + D[2])) continue; if (f === 3 && y <= noBottomAt) continue;
-        q[0] = x + D[0]; q[1] = y + D[1]; q[2] = z + D[2];
-        for (let i = 0; i < 4; i++) { const cu = ord[i][0], cv = ord[i][1];
-          o1[0] = q[0]; o1[1] = q[1]; o1[2] = q[2]; o1[ua] += cu ? 1 : -1;
-          o2[0] = q[0]; o2[1] = q[1]; o2[2] = q[2]; o2[va] += cv ? 1 : -1;
-          const s1 = at(o1[0], o1[1], o1[2]) ? 1 : 0, s2 = at(o2[0], o2[1], o2[2]) ? 1 : 0;
-          o1[va] += cv ? 1 : -1; const s3 = at(o1[0], o1[1], o1[2]) ? 1 : 0;
-          ao[i] = (s1 && s2) ? 0 : 3 - (s1 + s2 + s3); }
-        if (ao[0] === ao[1] && ao[1] === ao[2] && ao[2] === ao[3]) mask[a * nv + b] = 1 + c + 256 * ao[0];
-        else emit(D, d, s, ua, va, ord, x, y, z, 1, 1, PAL[c], ao.slice());   // an AO gradient: keep the single face
-      }
-      for (let a = 0; a < nu; a++) for (let b = 0; b < nv;) {
-        const k = mask[a * nv + b]; if (!k) { b++; continue; }
-        let h = 1; while (b + h < nv && h < GREEDY_MAX && mask[a * nv + b + h] === k) h++;
-        let w = 1; grow: while (a + w < nu && w < GREEDY_MAX) { for (let t = 0; t < h; t++) if (mask[(a + w) * nv + b + t] !== k) break grow; w++; }
-        for (let i = 0; i < w; i++) for (let t = 0; t < h; t++) mask[(a + i) * nv + b + t] = 0;
-        const kk = k - 1, al = kk >> 8;
-        cell[d] = sl; cell[ua] = lo[ua] + a; cell[va] = lo[va] + b;
-        emit(D, d, s, ua, va, ord, cell[0], cell[1], cell[2], w, h, PAL[kk & 255], [al, al, al, al]);
-        b += h;
-      }
-    }
-  }
-  if (!nf) return null;
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(sP.slice(0, nf * 12), 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(sN.slice(0, nf * 12), 3, true));
-  g.setAttribute('color', new THREE.BufferAttribute(sC.slice(0, nf * 12), 3));
-  g.setIndex(new THREE.BufferAttribute(sI.slice(0, nf * 6), 1));
-  return g;
 }
 
 /* ---------- three.js scene: sky, sun, the meshes ---------- */
@@ -685,10 +487,10 @@ function init() {
   for (let i = 0; i < G.length; i++) if (G[i]) voxels++; for (let i = 0; i < HG.length; i++) if (HG[i]) voxels++;
   const CH = 32;
   for (let x = -OX; x < NX - OX; x += CH) for (let z = -OZ; z < NZ - OZ; z += CH) {
-    const g = meshGrid(get, [x, -4, z], [x + CH, 72, z + CH], -4); if (!g) continue;
+    const g = meshGrid(get, [x, -4, z], [x + CH, 72, z + CH], { palette: PAL, noBottomAt: -4 }); if (!g) continue;
     const m = new THREE.Mesh(g, mat); m.castShadow = m.receiveShadow = true; scene.add(m);
   }
-  const hm = new THREE.Mesh(meshGrid(hget, [-HW, 0, HZ0], [HW, HH, HZ1]), mat); hm.castShadow = hm.receiveShadow = true; hero.add(hm);
+  const hm = new THREE.Mesh(meshGrid(hget, heroGrid.min, heroGrid.max, { palette: PAL }), mat); hm.castShadow = hm.receiveShadow = true; hero.add(hm);
   // the house carries its own dabs when it flies: the box holds the roof overhang, the chimney and the porch
   painter.anchors = [{ object: hero, min: [-18.5, 0.05, -17.5], max: [18.5, heroInfo.ridge + 12, 27.5] }];
   controls.addEventListener('change', () => markDirty(false));

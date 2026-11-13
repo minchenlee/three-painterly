@@ -20,6 +20,7 @@ Both packages share one version number until the first public release.
 - Node tests for the stroke look (`test/strokes.test.js`); `test/api.html` compiles a look and switches looks.
 
 ### examples
+- New `examples/lib`: the voxel grid, palette and mesher (`voxels.js`) and a small-town kit (`town.js`), shared by `voxel-paris` and `balloon-house`. Both demos draw the same pixels as before. `npm test` runs its tests.
 - `examples/voxel-paris`: a Brush control in the Paint tab switches between oil strokes and pointillist dabs. The fire follows.
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
 - `examples/balloon-house`: balloons burst through a roof and carry a house off over a voxel street, in pointillist dabs. Roof and turf debris collide with the voxels. Balloons are pieces with their own velocity and launch time; bullet time is the drag; a displace hook gathers them into a bunch that follows the house. The house is an anchor.

@@ -55,6 +55,7 @@ python3 -m http.server     # or: npx serve .
 # http://localhost:8000/examples/paint-pulse/
 # http://localhost:8000/examples/lightspeed-ram/
 # http://localhost:8000/examples/balloon-house/
+# http://localhost:8000/examples/grande-jatte/
 ```
 
 `examples/voxel-paris` is a larger demo that uses both modules: a Paris street corner of about 5 million voxels, where 22 bursts along the street blow out the ground floor and chosen upper floors. Drag the time slider to scrub or rewind, change the time of day, and watch flying pieces turn into brush strokes. The Paint tab switches between oil strokes and pointillist dabs. It loads three.js from a CDN and builds the city in the browser (a few seconds on first load).
@@ -67,7 +68,9 @@ python3 -m http.server     # or: npx serve .
 
 `examples/balloon-house`: thousands of balloons burst through the roof of a wooden house and carry it off over its street, painted with the pointillist brush. Every balloon is one dab of one pigment. The street is a voxel grid like Voxel Paris, meshed with baked ambient occlusion: six houses, gardens, fences, trees, parked cars. The middle of the roof blows off and its shingles tumble down the slopes and onto the porch; at lift-off the turf around the house breaks loose. Both collide with the voxels. The balloons are BakedDebris pieces too; bullet time gives the drag, and a displace hook draws each one to its place in the bunch and moves the bunch with the house. The house is a PainterlyPass anchor, so it carries its dabs as it flies. All the houses are original designs. Controls: four views, time of day, and a Look switch between dabs, oil strokes and plain cubes.
 
-`examples/lib` holds what the voxel demos share. `voxels.js` has a palette, a dense grid and a mesher that bakes ambient occlusion and merges flat faces. `town.js` builds wooden houses, trees, fences, flower beds and cars from options. They are not part of either package. Voxel Paris uses the first; Balloon House uses both.
+`examples/grande-jatte`: Georges Seurat's *A Sunday on La Grande Jatte* (1884–86, public domain) paints itself. A blank canvas fills in patch by patch; then dabs leave the palette and land on trees, boats and some forty figures, back to front. Every dab is a BakedDebris piece whose clock runs backwards, so the moment it "launches" is the moment it arrives and becomes part of the scene. A displace hook carries it there. Afterwards the camera leaves Seurat's viewpoint and the picture turns out to have depth. `minStrokeWorld` makes the dots grow when you move in close. The composition follows the painting; the voxel figures are this demo's own.
+
+`examples/lib` holds what the voxel demos share. `voxels.js` has a palette, a dense grid, a mesher that bakes ambient occlusion and merges flat faces, and small sparse models that turn into BakedDebris pieces. `town.js` builds wooden houses, trees, fences, flower beds and cars from options. `people.js` builds figures, pets and boats of the 1880s. They are not part of either package.
 
 ## Use with your AI agent
 

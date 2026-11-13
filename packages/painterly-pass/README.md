@@ -108,6 +108,7 @@ All options are also writable properties (`painter.strokeSize = 10`). Unknown op
 | `sky` | `true` | Paint the background. |
 | `brush` | `null` | The brush (see Brushes). `null` = `impressionist()`. |
 | `anchors` | `[]` | Moving objects whose strokes ride with them (see Moving objects). At most 4. |
+| `minStrokeWorld` | `0` | Strokes are at least this big in world units. Far away they keep `strokeSize` pixels; move in close and they stop shrinking with you, so they grow on screen, like the dots of a painting you walk up to. 0 = off. |
 
 The table describes the default brush. Another brush can read an option in its own way; its section says how.
 

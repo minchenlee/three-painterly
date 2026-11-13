@@ -36,6 +36,7 @@ uniform mat4 uCamWorld;
 uniform mat4 uViewProj;
 uniform vec3 uCamPos;
 uniform float uPixAng;        // radians per paint-target pixel at the screen centre
+uniform float uMinCell;       // smallest cell in world units (the minStrokeWorld option)
 // ANCHORS (a #define, 0..4): moving objects whose marks ride with them (see the anchors option)
 #if ANCHORS > 0
 uniform mat4 uAnchor[ANCHORS];      // the object's matrixWorld
@@ -137,7 +138,7 @@ void main() {
     float seed = floor(a * 4.0 + 0.5) * 3.17 + float(axis) * 11.3;
     float baseAng = axis == 1 ? 0.3 : 1.35;   // walls: mostly upright strokes; floors: lying down
     // keep marks about uS pixels on screen: pick two power-of-two cell sizes and cross-fade
-    float ideal = max(uS * length(W - uCamPos) * uPixAng, 1e-4);
+    float ideal = max(uS * length(W - uCamPos) * uPixAng, uMinCell);   // marks never get smaller than uMinCell in the world: up close they grow on screen
     float lv = log2(ideal), k0 = floor(lv), f = smoothstep(0.35, 0.65, lv - k0);
     vec4 s0 = paintPlane(q, exp2(k0), axis, a, seed, baseAng, under);
     vec4 s1 = f > 0.01 ? paintPlane(q, exp2(k0 + 1.0), axis, a, seed + 5.0, baseAng, under) : s0;

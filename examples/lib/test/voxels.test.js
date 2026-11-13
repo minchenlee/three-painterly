@@ -1,7 +1,8 @@
 // The voxel tools shared by the examples. Runs in Node.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { h01, mulberry32, createPalette, createGrid, meshGrid, AOV } from '../voxels.js';
+import { h01, mulberry32, createPalette, createGrid, createModel, modelPieces, meshGrid, AOV } from '../voxels.js';
+import { peoplePalette, createPeople } from '../people.js';
 import { townPalette, createTown } from '../town.js';
 
 const palette = () => { const p = createPalette(); p.def('A B', 0xff0000, 0x00ff00); return p; };
@@ -87,6 +88,55 @@ test('mesher: emis adds an attribute and keeps unlike faces apart', () => {
   assert.equal(m.userData.faces, 2 + 4 * 2, 'each long side is two quads: lit and unlit');
   assert.equal(mesh(g, p, { emis, emisKey: () => 0 }).userData.faces, 6, 'one key: they merge again');
   assert.equal(mesh(g, p).getAttribute('emis'), undefined);
+});
+
+test('models: shapes fill cells; detail makes the same shape finer', () => {
+  const m = createModel();
+  m.ellipsoid(0, 0, 0, 1.2, 1.2, 1.2, 5);
+  assert.equal(m.cells.size, 7, 'a small ball is a cell and its six neighbours');
+  m.set(4, 0, 0, 2); m.set(4, 0, 0, 0);
+  assert.equal(m.get(4, 0, 0), 0, 'colour 0 removes a cell');
+  const rod = createModel(); rod.line([0, 0, 0], [5, 0, 0], 3);
+  assert.equal(rod.cells.size, 6);
+  const fine = createModel(2); fine.box(0, 1, 0, 0, 0, 0, 4);
+  assert.equal(fine.cells.size, 2 * 8, 'each unit is 2 x 2 x 2 voxels at detail 2');
+  const cap = createModel(); cap.dome(0, 0, 0, 4, 2, 6);
+  let top = -9; cap.each((x, y) => { top = Math.max(top, y); });
+  assert.equal(top, 2); assert.equal(cap.get(0, 2, 0), 6); assert.equal(cap.get(0, 0, 0), 0, 'open below');
+});
+
+test('modelPieces: only voxels that show, placed, turned and shaded', () => {
+  const p = palette(), m = createModel();
+  m.box(0, 2, 0, 2, 0, 2, p.C.A);                              // a 3 x 3 x 3 block: the middle one is buried
+  const pieces = modelPieces(m, { palette: p, origin: [10, 0, 0], size: 0.5 });
+  assert.equal(pieces.length, 26);
+  assert.ok(pieces.every(q => q.size === 0.5 && q.color === 0xff0000), 'a convex block is not darkened');
+  assert.deepEqual(pieces.find(q => q.cell.join() === '0,0,0').position, [10.25, 0.25, 0.25]);
+  const step = createModel(); step.box(0, 3, 0, 0, 0, 3, p.C.A); step.box(0, 3, 1, 1, 0, 0, p.C.A);
+  assert.ok(modelPieces(step, { palette: p }).some(q => q.color !== 0xff0000), 'a floor next to a wall is darkened');
+  assert.ok(modelPieces(step, { palette: p, ao: false }).every(q => q.color === 0xff0000));
+  const one = createModel(); one.set(3, 0, 1, p.C.B);
+  const where = turn => modelPieces(one, { palette: p, turn })[0].position.map(v => v - 0.5);
+  assert.deepEqual([where(0), where(1), where(2), where(3)], [[3, 0, 1], [-1, 0, 3], [-3, 0, -1], [1, 0, -3]], 'quarter turns about y');
+  assert.deepEqual(modelPieces(one, { palette: p, mirror: true })[0].position.map(v => v - 0.5), [3, 0, -1]);
+  const fine = createModel(2); fine.set(0, 0, 0, p.C.A);
+  const fp = modelPieces(fine, { palette: p, size: 1 });
+  assert.equal(fp.length, 8); assert.equal(fp[0].size, 0.5, 'detail 2 halves the pieces and keeps the size in the world');
+});
+
+test('people: every builder gives a figure of a sensible height, the same every time', () => {
+  const p = createPalette(); peoplePalette(p.def);
+  const kit = createPeople(p.C, 1), height = m => { let top = 0; m.each((x, y) => { top = Math.max(top, y + 1); }); return top; };
+  const adult = kit.gent({}), lady = kit.lady({ parasol: p.C.BLACK });
+  assert.ok(height(adult) >= 20 && height(adult) <= 24, `a man with a top hat: ${height(adult)} voxels`);
+  assert.ok(height(lady) > height(kit.lady({})), 'a parasol is taller than its owner');
+  assert.ok(height(kit.seatedLady({})) <= 15 && height(kit.child({})) < height(adult) && height(kit.reclining({})) < 11);
+  for (const name of ['lady', 'gent', 'seatedLady', 'seatedGent', 'reclining', 'child', 'dog', 'monkey', 'sailboat', 'steamer', 'scull']) {
+    const a = kit[name]({}), b = kit[name]({}); let low = 99; a.each((x, y) => { low = Math.min(low, y); });
+    assert.ok(a.cells.size > 20, name); assert.equal(low, 0, `${name} stands on y = 0`);
+    assert.deepEqual([...a.cells], [...b.cells], `${name} builds the same twice`);
+  }
+  assert.ok(createPeople(p.C, 2).gent({}).cells.size > 4 * adult.cells.size, 'detail 2 has about eight times the voxels');
 });
 
 test('town kit: a house builds the same every time and fits its numbers', () => {

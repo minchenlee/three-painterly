@@ -50,6 +50,7 @@ export class PainterlyPass extends Pass {
     sky: true,              // paint the background too
     brush: null,            // the kind of mark and its colours: impressionist() (the default) or pointillist()
     anchors: [],            // moving objects whose marks ride with them: [{ object, min, max }], at most 4
+    minStrokeWorld: 0,      // strokes are at least this big in world units: move in close and they grow on screen (0 = off)
   };
 
   constructor(scene, camera, options = {}) {
@@ -63,7 +64,7 @@ export class PainterlyPass extends Pass {
       uJitter: { value: 0.07 }, uCanvas: { value: 0.035 }, uLength: { value: 1 }, uWidth: { value: 1 }, uReach: { value: 2 },
       uContrast: { value: 1.1 }, uSky: { value: true },
       uInvProj: { value: new Matrix4() }, uCamWorld: { value: new Matrix4() }, uViewProj: { value: new Matrix4() },
-      uCamPos: { value: new Vector3() }, uPixAng: { value: 0.001 },
+      uCamPos: { value: new Vector3() }, uPixAng: { value: 0.001 }, uMinCell: { value: 1e-4 },
       uAnchor: { value: [] }, uAnchorInv: { value: [] }, uAnchorMin: { value: [] }, uAnchorMax: { value: [] },
     };
     for (let i = 0; i < MAX_ANCHORS; i++) { const u = this._uniforms; u.uAnchor.value.push(new Matrix4()); u.uAnchorInv.value.push(new Matrix4()); u.uAnchorMin.value.push(new Vector3()); u.uAnchorMax.value.push(new Vector3()); }
@@ -161,6 +162,7 @@ export class PainterlyPass extends Pass {
     u.uReach.value = search === 7 ? Math.min(reach, 3) : reach;   // also the early-out radius
     u.uContrast.value = this.contrast;
     u.uSky.value = this.sky;
+    u.uMinCell.value = Math.max(1e-4, this.minStrokeWorld || 0);   // 1e-4: the floor the shader always had
     // Anchors: pixels inside an anchor's box (in the object's own space) get their marks laid in that space.
     const anchors = this.anchors || [], n = Math.min(anchors.length, MAX_ANCHORS);
     if (anchors.length > MAX_ANCHORS && !this._warnedAnchors) { console.warn(`PainterlyPass: only the first ${MAX_ANCHORS} anchors are used`); this._warnedAnchors = true; }

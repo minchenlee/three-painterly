@@ -10,6 +10,7 @@ Both packages share one version number until the first public release.
 - `pointillist()` paints round dabs of divided colour: one pigment per dab, mixed only with white. It tests 3×3 cells per pixel at the default dab size.
 - A brush is a plain object (`{ glsl, uniforms, reach, search }`). Writing your own is lower-level and may change.
 - New `anchors` option: `[{ object, min, max }]`. Strokes inside the box of an anchor are laid in the object's own space, so a moving object carries its strokes. Up to 4. Without anchors the shader and its output are unchanged.
+- New `minStrokeWorld` option: strokes are at least this big in world units, so they grow on screen when the camera moves in close. 0 (the default) keeps the output unchanged.
 - A brush can carry a `flying` part: the same mark for BakedDebris strokes. `pointillist()` has one: round dabs, one pigment each; a fast piece draws a trail of up to three (`trail` option).
 - Node tests for the brush plumbing (`packages/painterly-pass/test`).
 
@@ -20,6 +21,8 @@ Both packages share one version number until the first public release.
 - Node tests for the stroke look (`test/strokes.test.js`); `test/api.html` compiles a look and switches looks.
 
 ### examples
+- `examples/grande-jatte`: Seurat's *A Sunday on La Grande Jatte* paints itself in pointillist dabs, then lets you walk in. Dabs are BakedDebris pieces on a clock that runs backwards.
+- `examples/lib`: small sparse models (`createModel`, `modelPieces`) in `voxels.js`, and a new `people.js` (figures, pets and boats of the 1880s).
 - New `examples/lib`: the voxel grid, palette and mesher (`voxels.js`) and a small-town kit (`town.js`), shared by `voxel-paris` and `balloon-house`. Both demos draw the same pixels as before. `npm test` runs its tests.
 - `examples/voxel-paris`: a Brush control in the Paint tab switches between oil strokes and pointillist dabs. The fire follows.
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.

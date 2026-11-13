@@ -88,6 +88,8 @@ export interface PainterlyPassOptions {
   brush?: PainterlyBrush | null;
   /** Moving objects whose marks ride with them; at most 4. Default []. */
   anchors?: PainterlyAnchor[];
+  /** Strokes are at least this big in world units, so they grow on screen when the camera moves in close. 0 = off. Default 0. */
+  minStrokeWorld?: number;
 }
 
 /**
@@ -120,6 +122,7 @@ export class PainterlyPass extends Pass implements Required<PainterlyPassOptions
   get brush(): PainterlyBrush;
   set brush(value: PainterlyBrush | null | undefined);
   anchors: PainterlyAnchor[];
+  minStrokeWorld: number;
 
   /** HDR scene colour + depth texture at the paint resolution; null until the first render. */
   sceneTarget: WebGLRenderTarget | null;

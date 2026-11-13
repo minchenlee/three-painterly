@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sunday Afternoon</title>
+<style>
+/* layout: a full-window canvas with one control panel (bottom left; a bottom sheet on phones) */
+:root {
+  --bg: #efe8d6; --panel: rgba(255, 255, 255, 0.92); --ink: #17191c; --muted: #6b7178; --line: rgba(0, 0, 0, 0.09);
+  --soft: rgba(0, 0, 0, 0.05); --accent: #17191c; --accent-ink: #ffffff;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --panel: rgba(22, 24, 34, 0.9); --ink: #eceef0; --muted: #969ca6; --line: rgba(255, 255, 255, 0.1);
+  --soft: rgba(255, 255, 255, 0.07); --accent: #eceef0; --accent-ink: #15171a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --panel: rgba(22, 24, 34, 0.9); --ink: #eceef0; --muted: #969ca6; --line: rgba(255, 255, 255, 0.1);
+  --soft: rgba(255, 255, 255, 0.07); --accent: #eceef0; --accent-ink: #15171a; color-scheme: dark }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#ui { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 290px; max-height: calc(100% - 32px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 12px;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25); }
+#ui::-webkit-scrollbar { display: none; }
+@media (max-width: 600px) {
+  #ui { left: 0; right: 0; bottom: 0; width: auto; max-height: 56%; border-width: 1px 0 0; border-radius: 16px 16px 0 0;
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  header p { display: none; }
+}
+header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); }
+.grp { display: grid; gap: 8px; }
+.lab { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
+.lab output { color: var(--ink); font-variant-numeric: tabular-nums; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row .lab { flex: 1; }
+button { font: inherit; color: var(--ink); background: var(--soft); border: 1px solid transparent; border-radius: 8px; padding: 5px 10px;
+  cursor: pointer; min-height: 30px; }
+button:hover { border-color: var(--line); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); min-width: 80px; font-weight: 500; }
+.seg { display: inline-flex; background: var(--soft); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { background: transparent; min-height: 26px; padding: 3px 9px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
+details > summary { cursor: pointer; color: var(--muted); list-style-position: inside; }
+details[open] > summary { margin-bottom: 8px; }
+.meta { margin: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.foot button { background: transparent; padding: 0; min-height: 0; color: var(--muted); }
+.foot button:hover { color: var(--ink); border-color: transparent; }
+#bShow { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+#liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+  padding: 3px 9px; border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 12px; }
+html[data-ui-hidden] #liteNote { display: none !important; }
+#status { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--ink); font-size: 14px; z-index: 5; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="liteNote" hidden>Lite mode · coarser figures</div>
+<div id="status" role="status">Mixing colours…</div>
+<button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
+
+<div id="ui">
+  <header>
+    <h1>Sunday Afternoon</h1>
+    <p>Georges Seurat's <i>A Sunday on La Grande Jatte</i> (1884–86) paints itself, dab by dab, then lets you walk in. Move close to see the dots.</p>
+  </header>
+
+  <div class="grp">
+    <div class="lab"><span>Time</span><output id="tOut">0.0 / 40.0 s</output></div>
+    <input type="range" id="time" min="0" max="1000" value="0" aria-label="Time">
+    <div class="row">
+      <button type="button" id="bStart" title="Back to the blank canvas" aria-label="Back to the blank canvas">⏮</button>
+      <button type="button" id="bRev">◀ Reverse</button>
+      <button type="button" id="bPlay" class="primary">❚❚ Pause</button>
+    </div>
+    <div class="row"><span class="lab">Speed</span>
+      <div class="seg" role="group" aria-label="Playback speed" id="speeds">
+        <button type="button" data-s="0.25" aria-pressed="false">¼×</button>
+        <button type="button" data-s="1" aria-pressed="true">1×</button>
+        <button type="button" data-s="2" aria-pressed="false">2×</button>
+        <button type="button" data-s="4" aria-pressed="false">4×</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grp">
+    <div class="row"><span class="lab">View</span>
+      <div class="seg" role="group" aria-label="View" id="shots">
+        <button type="button" data-shot="painting" aria-pressed="true" title="As Seurat framed it (1)">Painting</button>
+        <button type="button" data-shot="walk" aria-pressed="false" title="Among the figures (2)">Walk in</button>
+        <button type="button" data-shot="close" aria-pressed="false" title="Close enough to see the dots (3)">Up close</button>
+        <button type="button" data-shot="above" aria-pressed="false" title="Over the island (4)">Above</button>
+      </div>
+    </div>
+    <div class="row"><span class="lab">Look</span>
+      <div class="seg" role="group" aria-label="Look" id="looks">
+        <button type="button" data-look="dabs" aria-pressed="true" title="Pointillist dabs (B switches)">Dabs</button>
+        <button type="button" data-look="oil" aria-pressed="false" title="Impressionist oil strokes">Oil</button>
+        <button type="button" data-look="cubes" aria-pressed="false" title="The plain voxel scene (P)">Cubes</button>
+      </div>
+    </div>
+    <details id="more" open>
+      <summary>Brush</summary>
+      <div class="grp">
+        <div class="lab"><span>Dot size on the canvas</span><output id="wOut">3.0 cm</output></div>
+        <input type="range" id="world" min="0" max="8" step="0.5" value="3" aria-label="Dot size on the canvas">
+        <div class="lab"><span>Dab size from afar</span><output id="szOut">5 px</output></div>
+        <input type="range" id="size" min="3" max="14" step="1" value="5" aria-label="Dab size from afar">
+        <div class="lab"><span>Pigment purity</span><output id="puOut">0.80</output></div>
+        <input type="range" id="purity" min="0" max="1" step="0.05" value="0.8" aria-label="Pigment purity">
+      </div>
+    </details>
+  </div>
+
+  <div class="foot"><p class="meta" id="stat"></p><button type="button" id="bHide" title="Hide the panel (H)">Hide</button></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PainterlyPass, impressionist, pointillist } from '../../packages/painterly-pass/src/index.js';
+import { BakedDebris } from '../../packages/baked-debris/src/index.js';
+import { h01, mulberry32, createPalette, createModel, modelPieces } from '../lib/voxels.js';
+import { peoplePalette, createPeople } from '../lib/people.js';
+
+addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
+const $ = id => document.getElementById(id);
+const QS = new URLSearchParams(location.search);
+// lite mode (phones, narrow windows): pixel ratio 1, figures at half the detail, 2048 shadows, a smaller painting. ?full=1 turns it off, ?lite=1 forces it.
+const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
+$('liteNote').hidden = !LITE;
+const NARROW = innerWidth <= 600, PORTRAIT = innerWidth / innerHeight < 0.8;
+$('more').open = !NARROW;
+// The picture is built by T_BUILD; then the camera leaves Seurat's viewpoint and the scene turns out to have depth.
+const T_BUILD = 31, T_END = 40, FLIGHT = 1.5;
+const rnd = mulberry32(1884), R = (a, b) => a + (b - a) * rnd();
+
+/* ---------- palette, people, trees (../lib) ---------- */
+const palette = createPalette(), { C, def } = palette;
+peoplePalette(def);
+def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0x6a5a66, 0x7a6872, 0x3f7a3c, 0x4f8f45, 0x35683a, 0x6aa24e, 0x86b455);
+const people = createPeople(C, LITE ? 1 : 2), far = createPeople(C, 1);   // far figures and boats need no fine detail
+// A tree on 20 cm voxels: a trunk that leans a little, three boughs, a lumpy crown.
+function tree(h, r, lean, seed, tr) {                            // h, r in voxels; tr: radius of the trunk
+  const m = createModel(1), top = [lean, h, 0], L = [C.LEAF1, C.LEAF2, C.LEAF3, C.LEAF4, C.LEAF5];
+  m.line([0, 0, 0], [lean * 0.6, h * 0.6, 0], C.TRUNK, tr); m.line([lean * 0.6, h * 0.6, 0], top, C.TRUNK2, tr * 0.8);
+  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) m.line([lean * 0.6, h * 0.62, 0], [lean + dx * r * 0.6, h + r * 0.15, dz * r * 0.6], C.TRUNK2, tr * 0.6);
+  const cy = h + r * 0.45;
+  for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let c = -r; c <= r; c++) {
+    const d = Math.hypot(a, b * 1.3, c) / r + (h01(a + seed >> 1, b >> 1, c >> 1) - 0.5) * 0.5;
+    if (d <= 1) m.set(lean + a, Math.round(cy) + b, c, L[Math.floor(h01(a >> 1, b + seed, c >> 1) * 5)]);
+  }
+  return m;
+}
+const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C.OCHRE], [4, 5, -1, C.ROSE], [3, 5, 1, C.WHITEW], [4, 3, 0, C.GREEND]]) m.set(x, y, z, c); return m; };
+
+/* ---------- the cast: [model, x, z, quarter turns (0 faces right, 2 faces the river, 1 faces us), when its dabs start, how long they take, voxel size] ----------
+   The bank runs from the left edge of the picture into the distance; the river is to its left. Back to front, as a painter would work. */
+const bankX = z => -5.0 + 0.079 * z;                             // from the picture: the bank enters at the left edge, half way up, and runs to the horizon
+const cast = [];
+const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, start, dur, size });
+// boats
+add(far.sailboat(), -17, -50, 1, 5.0, 1.6, 0.1); add(far.steamer(), -14, -34, 3, 5.6, 2.0, 0.1); add(far.sailboat(), -12.5, -22, 1, 6.4, 1.8, 0.11); add(far.scull(), -9.5, -12, 1, 7.4, 1.6, 0.1);
+// trees: the far rows first, then the ones that frame the picture, last the two behind us that shade the foreground
+// [x, z, height of the trunk (m), radius of the crown (m), lean, start, voxel size]: coarse leaves far away and off the picture
+for (const [x, z, h, r, lean, t, v] of [[-3, -62, 4.4, 3.2, 1, 6.0, 0.4], [7, -56, 4.8, 3.4, -1, 6.3, 0.4], [0, -50, 4.4, 3.0, 0, 6.6, 0.4], [14, -46, 5.2, 3.6, 1, 6.9, 0.4], [4, -39, 4.4, 3.0, 1, 7.2, 0.4], [-2.5, -34, 4.0, 2.6, -1, 7.5, 0.4], [9.5, -30, 4.8, 3.2, 0, 7.8, 0.4],
+  [12.5, -20, 6.0, 3.4, -1, 8.2, 0.3], [8.6, -8, 8.0, 4.2, -2, 9.0, 0.3], [2.9, -11.5, 6.6, 3.0, 1, 9.8, 0.3], [-2.2, -5.2, 7.6, 2.6, -1, 10.6, 0.3], [5.7, -1.4, 9.0, 4.4, 1, 11.4, 0.3], [8.5, 10, 7.6, 5.0, -2, 12.4, 0.45], [12.5, 6.5, 7.0, 4.8, 1, 12.8, 0.45]])
+  add(tree(Math.round(h / v), Math.round(r / v), lean, cast.length * 7, Math.max(0.6, 0.2 / v)), x, z, 0, t, 2.4, v);
+// far figures, small in the distance
+add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 0.9, -21, 1, 13.0, 1.0); add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 1.6, -21.3, 1, 13.3, 1.0);
+add(far.lady({ dress: C.ROSE, bodice: C.RED, parasol: C.CREAMW }), -1.6, -27, 2, 13.6, 1.0); add(far.gent({ cane: true }), -0.9, -27.3, 2, 13.8, 1.0);
+add(far.lady({ dress: C.OCHRE, bodice: C.BROWN, bustle: false, parasol: C.RED }), 4.2, -31, 0, 14.0, 1.0); add(far.seatedLady({ dress: C.SKYBLUE, bodice: C.BLUE, hatC: C.OCHRE }), 6.2, -18.5, 2, 14.2, 0.9);
+add(far.gent({ coat: C.BROWN, hat: 'boater', hatC: C.OCHRE, cane: true }), 8.2, -24.5, 2, 14.4, 1.0); add(far.seatedLady({ dress: C.VIOLET, bodice: C.PLUMD, hat: 'boater', hatC: C.CREAMW }), -3.0, -19, 2, 14.6, 0.9);
+add(far.child({ dress: C.RED }), -1.2, -16.4, 2, 14.8, 0.8); add(far.seatedGent({ coat: C.COAT, hat: 'boater', hatC: C.OCHRE, cane: false }), 2.2, -15.5, 2, 15.0, 0.9);
+// the middle ground
+add(people.gent({ coat: C.BROWN, trousers: C.GREY, hat: 'boater', hatC: C.OCHRE, horn: true, tails: false }), -4.4, -13.2, 2, 15.6, 1.3);
+add(people.child({ dress: C.ORANGE, hat: null, running: true }), 4.7, -12.6, 0, 16.2, 1.1);
+add(people.gent({ coat: C.COAT, trousers: C.GREY, cane: true }), 3.5, -8.6, 2, 16.8, 1.3); add(people.lady({ dress: C.NAVY, bodice: C.BLUE, parasol: C.ORANGE, hatC: C.OCHRE }), 4.4, -9.4, 2, 17.3, 1.4);
+add(people.lady({ dress: C.ORANGE, bodice: C.OCHRE, bustle: false, hat: 'boater', hatC: C.CREAMW, rod: true }), -5.2, -7.0, 2, 18.0, 1.4); add(people.seatedLady({ dress: C.RED, bodice: C.BROWN, hat: 'boater', hatC: C.OCHRE }), -4.3, -6.2, 2, 18.5, 1.2);
+add(people.seatedLady({ dress: C.SKYBLUE, bodice: C.BLUE, hatC: C.CREAMW, parasol: C.BLUE }), -2.4, -7.6, 2, 19.0, 1.3);
+add(people.lady({ dress: C.ROSE, bodice: C.RED, bustle: false, hat: 'boater', hatC: C.OCHRE, parasol: C.RED }), 0.5, -5.6, 1, 19.8, 1.6); add(people.child({ dress: C.WHITEW }), -0.35, -5.3, 1, 20.6, 1.1);   // the only two who face us
+add(people.seatedLady({ dress: C.GREYLT, bodice: C.GREY, hatC: C.WHITEW }), -3.0, -3.5, 3, 21.4, 1.2); add(people.seatedLady({ dress: C.PLUMD, bodice: C.COAT, hatC: C.RED, parasol: C.OCHRE }), -3.9, -3.2, 3, 21.8, 1.3);
+add(bouquet(people.seatedLady({ dress: C.ROSE, bodice: C.CREAMW, hat: 'boater', hatC: C.OCHRE })), 1.9, -2.1, 2, 22.4, 1.3);
+// the foreground, in the shade
+add(people.seatedGent({ coat: C.GREY, trousers: C.GREYLT, cane: true }), -0.7, 1.0, 2, 23.2, 1.3); add(people.seatedLady({ dress: C.NAVY, bodice: C.COAT, hatC: C.RED, sewing: true }), -1.6, 1.3, 2, 23.8, 1.3);
+add(people.reclining({}), -1.7, 2.7, 2, 24.6, 1.5); add(people.dog({ sniff: true }), 0.2, 4.1, 0, 25.6, 1.0);
+add(people.gent({ cane: true }), 3.0, 4.6, 2, 26.2, 1.8); add(people.lady({ parasol: C.BLACK, hatC: C.BLACK }), 2.3, 5.1, 2, 27.0, 2.2);
+add(people.monkey({}), 1.5, 5.3, 2, 29.0, 0.8); add(people.dog({ c: C.TAN, size: 0.55 }), 1.0, 4.4, 2, 29.5, 0.8);
+
+/* ---------- pieces: every voxel that shows a face. The debris clock runs backwards, so "launch" is the moment a dab arrives ---------- */
+const pieces = [];
+for (const o of cast) {
+  const list = modelPieces(o.model, { palette, origin: [o.x, 0, o.z], size: o.size, turn: o.turn });
+  let top = 1; for (const p of list) top = Math.max(top, p.cell[1]);
+  for (const p of list) {                                        // from the ground up, a little out of order
+    const arrive = o.start + o.dur * (0.75 * p.cell[1] / top + 0.25 * rnd());
+    pieces.push({ position: p.position, size: p.size, color: p.color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, spin: 0 });
+  }
+}
+
+/* ---------- scene ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: !LITE, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 1.5));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.8;
+const scene = new THREE.Scene();
+const CANVAS = new THREE.Color(0xf1e9d6);
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 600);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 0.6; controls.maxDistance = 90; controls.maxPolarAngle = Math.PI * 0.495;
+scene.add(new THREE.HemisphereLight(0xd6e6ff, 0xa9b86a, 1.7));   // plenty of sky light: the shade in this picture is full of colour
+const sun = new THREE.DirectionalLight(0xfff1d6, 3.0), sunDir = new THREE.Vector3(0.62, 0.55, 0.35).normalize();   // a late afternoon; two trees behind us shade the foreground
+sun.position.copy(sunDir).multiplyScalar(120).add(new THREE.Vector3(0, 0, -25)); sun.target.position.set(0, 0, -25);
+sun.castShadow = true; sun.shadow.mapSize.setScalar(LITE ? 2048 : 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 10, far: 260 });
+scene.add(sun, sun.target);
+
+// A blank canvas that fills in. Each 25 cm patch of a surface turns from canvas to its colour at its own moment:
+// `delay` is GLSL for the second a spot starts (from wp, its world position), and noise spreads the patches over 1.6 s.
+const revealU = { uT: { value: 0 }, uCanvas: { value: CANVAS.clone().multiplyScalar(1.25) } };
+function revealing(mat, delay) {
+  mat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, revealU);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <project_vertex>', `#include <project_vertex>
+      vec4 rwp = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+        rwp = instanceMatrix * rwp;
+      #endif
+      vWp = (modelMatrix * rwp).xyz;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vWp; uniform float uT; uniform vec3 uCanvas; float rv = 1.0;
+      float rh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      { vec3 wp = vWp; rv = clamp((uT - (${delay}) - rh(floor(wp.xz * 4.0)) * 1.6) * 5.0, 0.0, 1.0); diffuseColor.rgb *= rv; }`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uCanvas * (1.0 - rv);');
+  };
+  mat.customProgramCacheKey = () => 'reveal|' + delay;
+  return mat;
+}
+const SWEEP = 'clamp((wp.z + 90.0) / 104.0, 0.0, 1.0)';           // 0 at the horizon, 1 at our feet
+{
+  // the lawn: the island's bank, receding to the right of the river
+  const shape = new THREE.Shape([[bankX(16), -16], [70, -16], [70, 92], [bankX(-92), 92]].map(([x, z]) => new THREE.Vector2(x, z)));
+  const lawn = new THREE.Mesh(new THREE.ShapeGeometry(shape), revealing(new THREE.MeshStandardMaterial({ color: 0x8cab4c, roughness: 1 }), `2.6 + 4.2 * ${SWEEP}`));
+  lawn.rotation.x = Math.PI / 2; lawn.scale.y = -1; lawn.receiveShadow = true; scene.add(lawn);   // the shape's y becomes -z
+  lawn.material.side = THREE.DoubleSide;
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0x8fb2d6, roughness: 0.35 }), `1.6 + 3.4 * ${SWEEP}`));
+  river.rotation.x = -Math.PI / 2; river.position.set(-60, -0.3, -38); river.receiveShadow = true; scene.add(river);
+  // the far bank, its white wall and houses, and a line of trees at the horizon: plain boxes, washed in with the rest
+  const list = [], box = (x, y, z, sx, sy, sz, c) => list.push([x, y, z, sx, sy, sz, c]);
+  box(-95, 0.1, -40, 70, 0.9, 130, 0x7c9a4a); box(-60.2, 1.2, -40, 0.6, 1.6, 120, 0xf0ead8);
+  for (let i = 0; i < 26; i++) { const z = -100 + i * 5.2 + R(-1, 1), k = R(0.8, 1.4); box(-66 - R(0, 10), 3.6 * k, z, 5 * k, 6 * k, 5 * k, [0x4f8a45, 0x3f7a3c, 0x5f9a4c][i % 3]); }
+  for (const [z, w, h] of [[-12, 6, 4], [-30, 8, 5], [-52, 5, 4], [-70, 7, 5]]) { box(-64, h / 2 + 0.5, z, w, h, w, 0xf2ecdc); box(-64, h + 1.1, z, w + 0.6, 1.2, w + 0.6, 0xb5553d); }
+  for (let i = 0; i < 30; i++) { const x = -50 + i * 4.2, k = R(0.8, 1.5); box(x, 4 * k, -92 - R(0, 8), 6 * k, 8 * k, 6 * k, [0x4f8a45, 0x3f7a3c, 0x5f9a4c][i % 3]); }
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), revealing(new THREE.MeshStandardMaterial({ roughness: 1 }), `1.0 + 3.0 * ${SWEEP}`), list.length);
+  const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S3 = new THREE.Vector3(), col = new THREE.Color();
+  list.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
+  scene.add(inst);
+}
+// the sky: a dome that writes no depth, so the painter treats it as sky; it washes in first
+const skyU = { uT: revealU.uT, uCanvas: { value: CANVAS } };
+{
+  const g = new THREE.SphereGeometry(400, 32, 16), col = [], p = g.attributes.position, zen = new THREE.Color(0x4f86cc), hor = new THREE.Color(0xbcd8ee), c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) { c.copy(hor).lerp(zen, Math.pow(Math.max(0, p.getY(i) / 400), 0.45)); col.push(c.r, c.g, c.b); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  scene.add(new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, vertexColors: true, uniforms: skyU,
+    vertexShader: 'varying vec3 vC; void main() { vC = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying vec3 vC; uniform float uT; uniform vec3 uCanvas; void main() { gl_FragColor = vec4(mix(uCanvas, vC, smoothstep(0.4, 3.2, uT)), 1.0); }' })));
+}
+
+/* ---------- the dabs: BakedDebris pieces that do not fly by themselves; a displace hook carries each from the palette to its place ---------- */
+const BRUSH = new THREE.Vector3(0.7, 0.35, 9.2);                   // where the dabs leave from: just below Seurat's viewpoint
+const boom = new BakedDebris({
+  pieces, bursts: [], gravity: 0, ground: null, killY: -1e6, duration: 0.2, step: 1 / 30, pieceSize: 0.085,
+  material: new THREE.MeshStandardMaterial({ roughness: 0.95 }),
+  displace: { uniforms: { uBrush: { value: BRUSH }, uFlight: { value: FLIGHT } },
+    glsl: /* glsl */`
+      uniform vec3 uBrush; uniform float uFlight;
+      float bh(float n) { return fract(sin(n) * 43758.5453); }
+      vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+        if (d.local <= 0.0) return vec3(0.0);                      // the clock runs backwards: not launched = it has arrived, and is part of the scene
+        float s = d.local / uFlight, i = d.index;
+        if (s >= 1.0) return vec3(0.0, -300.0, 0.0);               // still on the palette, out of sight
+        vec3 from = uBrush + (vec3(bh(i * 1.3), bh(i * 2.1), bh(i * 3.7)) - 0.5) * vec3(1.6, 0.4, 0.8);
+        vec3 way = from - p;
+        vec3 arc = vec3(sin(i * 7.1), 1.6 + bh(i * 5.9), cos(i * 3.3)) * (0.5 + 0.06 * length(way));   // each dab takes its own curve
+        return way * s * s + arc * sin(3.14159 * s);               // s * s: it slows down as it lands
+      }` },
+});
+boom.mesh.frustumCulled = false; scene.add(boom.mesh);
+
+/* ---------- painting ---------- */
+const brushes = { dabs: pointillist({ purity: 0.8, hueSpread: 0.06 }), oil: impressionist() };
+const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 5, saturation: 1.15, exposure: 0.8, shadowAmount: 0.4, minStrokeWorld: 0.03, resolutionScale: LITE ? 0.6 : 0.75 });
+let look = 'dabs', dirty = 2, shadowDirty = true;
+const markDirty = shadows => { dirty = 2; if (shadows) shadowDirty = true; };
+function setLook(name) {
+  look = name;
+  for (const b of $('looks').children) b.setAttribute('aria-pressed', String(b.dataset.look === name));
+  if (name === 'cubes') boom.removeStrokes();
+  else {
+    painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 1.15 : 1.3;
+    if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, strokeScale: 1.7, maxWidth: 15, jitter: 0.1 }));   // a positive look-ahead: the clock runs backwards
+  }
+  $('purity').disabled = name !== 'dabs'; markDirty(false);
+}
+
+/* ---------- camera: Seurat's viewpoint while the picture builds, then a slow walk to the side; a drag takes over ---------- */
+const SHOTS = {
+  painting: [[0.8, 1.7, 9.6], [0.5, 0.36, -6.4], 40], walk: [[9.5, 2.6, 8.5], [0.2, 1.2, -3], 42], close: [[0.5, 1.6, 6.5], [2.3, 1.45, 5.1], 30], above: [[16, 24, 22], [-2, 0, -10], 40],
+};
+if (PORTRAIT) SHOTS.painting = [[1.1, 1.8, 13.5], [1.1, -2.4, -6.4], 48];   // a tall window holds the right half of the picture; it looks down so the figures clear the panel   // a tall window: step back to keep the width of the picture
+let auto = true, shot = 'painting';
+const camA = new THREE.Vector3(), camB = new THREE.Vector3(), tarA = new THREE.Vector3(), tarB = new THREE.Vector3();
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function setShot(name) { shot = name; auto = name === 'painting'; const [p, t, fov] = SHOTS[name]; camera.position.set(...p); controls.target.set(...t); camera.fov = fov; camera.updateProjectionMatrix();
+  for (const b of $('shots').children) b.setAttribute('aria-pressed', String(b.dataset.shot === name)); markDirty(false); }
+controls.addEventListener('start', () => { auto = false; for (const b of $('shots').children) b.setAttribute('aria-pressed', 'false'); });
+
+/* ---------- time: everything is a function of t ---------- */
+const play = { t: 0, dir: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1, speed: 1 };
+if (!play.dir) play.t = T_BUILD;                                 // the finished picture
+let lastT = -1;
+function applyTime(t) {
+  revealU.uT.value = t; boom.setTime(T_END - t);
+  if (auto) {                                                     // after the last dab: leave the frame, and the picture gains depth
+    const e = smooth(T_BUILD + 1, T_END - 1, t), [p0, t0, f0] = SHOTS.painting, [p1, t1, f1] = SHOTS.walk;
+    camera.position.copy(camA.set(...p0).lerp(camB.set(...p1), e)); controls.target.copy(tarA.set(...t0).lerp(tarB.set(...t1), e));
+    camera.fov = f0 + (f1 - f0) * e; camera.updateProjectionMatrix();
+  }
+  if (t !== lastT) { lastT = t; markDirty(true); }
+}
+function syncUI() {
+  $('time').value = play.t / T_END * 1000; $('tOut').textContent = `${play.t.toFixed(1)} / ${T_END.toFixed(1)} s`;
+  $('bPlay').textContent = play.dir === 1 ? '❚❚ Pause' : '▶ Play'; $('bRev').textContent = play.dir === -1 ? '❚❚ Pause' : '◀ Reverse';
+}
+$('time').oninput = e => { play.t = e.target.value / 1000 * T_END; play.dir = 0; syncUI(); markDirty(true); };
+$('bPlay').onclick = () => { if (play.dir !== 1 && play.t >= T_END) play.t = 0; play.dir = play.dir === 1 ? 0 : 1; syncUI(); };
+$('bRev').onclick = () => { if (play.dir !== -1 && play.t <= 0) play.t = T_END; play.dir = play.dir === -1 ? 0 : -1; syncUI(); };
+$('bStart').onclick = () => { play.t = 0; syncUI(); markDirty(true); };
+function setSpeed(s) { play.speed = s; for (const b of $('speeds').children) b.setAttribute('aria-pressed', String(+b.dataset.s === s)); }
+for (const b of $('speeds').children) b.onclick = () => setSpeed(+b.dataset.s);
+for (const b of $('looks').children) b.onclick = () => setLook(b.dataset.look);
+for (const b of $('shots').children) b.onclick = () => setShot(b.dataset.shot);
+$('world').oninput = e => { painter.minStrokeWorld = +e.target.value / 100; $('wOut').textContent = +e.target.value ? `${(+e.target.value).toFixed(1)} cm` : 'off'; markDirty(false); };
+$('size').oninput = e => { painter.strokeSize = +e.target.value; $('szOut').textContent = `${e.target.value} px`; markDirty(false); };
+$('purity').oninput = e => { brushes.dabs.uniforms.uPurity.value = +e.target.value; $('puOut').textContent = (+e.target.value).toFixed(2); markDirty(false); };
+function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey; document.documentElement.toggleAttribute('data-ui-hidden', !show); resize(); }
+$('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.code === 'Space' && e.target.tagName !== 'BUTTON') { e.preventDefault(); $('bPlay').click(); return; }
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); play.t = Math.min(T_END, Math.max(0, play.t + (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 0.25))); play.dir = 0; syncUI(); markDirty(true); return; }
+  switch (e.code) {
+    case 'KeyR': $('bRev').click(); break;
+    case 'Digit0': case 'Home': $('bStart').click(); break;
+    case 'Digit1': setShot('painting'); break; case 'Digit2': setShot('walk'); break; case 'Digit3': setShot('close'); break; case 'Digit4': setShot('above'); break;
+    case 'KeyB': setLook(look === 'dabs' ? 'oil' : 'dabs'); break;
+    case 'KeyP': setLook(look === 'cubes' ? 'dabs' : 'cubes'); break;
+    case 'KeyH': setPanel($('ui').hidden, true); break;
+  }
+});
+
+/* ---------- loop: a frame is drawn only when something changed ---------- */
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight;
+  // on a wide window the panel sits over the left of the picture: slide the picture right by half the panel's width
+  if (!NARROW && !$('ui').hidden) camera.setViewOffset(innerWidth, innerHeight, -150, 0, innerWidth, innerHeight); else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+  const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y); markDirty(false);
+}
+function draw() {
+  applyTime(play.t);
+  controls.update();
+  if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
+  if (look === 'cubes') renderer.render(scene, camera); else painter.render(renderer);
+}
+const fps = { frames: 0, at: performance.now() };
+let prev = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+  if (play.dir) {
+    play.t += dt * play.dir * play.speed;
+    if (play.t >= T_END) { play.t = T_END; play.dir = 0; } else if (play.t <= 0) { play.t = 0; play.dir = 0; }   // it stops at the finished picture, and at the blank canvas
+    syncUI(); markDirty(true);
+  }
+  controls.update();
+  if (dirty > 0) { dirty--; draw(); fps.frames++; }
+  if (now - fps.at > 1000) { $('stat').textContent = `${pieces.length.toLocaleString('en-US')} dabs · ${Math.round(fps.frames * 1000 / (now - fps.at))} fps`; fps.frames = 0; fps.at = now; }
+});
+controls.addEventListener('change', () => markDirty(false));
+addEventListener('resize', resize); resize();
+setLook('dabs'); setShot('painting'); syncUI();
+$('status').hidden = true;
+window.__ex = { boom, painter, play, setLook, setShot, applyTime, draw, syncUI, camera, controls, renderer, cast };
+</script>
+</body>
+</html>

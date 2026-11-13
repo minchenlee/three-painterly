@@ -19,6 +19,7 @@ Install: `npm i painterly-pass baked-debris three`
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
 - [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
 - [examples/lightspeed-ram/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/lightspeed-ram/index.html): no gravity, per-piece `velocity` and `launchTime` along a line, displace hook splits a ship in two
+- [examples/grande-jatte/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/grande-jatte/index.html): a picture that assembles: pieces on a clock that runs backwards (`setTime(T - t)`, a positive `lookAhead`), carried by a displace hook; `minStrokeWorld` for dots that grow close up
 - [examples/balloon-house/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/balloon-house/index.html): pointillist brush on a voxel street; a house that flies as a PainterlyPass anchor; debris that rests on it rides along through a displace hook; balloons from per-piece `velocity` and `launchTime` with `timeWarp` as drag
 
 ## PainterlyPass
@@ -69,6 +70,7 @@ Options (all are plain properties; change them at any time, e.g. `painter.stroke
 | sky | true | Paint the background too. |
 | brush | null | The kind of mark. null = `impressionist()`. |
 | anchors | [] | Moving objects that carry their strokes: `[{ object, min, max }]`, at most 4. |
+| minStrokeWorld | 0 | Strokes are at least this big in world units; close up they grow on screen. 0 = off. |
 
 Moving objects: strokes are fixed to the world, so an object that moves slides under its strokes. Fix: `painter.anchors = [{ object: house, min: [-4, 0, -5], max: [4, 11, 7] }]`. `min`/`max` are a box in the object's own space; keep it tight. `object.matrixWorld` is read every frame. Debris strokes from BakedDebris do not need this.
 

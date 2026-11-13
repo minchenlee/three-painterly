@@ -129,6 +129,15 @@ test('anchors set the ANCHORS define and the matrices; none by default', () => {
   pass.dispose();
 });
 
+test('minStrokeWorld sets the smallest cell; off keeps the old floor', () => {
+  const pass = make();
+  sync(pass);
+  assert.equal(pass._paint.uniforms.uMinCell.value, 1e-4);
+  pass.minStrokeWorld = 0.03; sync(pass);
+  assert.equal(pass._paint.uniforms.uMinCell.value, 0.03);
+  pass.dispose();
+});
+
 test('at most 4 anchors are used; a malformed anchor throws', () => {
   const anchor = () => ({ object: new Object3D(), min: [0, 0, 0], max: [1, 1, 1] });
   const pass = make({ anchors: [anchor(), anchor(), anchor(), anchor(), anchor()] });

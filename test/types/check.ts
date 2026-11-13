@@ -12,6 +12,7 @@ const dabs = pointillist({ purity: 0.9, pigments: 12 });
 dabs.uniforms.uPurity.value = 0.5;
 painter.brush = dabs;
 painter.brush = null;
+painter.minStrokeWorld = 0.03;
 painter.anchors = [{ object: new Mesh(), min: [-1, 0, -1], max: [1, 2, 1] }];
 new PainterlyPass(scene, camera, { anchors: painter.anchors });
 // @ts-expect-error: an anchor needs its box

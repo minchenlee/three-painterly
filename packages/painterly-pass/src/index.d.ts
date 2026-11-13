@@ -1,6 +1,39 @@
 // Hand-written types for painterly-pass. Keep in step with src/PainterlyPass.js (PainterlyPass.defaults).
-import { Camera, Scene, WebGLRenderer, WebGLRenderTarget } from 'three';
+import { Camera, IUniform, Scene, WebGLRenderer, WebGLRenderTarget } from 'three';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
+
+/**
+ * What one mark looks like and how it is coloured. Use impressionist() or pointillist().
+ * Writing your own brush is lower-level and may change: see src/brushes/impressionist.js for the five GLSL functions.
+ */
+export interface PainterlyBrush {
+  name?: string;
+  /** GLSL that defines brushPalette, brushGround, brushMark, brushShade and brushFinish. */
+  glsl: string;
+  /** Extra uniforms for glsl. The pass shares these objects, so changing a value takes effect on the next frame. */
+  uniforms?: Record<string, IUniform>;
+  /** How far a mark can reach from its centre, in cells. */
+  reach(pass: PainterlyPass): number;
+  /** Cells per side to test around each pixel. Default: 2 x reach + 1. The pass keeps it between 2 and 7. */
+  search?(pass: PainterlyPass, reach: number): number;
+}
+
+/** Oil strokes with the palette habits of late-1800s impressionism. The default brush. */
+export function impressionist(): PainterlyBrush;
+
+export interface PointillistOptions {
+  /** 0 = the scene's own colour, 1 = pure pigment hues mixed only with white. Default 0.8. */
+  purity?: number;
+  /** How far dabs stray to neighbouring hues, in turns of the colour wheel. Default 0.07. */
+  hueSpread?: number;
+  /** Number of pigment hues on the colour wheel. Default 12. */
+  pigments?: number;
+}
+
+/** Round dabs of divided colour. Its options are live in brush.uniforms (uPurity, uHueSpread, uPigments). */
+export function pointillist(options?: PointillistOptions): PainterlyBrush & {
+  uniforms: { uPurity: IUniform<number>; uHueSpread: IUniform<number>; uPigments: IUniform<number> };
+};
 
 /** Options of new PainterlyPass(scene, camera, options). Each is also a field you can change at any time. */
 export interface PainterlyPassOptions {
@@ -34,10 +67,12 @@ export interface PainterlyPassOptions {
   canvas?: number;
   /** Paint the background too. Default true. */
   sky?: boolean;
+  /** The kind of mark and its colours. Default null = impressionist(). */
+  brush?: PainterlyBrush | null;
 }
 
 /**
- * Renders a scene and repaints it with impressionist brush strokes anchored to surfaces.
+ * Renders a scene and repaints it with brush strokes anchored to surfaces (impressionist oil by default).
  * Use it in place of a RenderPass in an EffectComposer, or on its own with setSize + render.
  * Needs a WebGLRenderer without logarithmic or reversed depth, and a PerspectiveCamera.
  */
@@ -62,6 +97,9 @@ export class PainterlyPass extends Pass implements Required<PainterlyPassOptions
   contrast: number;
   canvas: number;
   sky: boolean;
+  /** The current brush. Set it at any time (one shader compile); null gives the default. */
+  get brush(): PainterlyBrush;
+  set brush(value: PainterlyBrush | null | undefined);
 
   /** HDR scene colour + depth texture at the paint resolution; null until the first render. */
   sceneTarget: WebGLRenderTarget | null;

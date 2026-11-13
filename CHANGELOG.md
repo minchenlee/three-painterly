@@ -4,6 +4,13 @@ Both packages share one version number until the first public release.
 
 ## Unreleased
 
+### painterly-pass
+- New `brush` option and property. A brush decides the shape and colour of one mark; the pass still decides where marks go. `null` (the default) is the oil brush of 0.1.0, with the same output.
+- New exports `impressionist()` and `pointillist({ purity, hueSpread, pigments })`.
+- `pointillist()` paints round dabs of divided colour: one pigment per dab, mixed only with white. It tests 3×3 cells per pixel at the default dab size.
+- A brush is a plain object (`{ glsl, uniforms, reach, search }`). Writing your own is lower-level and may change.
+- Node tests for the brush plumbing (`packages/painterly-pass/test`).
+
 ### examples
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
 

@@ -20,7 +20,7 @@ npm i painterly-pass baked-debris three
 
 ## PainterlyPass
 
-A post-processing pass that repaints any three.js scene in impressionist brush strokes. It replaces `RenderPass`: it renders the scene itself, rebuilds world positions from depth, and lays strokes on each surface's own plane, so strokes stay on the building, tree or ground when the camera moves. It does its own tone mapping and colour-space output, so do not add an `OutputPass` after it.
+A post-processing pass that repaints any three.js scene in brush strokes: impressionist oil by default, or pointillist dabs with `brush: pointillist()`. It replaces `RenderPass`: it renders the scene itself, rebuilds world positions from depth, and lays strokes on each surface's own plane, so strokes stay on the building, tree or ground when the camera moves. It does its own tone mapping and colour-space output, so do not add an `OutputPass` after it.
 
 ```js
 composer.addPass(new PainterlyPass(scene, camera, { strokeSize: 7 }));

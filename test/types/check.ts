@@ -2,12 +2,23 @@
 import { Scene, PerspectiveCamera, Vector3, MeshStandardMaterial, Mesh, BoxGeometry } from 'three';
 import { BakedDebris, voxelCollider, boxCollider, anyCollider, strokeFragment, meshToPieces, type DebrisStats } from 'baked-debris';
 import { withDisplace, patchCube, strokeFragment as rawStroke } from 'baked-debris/shaders';
-import { PainterlyPass } from 'painterly-pass';
+import { PainterlyPass, impressionist, pointillist, type PainterlyBrush } from 'painterly-pass';
 
 const scene = new Scene(), camera = new PerspectiveCamera(50, 1, 0.1, 100);
 const painter = new PainterlyPass(scene, camera, { strokeSize: 7, shadowTint: [0.8, 0.8, 1.2], sky: false });
 painter.amount = 0.5;
 painter.overlayScene.add(new Scene());
+const dabs = pointillist({ purity: 0.9, pigments: 12 });
+dabs.uniforms.uPurity.value = 0.5;
+painter.brush = dabs;
+painter.brush = null;
+const oil: PainterlyBrush = impressionist();
+const mine: PainterlyBrush = { glsl: oil.glsl, reach: p => p.strokeWidth, uniforms: { uMine: { value: 1 } } };
+new PainterlyPass(scene, camera, { brush: mine });
+const brushName: string | undefined = painter.brush.name;
+void brushName;
+// @ts-expect-error: unknown pointillist option
+pointillist({ purty: 1 });
 
 const grid = new Uint8Array(8 * 8 * 8);
 const solid = anyCollider(voxelCollider((i, j, k) => grid[i + 8 * (j + 8 * k)], 0.25), boxCollider([{ min: [0, 0, 0], max: [1, 1, 1] }]));

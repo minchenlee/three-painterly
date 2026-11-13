@@ -1,10 +1,10 @@
 # PainterlyPass
 
-A three.js post-processing pass that repaints any scene in impressionist brush strokes.
+A three.js post-processing pass that repaints any scene in brush strokes. The default brush paints impressionist oil strokes. A second brush paints pointillist dabs.
 
 The strokes are anchored to surfaces, not to the screen. The pass rebuilds each pixel's 3D position from the depth buffer and lays strokes on each surface's own plane, so when the camera moves the strokes move with the building, the tree or the ground. The sky is painted with strokes fixed to view directions, so it turns with the camera.
 
-The colour treatment follows habits of Claude Monet's late-1800s paintings (public domain): livelier colour, cool violet shadows that keep their value, warm highlights, and a little unmixed colour in every stroke.
+The default colour treatment follows habits of Claude Monet's late-1800s paintings (public domain): livelier colour, cool violet shadows that keep their value, warm highlights, and a little unmixed colour in every stroke.
 
 Status: 0.1.0, experimental.
 
@@ -45,6 +45,44 @@ Without `renderer.toneMapping = ACESFilmicToneMapping`, the plain render has no 
 
 With BakedDebris brush strokes, also switch the strokes, because the cubes stay hidden while strokes exist: call `boom.removeStrokes()` when you turn the painting off (flying cubes come back), and `painter.overlayScene.add(boom.createStrokes({ painter }))` when you turn it on again.
 
+## Brushes
+
+A brush decides what one mark looks like and how it takes its colour. The pass decides where marks go, so every brush stays anchored to surfaces.
+
+```js
+import { PainterlyPass, pointillist } from 'painterly-pass';
+
+const painter = new PainterlyPass(scene, camera, { brush: pointillist() });
+painter.brush = null;            // back to the default; any brush can be set at any time
+```
+
+| Brush | Mark | Colour |
+|---|---|---|
+| `impressionist()` (default) | An oil stroke: an ellipse with a ragged edge, a paint ridge and bristle streaks. | Livelier colour, cool shadows, warm lights, a little unmixed colour per stroke. |
+| `pointillist({ purity, hueSpread, pigments })` | A round dab with an uneven edge. | Divided colour: each dab is one pigment, mixed only with white. The eye mixes the dabs. |
+
+Setting `brush` compiles one shader. Keep one brush object per brush and switch between them, as `examples/basic.html` does.
+
+### pointillist
+
+Each dab picks one pigment from a wheel of `pigments` hues. The hue is the local colour's hue, spread to its neighbours. Greys have no hue of their own, so they take any hue. In the dark, some dabs lean to the shadow colour; in the light, some lean to orange. White brings each pigment up to the tone of the scene. No dab uses black.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `purity` | `0.8` | 0 = the scene's own colour, 1 = pure pigment hues. |
+| `hueSpread` | `0.07` | How far dabs stray to neighbouring hues, in turns of the colour wheel. |
+| `pigments` | `12` | Number of pigment hues on the wheel. |
+
+These three are live in `brush.uniforms`: `brush.uniforms.uPurity.value = 1` (also `uHueSpread`, `uPigments`).
+
+The brush also reads these pass options: `strokeSize` (dab spacing), `strokeWidth` (dab size), `saturation`, `shadowTint` (its hue is the pigment of the shadow dabs), `shadowAmount` (their share in the dark), `warmth` (the share of orange dabs in the light), `colorJitter` (value difference between dabs), `contrast` and `canvas`. It ignores `strokeLength`.
+
+At the default dab size each pixel tests 3×3 cells, against 4×4 for the oil brush.
+
+### Your own brush
+
+A brush is a plain object: `{ glsl, uniforms, reach(pass), search(pass, reach) }`. `glsl` defines five functions: `brushPalette`, `brushGround`, `brushMark`, `brushShade` and `brushFinish`. `src/brushes/impressionist.js` documents each one. This interface is lower-level and may change.
+
 ## Options
 
 All options are also writable properties (`painter.strokeSize = 10`). Unknown options are ignored with a console warning, and each instance gets its own copy of array defaults such as `shadowTint`.
@@ -65,6 +103,9 @@ All options are also writable properties (`painter.strokeSize = 10`). Unknown op
 | `contrast` | `1.1` | Contrast after painting. |
 | `canvas` | `0.035` | Canvas weave strength (fixed to the screen). |
 | `sky` | `true` | Paint the background. |
+| `brush` | `null` | The brush (see Brushes). `null` = `impressionist()`. |
+
+The table describes the default brush. Another brush can read an option in its own way; its section says how.
 
 `painter.sceneTarget` holds the scene colour and depth (`sceneTarget.depthTexture`) at paint resolution, for effects that draw on top of the painting.
 
@@ -74,14 +115,16 @@ All options are also writable properties (`painter.strokeSize = 10`). Unknown op
 
 1. Render the scene into a half-float target with a depth texture, at `resolutionScale`.
 2. For each pixel, rebuild the world position from depth, and the surface direction from the neighbouring pixels.
-3. Pick the dominant axis of the surface and use the surface's own plane coordinates as the canvas. Lay one stroke per grid cell there: an ellipse with a random offset and angle (upright on walls, lying on floors), a ragged bristle edge, a lighter paint ridge and bristle streaks. The topmost stroke of the cells around the pixel wins (4x4, or up to 7x7 for strokeLength above 1).
-4. Each stroke takes its colour from the scene at its own centre, projected back to the screen, then passes through the palette.
+3. Pick the dominant axis of the surface and use the surface's own plane coordinates as the canvas. Lay one mark per grid cell there, at a random offset. The brush gives the mark its shape. The default is an ellipse with a random angle (upright on walls, lying on floors), a ragged bristle edge, a lighter paint ridge and bristle streaks. The topmost mark of the cells around the pixel wins (4x4, or up to 7x7 for strokeLength above 1; 3x3 for pointillist dabs).
+4. Each mark takes its colour from the scene at its own centre, projected back to the screen, then passes through the brush's palette.
 5. Choose two power-of-two cell sizes from the distance and cross-fade, so strokes stay about `strokeSize` pixels on screen.
-6. Add the canvas weave, scale up to the output and convert to the output colour space.
+6. Add the brush's canvas weave, scale up to the output and convert to the output colour space.
 
 ## Prior art
 
 Anchoring strokes to surfaces to avoid the "shower door" effect goes back to Barbara Meier, *Painterly Rendering for Animation* (SIGGRAPH 1996), which placed particles on 3D surfaces. Sekuta82/oil-on-threejs-template does this per mesh in three.js. This pass does it as a post-process from the depth buffer, so it works on any scene without touching its meshes.
+
+The pointillist brush follows the divided colour of Georges Seurat and Paul Signac (1880s, public domain): small dabs of unmixed pigment that mix in the eye. Signac describes the method in *D'Eugène Delacroix au néo-impressionnisme* (1899).
 
 ## Limitations
 
@@ -89,10 +132,11 @@ Anchoring strokes to surfaces to avoid the "shower door" effect goes back to Bar
 - Perspective cameras only. `WebGLRenderer` only: `WebGPURenderer` is not supported. A renderer created with `logarithmicDepthBuffer` or `reverseDepthBuffer` is not supported; `render()` throws an error that says so.
 - Each pixel samples the scene many times. On weak GPUs lower `resolutionScale` or raise `strokeSize`.
 - Transparent objects are painted with whatever is behind them in the depth buffer.
+- BakedDebris strokes (`createStrokes`) keep the oil look with every brush.
 
 ## Example
 
-`examples/basic.html` — a small original scene (meadow, pond, houses, trees). Serve the repository root over HTTP (`npx serve .` or `python3 -m http.server`) and open `/packages/painterly-pass/examples/basic.html`. Press P to compare with the plain render.
+`examples/basic.html` — a small original scene (meadow, pond, houses, trees). Serve the repository root over HTTP (`npx serve .` or `python3 -m http.server`) and open `/packages/painterly-pass/examples/basic.html`. Press P to compare with the plain render. Press B to switch between the two brushes.
 
 ## License
 

@@ -4,7 +4,7 @@ Guide for coding agents that work on this repository. To use the library in anot
 
 ## Layout
 
-- `packages/painterly-pass/src/`: `PainterlyPass.js` (the Pass), `shaders.js` (GLSL strings), `index.js` (public exports).
+- `packages/painterly-pass/src/`: `PainterlyPass.js` (the Pass), `shaders.js` (GLSL shared by every brush), `brushes/*.js` (one brush per file: mark shape, palette, canvas), `index.js` (public exports).
 - `packages/baked-debris/src/`: `BakedDebris.js` (class, GPU side), `bake.js` (CPU collision bake), `colliders.js` (`voxelCollider`, `boxCollider`, `anyCollider`), `shaders.js` (GLSL and three.js chunk patches), `index.js`.
 - `packages/*/examples/`: small examples. `examples/`: large demos that use both packages.
 - `packages/*/test/`: `*.test.js` run in Node; `api.html` runs in a browser.
@@ -18,6 +18,8 @@ Guide for coding agents that work on this repository. To use the library in anot
 - BakedDebris patches three.js shader chunks by string replacement. If you touch the patch, run `chunks.test.js`; it fails when a chunk it patches is missing.
 - PainterlyPass reads the depth buffer as standard depth. Do not remove the renderer checks (WebGPU, logarithmic depth, reverse depth).
 - Keep `solid()` hot paths cheap: no allocation per call.
+- The default brush (`impressionist()`) must keep its output. After a change to `shaders.js` or `PainterlyPass.js`, compare a screenshot of `basic.html` before and after: no pixel may differ.
+- A new brush goes in `src/brushes/`, defines the five functions documented in `brushes/impressionist.js`, and gets a row in the package README.
 
 ## Test
 

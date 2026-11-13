@@ -4,9 +4,10 @@ import {
 } from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { quadVertex, paintFragment, copyFragment } from './shaders.js';
+import { impressionist } from './brushes/impressionist.js';
 
 /**
- * Renders a scene and repaints it with impressionist brush strokes.
+ * Renders a scene and repaints it with brush strokes (impressionist oil by default; see the brush option).
  *
  * Strokes are anchored to surfaces in world space (rebuilt from the depth buffer), so they move with
  * the objects instead of sliding across the screen. Use it in place of a RenderPass:
@@ -45,12 +46,22 @@ export class PainterlyPass extends Pass {
     contrast: 1.1,
     canvas: 0.035,          // canvas weave strength
     sky: true,              // paint the background too
+    brush: null,            // the kind of mark and its colours: impressionist() (the default) or pointillist()
   };
 
   constructor(scene, camera, options = {}) {
     super();
     this.scene = scene;
     this.camera = camera;
+    this._uniforms = {
+      tScene: { value: null }, tDepth: { value: null }, uRes: { value: new Vector2() }, uS: { value: 7 },
+      uAmount: { value: 1 }, uExposure: { value: 1 }, uToneMap: { value: 1 }, uSaturation: { value: 1.3 },
+      uShadowTint: { value: new Vector3() }, uShadowAmount: { value: 0.55 }, uWarmth: { value: 0.6 },
+      uJitter: { value: 0.07 }, uCanvas: { value: 0.035 }, uLength: { value: 1 }, uWidth: { value: 1 }, uReach: { value: 2 },
+      uContrast: { value: 1.1 }, uSky: { value: true },
+      uInvProj: { value: new Matrix4() }, uCamWorld: { value: new Matrix4() }, uViewProj: { value: new Matrix4() },
+      uCamPos: { value: new Vector3() }, uPixAng: { value: 0.001 },
+    };
     // Own copies of every default (arrays too), then only the known options: a typo is reported,
     // and options cannot replace Pass fields such as enabled, renderToScreen or render.
     const defaults = PainterlyPass.defaults, copy = v => (Array.isArray(v) ? v.slice() : v);
@@ -67,27 +78,40 @@ export class PainterlyPass extends Pass {
     this.paintTarget = null;
     this.overlayScene = new Scene();   // drawn on top of the painting, e.g. BakedDebris brush strokes
 
-    this._paint = new ShaderMaterial({
-      uniforms: {
-        tScene: { value: null }, tDepth: { value: null }, uRes: { value: new Vector2() }, uS: { value: 7 },
-        uAmount: { value: 1 }, uExposure: { value: 1 }, uToneMap: { value: 1 }, uSaturation: { value: 1.3 },
-        uShadowTint: { value: new Vector3() }, uShadowAmount: { value: 0.55 }, uWarmth: { value: 0.6 },
-        uJitter: { value: 0.07 }, uCanvas: { value: 0.035 }, uLength: { value: 1 }, uWidth: { value: 1 }, uReach: { value: 2 },
-        uContrast: { value: 1.1 }, uSky: { value: true },
-        uInvProj: { value: new Matrix4() }, uCamWorld: { value: new Matrix4() }, uViewProj: { value: new Matrix4() },
-        uCamPos: { value: new Vector3() }, uPixAng: { value: 0.001 },
-      },
-      defines: { SEARCH: 4 },
-      vertexShader: quadVertex, fragmentShader: paintFragment,
-      depthTest: false, depthWrite: false, blending: NoBlending, toneMapped: false,
-    });
+    this._paint = null;           // built for the current brush by _ensurePaint
     this._copy = new ShaderMaterial({
       uniforms: { tPaint: { value: null } },
       vertexShader: quadVertex, fragmentShader: copyFragment,
       depthTest: false, depthWrite: false, blending: NoBlending, toneMapped: false,
     });
-    this._paintQuad = new FullScreenQuad(this._paint);
+    this._paintQuad = new FullScreenQuad(null);
     this._copyQuad = new FullScreenQuad(this._copy);
+    this._ensurePaint();
+  }
+
+  /** The brush: what one mark looks like and how it is coloured. Set it at any time; null gives the default. */
+  get brush() { return this._brush; }
+  set brush(value) {
+    const brush = value ?? impressionist();
+    if (brush === this._brush) return;
+    if (typeof brush.glsl !== 'string' || typeof brush.reach !== 'function') throw new Error('PainterlyPass: a brush needs glsl (a string) and reach (a function)');
+    for (const k in brush.uniforms) if (k in this._uniforms) throw new Error(`PainterlyPass: brush uniform "${k}" is used by the pass; choose another name`);
+    this._brush = brush;
+    this._brushChanged = true;
+  }
+
+  // The paint material holds the brush's GLSL, so a new brush needs a new material (one shader compile).
+  _ensurePaint() {
+    if (this._paint && !this._brushChanged) return;
+    this._paint?.dispose();
+    this._paint = new ShaderMaterial({
+      uniforms: { ...this._uniforms, ...this._brush.uniforms },   // uniform objects are shared: brush.uniforms stays live
+      defines: { SEARCH: 4 },
+      vertexShader: quadVertex, fragmentShader: paintFragment(this._brush.glsl),
+      depthTest: false, depthWrite: false, blending: NoBlending, toneMapped: false,
+    });
+    this._paintQuad.material = this._paint;
+    this._brushChanged = false;
   }
 
   /** Output size in device pixels (EffectComposer calls this for you). */
@@ -124,11 +148,10 @@ export class PainterlyPass extends Pass {
     u.uCanvas.value = this.canvas;
     u.uLength.value = this.strokeLength;
     u.uWidth.value = this.strokeWidth;
-    // Longest stroke reach in cells: half-length up to 1.85 x strokeLength (half-width 0.58 x strokeWidth),
-    // x 1.0607 for the ragged edge. Up to strokeLength 1 the 4 x 4 search is kept for speed (the longest tips
-    // can be clipped). Longer strokes test more cells, up to 7 x 7; beyond that, strokes are capped to fit.
-    const reach = 1.0607 * Math.max(1.85 * this.strokeLength, 0.58 * this.strokeWidth);
-    const search = this.strokeLength <= 1 ? 4 : Math.min(7, Math.max(4, Math.ceil(2 * reach + 1)));
+    // The brush says how far a mark reaches from its centre, in cells. Each pixel tests enough cells for that
+    // reach (2 x reach + 1 per side), or the number the brush asks for; at most 7 x 7, where the reach is capped to fit.
+    const brush = this._brush, reach = brush.reach(this);
+    const search = Math.min(7, Math.max(2, Math.ceil(brush.search ? brush.search(this, reach) : 2 * reach + 1)));
     if (this._paint.defines.SEARCH !== search) { this._paint.defines.SEARCH = search; this._paint.needsUpdate = true; }   // recompiles only when the window size changes
     u.uReach.value = search === 7 ? Math.min(reach, 3) : reach;   // also the early-out radius
     u.uContrast.value = this.contrast;
@@ -146,6 +169,7 @@ export class PainterlyPass extends Pass {
     if (this._checkedRenderer !== renderer) { checkRenderer(renderer); this._checkedRenderer = renderer; }
     if (this._size.x <= 1) { const s = renderer.getDrawingBufferSize(new Vector2()); this.setSize(s.x, s.y); }
     this._ensureTargets();
+    this._ensurePaint();
 
     const prevTarget = renderer.getRenderTarget(), prevAutoClear = renderer.autoClear;
     renderer.autoClear = true;
@@ -172,7 +196,7 @@ export class PainterlyPass extends Pass {
 
   dispose() {
     this.sceneTarget?.depthTexture?.dispose(); this.sceneTarget?.dispose(); this.paintTarget?.dispose();
-    this._paint.dispose(); this._copy.dispose();
+    this._paint?.dispose(); this._copy.dispose();
     this._paintQuad.dispose(); this._copyQuad.dispose();
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "painterly-pass",
   "version": "0.1.0",
-  "description": "A three.js post-processing pass that repaints any scene in impressionist brush strokes anchored to surfaces.",
+  "description": "A three.js post-processing pass that repaints any scene in brush strokes anchored to surfaces: impressionist oil or pointillist dabs.",
   "author": "minchenlee",
   "homepage": "https://github.com/minchenlee/three-painterly/tree/main/packages/painterly-pass#readme",
   "repository": {
@@ -37,6 +37,7 @@
     "shader",
     "painterly",
     "impressionism",
+    "pointillism",
     "npr",
     "webgl"
   ],

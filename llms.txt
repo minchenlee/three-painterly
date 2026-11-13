@@ -1,6 +1,6 @@
 # three-painterly
 
-> Two three.js modules, plain ES modules with no build step. PainterlyPass repaints any three.js scene in impressionist brush strokes. BakedDebris makes explosion debris that you can scrub and rewind: collisions are baked once on the CPU, and the GPU computes any moment directly from time. Both need three.js r160 or later and WebGL 2. Tested with three.js r160 and r187. License: MIT.
+> Two three.js modules, plain ES modules with no build step. PainterlyPass repaints any three.js scene in brush strokes (impressionist oil, or pointillist dabs). BakedDebris makes explosion debris that you can scrub and rewind: collisions are baked once on the CPU, and the GPU computes any moment directly from time. Both need three.js r160 or later and WebGL 2. Tested with three.js r160 and r187. License: MIT.
 
 Repository: https://github.com/minchenlee/three-painterly
 Install: `npm i painterly-pass baked-debris three`
@@ -13,7 +13,7 @@ Install: `npm i painterly-pass baked-debris three`
 
 ## Examples
 
-- [packages/painterly-pass/examples/basic.html](https://github.com/minchenlee/three-painterly/blob/main/packages/painterly-pass/examples/basic.html): smallest PainterlyPass setup
+- [packages/painterly-pass/examples/basic.html](https://github.com/minchenlee/three-painterly/blob/main/packages/painterly-pass/examples/basic.html): smallest PainterlyPass setup; B switches brushes
 - [packages/baked-debris/examples/explode.html](https://github.com/minchenlee/three-painterly/blob/main/packages/baked-debris/examples/explode.html): voxel towers, three bursts, a wall, a swirl made with the displace hook
 - [examples/voxel-paris/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/voxel-paris/index.html): both modules on a large voxel scene, time slider, brush-stroke fire
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
@@ -66,6 +66,13 @@ Options (all are plain properties; change them at any time, e.g. `painter.stroke
 | contrast | 1.1 | |
 | canvas | 0.035 | Canvas weave strength. |
 | sky | true | Paint the background too. |
+| brush | null | The kind of mark. null = `impressionist()`. |
+
+Brushes: `import { PainterlyPass, impressionist, pointillist } from 'painterly-pass'`.
+- `impressionist()`: oil strokes, the default. The table above describes it.
+- `pointillist({ purity = 0.8, hueSpread = 0.07, pigments = 12 })`: round dabs of pure pigment hues mixed only with white. Live values: `brush.uniforms.uPurity.value` (also `uHueSpread`, `uPigments`). It reads strokeSize (dab spacing), strokeWidth (dab size), saturation, shadowTint (hue of the shadow dabs), shadowAmount, warmth, colorJitter, contrast, canvas. It ignores strokeLength.
+- Set at creation (`{ brush: pointillist() }`) or later (`painter.brush = …`; `null` restores the default). Each change compiles one shader: keep one brush object per brush and reuse it.
+- BakedDebris strokes keep the oil look with every brush.
 
 Unknown option names are warned about and ignored.
 

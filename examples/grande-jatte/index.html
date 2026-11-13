@@ -60,6 +60,12 @@ details[open] > summary { margin-bottom: 8px; }
 #liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
   padding: 3px 9px; border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 12px; }
 html[data-ui-hidden] #liteNote { display: none !important; }
+/* the painted border Seurat added in 1888-89: dots of blue, orange and red; the wall around it hides what a wider window would show */
+#mat { position: fixed; z-index: 1; pointer-events: none; box-shadow: 0 0 0 11px #f6f3ea, 0 0 0 200vmax var(--bg); }
+#frame { position: fixed; z-index: 1; pointer-events: none; padding: 7px;
+  background: radial-gradient(circle, #d06a2c 30%, transparent 34%) 0 0 / 5px 5px, radial-gradient(circle, #b8322c 30%, transparent 34%) 2.5px 2.5px / 5px 5px, radial-gradient(circle, #e0b23a 26%, transparent 30%) 2.5px 0 / 10px 10px, #2c3f8e;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+#ui, #bShow, #liteNote { z-index: 2; }
 #status { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--ink); font-size: 14px; z-index: 5; }
 [hidden] { display: none !important; }
 </style>
@@ -67,6 +73,8 @@ html[data-ui-hidden] #liteNote { display: none !important; }
 <body>
 <canvas id="c"></canvas>
 <div id="liteNote" hidden>Lite mode · fewer dabs</div>
+<div id="mat" hidden></div>
+<div id="frame" hidden></div>
 <div id="status" role="status">Mixing colours…</div>
 <button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
 
@@ -216,7 +224,7 @@ const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C
 
 /* ---------- the lie of the land, read off the painting ----------
    The river is on the left. Its edge runs almost straight ahead and a little to the left; the lawn dips to it over the last three metres. */
-const SHORE = [[-30, -2.4], [0, -3.0], [7.8, -4.2], [13.3, -5.15], [20.5, -6.0], [60, -8.8], [200, -16], [900, -45]];   // [metres ahead, x of the water's edge]
+const SHORE = [[-30, -16], [-2, -12.5], [1.5, -3.3], [7.8, -4.2], [13.3, -5.15], [20.5, -6.0], [60, -8.8], [200, -16], [900, -45]];   // [metres ahead, x of the water's edge]
 const shoreX = z => { const d = -z; for (let i = 1; i < SHORE.length; i++) if (d <= SHORE[i][0]) { const [d0, x0] = SHORE[i - 1], [d1, x1] = SHORE[i]; return x0 + (x1 - x0) * Math.max(0, d - d0) / (d1 - d0); } return SHORE[SHORE.length - 1][1]; };
 const WATER_Y = -0.8;
 const groundY = (x, z) => { const t = Math.min(1, Math.max(0, (x - shoreX(z)) / 3.2)); return -0.75 * (1 - t * t * (3 - 2 * t)); };
@@ -247,7 +255,9 @@ plant(G(812, 312), 3.5, 5.2, -2.4, { tr: 0.2 });                                
 plant(G(600, 246), 3.6, 5.0, 0.4, { tr: 0.16 });                                      // behind the lady with the red parasol
 for (const [px, py] of [[1045, 290], [1088, 300], [1142, 286], [1200, 296], [1246, 288]]) plant(G(px, py), 3.6, 4.0, R(-0.5, 0.5), { tr: 0.13 });   // the row on the right
 for (const [px, py] of [[700, 208], [770, 216], [900, 214], [985, 206], [1100, 216], [1220, 210], [520, 204], [1330, 230], [1420, 300], [1480, 380], [1600, 300]]) plant(G(px, py), 4.2, 5.4, R(-0.6, 0.6), { tr: 0.2 });   // deeper in, and off the picture to the right
-for (const [x, z] of [[-9.2, 2.2], [-6.5, 1.2], [-3.5, 1.0], [-0.5, 1.6]]) plant([x, 0, z], 3.2, 2.7, 0, { tr: 0.2 }, 0.2);   // behind us and to the left: their shade lies across the foreground
+for (const [x, z] of [[-9.6, 2.4], [-6.4, 1.6], [-3.4, 1.4], [-0.3, 1.8]]) plant([x, 0, z], 3.2, 2.7, 0, { tr: 0.2 }, 0.2);   // behind us and to the left: their shade lies across the foreground
+add(far.rowboat({ par: C.RED }), W(62, 46), 0, 0, null, 0.11); add(far.rowboat({ hull: C.WHITEW, coat: C.NAVY, par: null }), W(226, 31), 0, 0, null, 0.1);
+{ const at = G(60, 438); add(people.reeds({ n: 18, seed: 3 }), [at[0] - 0.2, WATER_Y, at[2]], 0, 0, null, 0.085); add(people.reeds({ n: 12, seed: 9 }), [at[0] + 0.5, WATER_Y, at[2] + 0.9], 0, 0, null, 0.07); }
 // sheet 1: the far figures and the middle distance
 const soldier = () => far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false });
 add(soldier(), G(512, 292), 2, 1, 190); add(soldier(), G(533, 292), 2, 1, 190);
@@ -268,6 +278,8 @@ add(people.lady({ dress: C.SALMON, bodice: C.RED, bustle: false, hat: 'boater', 
 add(people.child({ dress: C.WHITEW, hat: 'boater', hatC: C.WHITEW }), G(582, 492), 1, 2, 335);
 add(people.seatedLady({ dress: C.MAROON, bodice: C.MAROON, hatC: C.RED, parasol: C.SLATEV }), G(752, 530), 2, 2, 322);
 add(bouquet(people.seatedLady({ dress: C.PLUMD, bodice: C.PLUMD, hat: null })), G(852, 520), 2, 2, 375);
+add(people.picnic(), G(842, 566), 0, 2, null, 0.075);                                                                    // a hat, a parasol and a fan on the grass
+{ const at = G(505, 530); add(people.butterfly(C.ORANGE), [at[0], at[1] + 0.12, at[2]], 0, 2, null, 0.09); const b = G(700, 632); add(people.butterfly(C.WHITEW), [b[0], b[1] + 0.1, b[2]], 1, 2, null, 0.08); }
 // sheet 3: the foreground, in the shade
 add(hero.seatedGent({ coat: C.PLUMD, trousers: C.COAT, cane: true }), G(300, 640), 2, 3, 450);
 add(hero.seatedLady({ dress: C.PLUMD, bodice: C.COAT, hat: 'bonnet', hatC: C.LAVGREY, sewing: true }), G(430, 665), 2, 3, 465);
@@ -397,6 +409,11 @@ scene.add(castGroup);
   const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); lg.setIndex(idx); lg.computeVertexNormals();
   const lawn = new THREE.Mesh(lg, revealing(new THREE.MeshStandardMaterial({ color: 0xa3a672, roughness: 1, side: THREE.DoubleSide })));
   lawn.receiveShadow = true; lawn.frustumCulled = false; scene.add(lawn);
+  { // a gap in the leaves: one patch of sun in the foreground shade, where the painting has it
+    const at = G(762, 722), base = lawn.material.onBeforeCompile;
+    lawn.material.onBeforeCompile = sh => { base(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      { vec2 q = (vWp.xz - vec2(${at[0].toFixed(3)}, ${at[2].toFixed(3)})) / vec2(0.66, 0.34); totalEmissiveRadiance += vec3(0.34, 0.32, 0.13) * rv * (1.0 - smoothstep(0.55, 1.0, length(q))); }`); };
+    lawn.material.customProgramCacheKey = () => 'reveal-lawn'; }
   const river = new THREE.Mesh(new THREE.PlaneGeometry(700, 1500), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c8de, roughness: 0.5 })));
   river.rotation.x = -Math.PI / 2; river.position.set(-320, WATER_Y, -600); river.receiveShadow = true; scene.add(river);
   // the far bank: a strip of land, its white embankment and a few houses (boxes), washed in with the rest
@@ -484,13 +501,28 @@ function setLook(name) {
 const SHOTS = {
   painting: [EYE, AIM, FOV], walk: [[8.5, 2.2, -0.5], [0, 1.0, -8], 44], close: [[-0.6, 1.5, -1.6], [1.3, 1.3, -3.6], 26], above: [[13, 22, 12], [0, 0, -9], 40],
 };
-if (PORTRAIT) SHOTS.painting = [[0.9, 1.6, 2.2], [0.9, -1.6, -7.8], 46];   // a tall window holds the right half of the picture, from a few steps back; it looks down so the figures clear the panel
+// In the painting view the picture keeps the painting's proportions, whatever the window: it sits in a frame beside the panel, with
+// Seurat's dotted border, and a wall hides the rest. e = 0 is framed, e = 1 fills the window; in between the frame opens up.
+const ASPECT = 1256 / 838;
+let sizeK = 1;
+function frameRect() {
+  const W = innerWidth, H = innerHeight, ui = $('ui'), open = !ui.hidden, x0 = !NARROW && open ? 322 : 0, h = NARROW && open ? H - ui.offsetHeight : H, w = W - x0, m = NARROW ? 16 : 30;
+  const fw = Math.max(80, Math.min(w - 2 * m, (h - 2 * m) * ASPECT)), fh = fw / ASPECT;
+  return [x0 + (w - fw) / 2, (h - fh) / 2, fw, fh];
+}
+function applyView(e) {
+  const W = innerWidth, H = innerHeight, f = frameRect(), fw = f[2] + (W - f[2]) * e, fh = f[3] + (H - f[3]) * e;
+  camera.aspect = fw / fh; camera.setViewOffset(fw, fh, -f[0] * (1 - e), -f[1] * (1 - e), W, H); camera.updateProjectionMatrix();
+  sizeK = Math.min(1, Math.max(0.5, fh / 600)); painter.strokeSize = +$('size').value * sizeK;   // a small frame gets smaller dabs: the same picture
+  for (const [id, pad] of [['mat', 0], ['frame', 7]]) { const el = $(id); el.hidden = e > 0.5;
+    Object.assign(el.style, { left: `${f[0] - pad}px`, top: `${f[1] - pad}px`, width: `${f[2] + 2 * pad}px`, height: `${f[3] + 2 * pad}px`, opacity: String(Math.max(0, 1 - 2 * e)), boxSizing: 'border-box' }); }
+}
 let auto = true, shot = 'painting';
 const camA = new THREE.Vector3(), camB = new THREE.Vector3(), tarA = new THREE.Vector3(), tarB = new THREE.Vector3();
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-function setShot(name) { shot = name; auto = name === 'painting'; const [p, t, fov] = SHOTS[name]; camera.position.set(...p); controls.target.set(...t); camera.fov = fov; camera.updateProjectionMatrix();
+function setShot(name) { shot = name; auto = name === 'painting'; const [p, t, fov] = SHOTS[name]; camera.position.set(...p); controls.target.set(...t); camera.fov = fov; if (auto) camera.updateProjectionMatrix(); else applyView(1);
   for (const b of $('shots').children) b.setAttribute('aria-pressed', String(b.dataset.shot === name)); markDirty(false); }
-controls.addEventListener('start', () => { auto = false; for (const b of $('shots').children) b.setAttribute('aria-pressed', 'false'); });
+controls.addEventListener('start', () => { auto = false; applyView(1); for (const b of $('shots').children) b.setAttribute('aria-pressed', 'false'); });
 
 /* ---------- time: everything is a function of t ---------- */
 const play = { t: 0, dir: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1, speed: 1 };
@@ -501,7 +533,7 @@ function applyTime(t) {
   if (auto) {                                                     // after the last dab: leave the frame, and the picture gains depth
     const e = smooth(T_BUILD + 1, T_END - 1, t), [p0, t0, f0] = SHOTS.painting, [p1, t1, f1] = SHOTS.walk;
     camera.position.copy(camA.set(...p0).lerp(camB.set(...p1), e)); controls.target.copy(tarA.set(...t0).lerp(tarB.set(...t1), e));
-    camera.fov = f0 + (f1 - f0) * e; camera.updateProjectionMatrix();
+    camera.fov = f0 + (f1 - f0) * e; applyView(e);
   }
   if (t !== lastT) { lastT = t; markDirty(true); }
 }
@@ -518,7 +550,7 @@ for (const b of $('speeds').children) b.onclick = () => setSpeed(+b.dataset.s);
 for (const b of $('looks').children) b.onclick = () => setLook(b.dataset.look);
 for (const b of $('shots').children) b.onclick = () => setShot(b.dataset.shot);
 $('world').oninput = e => { painter.minStrokeWorld = +e.target.value / 100; $('wOut').textContent = +e.target.value ? `${(+e.target.value).toFixed(1)} cm` : 'off'; markDirty(false); };
-$('size').oninput = e => { painter.strokeSize = +e.target.value; $('szOut').textContent = `${e.target.value} px`; markDirty(false); };
+$('size').oninput = e => { painter.strokeSize = +e.target.value * sizeK; $('szOut').textContent = `${e.target.value} px`; markDirty(false); };
 $('purity').oninput = e => { brushes.dabs.uniforms.uPurity.value = +e.target.value; $('puOut').textContent = (+e.target.value).toFixed(2); markDirty(false); };
 function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey; document.documentElement.toggleAttribute('data-ui-hidden', !show); resize(); }
 $('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
@@ -539,10 +571,7 @@ addEventListener('keydown', e => {
 
 /* ---------- loop: a frame is drawn only when something changed ---------- */
 function resize() {
-  renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight;
-  // on a wide window the panel sits over the left of the picture: slide the picture right by half the panel's width
-  if (!NARROW && !$('ui').hidden) camera.setViewOffset(innerWidth, innerHeight, -150, 0, innerWidth, innerHeight); else camera.clearViewOffset();
-  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight, false); if (!auto) applyView(1);   // the painting view sets its own frame on every draw
   const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y); markDirty(false);
 }
 function draw() {

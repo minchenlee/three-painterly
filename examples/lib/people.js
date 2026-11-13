@@ -52,7 +52,9 @@ export function createPeople(C, detail = 2) {
     cap: (m, x, y, c = C.NAVY) => { m.ellipsoid(x, y, 0, 1.7 * K(m), 0.9, 1.6 * K(m), c); dot(m, x + 2, y, 0, c); },
     kepi: (m, x, y, c = C.RED) => { tube(m, x, y, y + 2, 1.5 * K(m), c); dot(m, x + 2, y, 0, C.BLACK); },
   };
-  const bell = (m, waist, c, wide = 2.4, hem = null) => { for (let y = 0; y < waist; y++) { const r = 1.5 + Math.pow(1 - y / waist, 0.75) * wide; m.ellipsoid(0.3, y, 0, r * 1.05, m.smooth ? 2.2 : 0.5, r * 0.85, y === 0 && hem && !m.smooth ? hem : c); } };
+  const bell = (m, waist, c, wide = 2.4, hem = null) => { for (let y = 0; y < waist; y++) { const r = 1.5 + Math.pow(1 - y / waist, 0.75) * wide;
+    if (m.smooth) m.ellipsoid(0.5 - 0.35 * (r - 1.5), y, 0, r * 0.9, 2.2, r * 0.72, c);   // slim, the front nearly straight
+    else m.ellipsoid(0.3, y, 0, r * 1.05, 0.5, r * 0.85, y === 0 && hem ? hem : c); } };
 
   /**
    * A woman standing in profile. dress, bodice: colours. bustle: the padded back of the 1880s skirt. hat: 'bonnet' | 'boater' | null,
@@ -62,8 +64,10 @@ export function createPeople(C, detail = 2) {
   function lady({ dress = C.VIOLET, bodice = C.PLUMD, bustle = true, hat = 'bonnet', hatC = C.BLACK, parasol: par = null, parasolLean = 0.6, parasolTilt = null, rod = false, hair = C.HAIR } = {}) {
     const m = createModel(), waist = 9;
     bell(m, waist, dress, 2.4, bodice);
-    if (bustle) { m.ellipsoid(-2.7, waist - 1.6, 0, 2.3, 2.3, 1.9, dress); m.ellipsoid(-3.3, waist - 4.5, 0, 1.8, 2.6, 1.7, dress); }
-    m.ellipsoid(0, waist + 3, 0, 1.6, 3.4, 2.1, bodice); dot(m, 0, 16, 0, C.SKIN);
+    if (bustle && m.smooth) { m.ellipsoid(-2.9, waist - 1.0, 0, 2.6, 2.1, 1.7, dress); m.ellipsoid(-3.7, waist - 4.4, 0, 2.2, 3.4, 1.7, dress); m.ellipsoid(-3.5, 2.0, 0, 2.3, 2.6, 1.7, dress); }   // the bustle, and the skirt that falls from it
+    else if (bustle) { m.ellipsoid(-2.7, waist - 1.6, 0, 2.3, 2.3, 1.9, dress); m.ellipsoid(-3.3, waist - 4.5, 0, 1.8, 2.6, 1.7, dress); }
+    if (m.smooth) { m.ellipsoid(0.25, waist + 4.3, 0, 1.4, 2.3, 1.7, bodice); m.ellipsoid(0, waist + 1.5, 0, 1.0, 1.9, 1.25, bodice); }   // a chest and a narrow waist
+    else m.ellipsoid(0, waist + 3, 0, 1.6, 3.4, 2.1, bodice); dot(m, 0, 16, 0, C.SKIN);
     head(m, 0.2, 17.6); m.ellipsoid(-1.1, 18.0, 0, 1.2, 1.3, 1.4, hair);
     if (hat) hats[hat](m, 0.1, 19.4, hatC);
     arm(m, [[0, 14.5, -2.4], [0.6, 11, -2.6], [1.6, 9.5, -2.4]], bodice);                           // the far arm hangs
@@ -76,10 +80,10 @@ export function createPeople(C, detail = 2) {
   function gent({ coat = C.COAT, trousers = C.GREY, hat = 'top', hatC = C.BLACK, cane = false, horn = false, tails = true } = {}) {
     const m = createModel();
     for (const z of [-1, 1]) {
-      if (m.smooth) { m.line([-0.5, 0.4, z], [-0.5, 8.5, z], trousers, 0.95); m.ellipsoid(0.2, 0, z, 1.3, 0.6, 0.8, C.BLACK); }
+      if (m.smooth) { m.line([-0.5, 0.4, z * 0.85], [-0.5, 8.5, z * 0.85], trousers, 0.78); m.ellipsoid(0.2, 0, z, 1.3, 0.6, 0.8, C.BLACK); }
       else { m.box(-1, 0, 0, 8, z, z, trousers); m.box(-1, 1, 0, 0, z, z, C.BLACK); }
     }
-    m.ellipsoid(0, 11.6, 0, 1.6, 3.8, 2.2, coat);
+    if (m.smooth) m.ellipsoid(0, 11.7, 0, 1.3, 3.9, 1.8, coat); else m.ellipsoid(0, 11.6, 0, 1.6, 3.8, 2.2, coat);
     if (tails) { if (m.smooth) m.ellipsoid(-1.5, 7.6, 0, 0.9, 2.2, 1.6, coat); else m.box(-2, -1, 6, 9, -1, 1, coat); }
     dot(m, 0, 16, 0, C.SKIN); dot(m, 1, 14, 0, C.WHITEW);
     head(m, 0.2, 17.6); m.ellipsoid(-1.0, 17.8, 0, 1.0, 1.2, 1.4, C.HAIR);
@@ -180,5 +184,29 @@ export function createPeople(C, detail = 2) {
     m.ellipsoid(20, 2.4, 0, 1.2, 2.0, 1.4, C.RED); m.ellipsoid(20, 5.2, 0, 1.2, 1.2, 1.2, C.SKIN);
     return m;
   }
-  return { lady, gent, seatedLady, seatedGent, reclining, child, dog, monkey, sailboat, steamer, scull, parasol, hats };
+  /** A rowing boat with one figure under a parasol. */
+  function rowboat({ hull = C.WOODB, coat = C.WHITEW, par = C.OCHRE } = {}) {
+    const m = createModel();
+    m.ellipsoid(0, 0.8, 0, 9, 1.0, 2.0, hull);
+    m.ellipsoid(-1, 3.2, 0, 1.2, 2.2, 1.4, coat); m.ellipsoid(-0.8, 6.2, 0, 1.1, 1.1, 1.1, C.SKIN);
+    if (par) { m.line([-0.5, 4, 0.5], [0, 10, 0], C.BROWN, thin(m)); m.dome(0, 8.4, 0, 3.4, 1.6, par); }
+    return m;
+  }
+  /** Things left on the grass: a straw hat, a folded parasol and a fan. */
+  function picnic() {
+    const m = createModel();
+    m.ellipsoid(0, 0.3, 0, 2.2, 0.4, 2.2, C.OCHRE); m.ellipsoid(0, 1.0, 0, 1.2, 0.8, 1.2, C.OCHRE); m.ellipsoid(0, 0.8, 0, 1.3, 0.3, 1.3, C.RED);
+    m.line([3, 0.4, -3], [9, 0.5, 1], C.RED, 0.45); m.line([9, 0.5, 1], [10.5, 0.5, 2], C.BROWN, thin(m));
+    for (let i = 0; i < 7; i++) { const a = -0.6 + i * 0.2; m.line([4, 0.3, 3], [4 + Math.cos(a) * 3.4, 0.3, 3 + Math.sin(a) * 3.4], i % 2 ? C.ORANGE : C.CREAMW, 0.3); }
+    return m;
+  }
+  /** Reeds at the water's edge. */
+  function reeds({ n = 16, seed = 1 } = {}) {
+    const m = createModel(), h = i => { const v = Math.sin((i + seed) * 127.1) * 43758.5453; return v - Math.floor(v); };
+    for (let i = 0; i < n; i++) { const x = (h(i) - 0.5) * 9, z = (h(i + 40) - 0.5) * 5; m.line([x, 0, z], [x + (h(i + 80) - 0.5) * 2, 4 + h(i + 120) * 5, z], C.GREEND, thin(m) * 0.8); }
+    return m;
+  }
+  /** A butterfly: two small wings. */
+  function butterfly(c = C.ORANGE) { const m = createModel(); m.ellipsoid(-0.5, 1, 0, 0.6, 0.5, 0.2, c); m.ellipsoid(0.5, 1.1, 0, 0.6, 0.5, 0.2, c); m.set(0, 0, 0, 0); return m; }
+  return { lady, gent, seatedLady, seatedGent, reclining, child, dog, monkey, sailboat, steamer, scull, rowboat, picnic, reeds, butterfly, parasol, hats };
 }

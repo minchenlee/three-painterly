@@ -131,7 +131,7 @@ test('people: every builder gives a figure of a sensible height, the same every 
   assert.ok(height(adult) >= 20 && height(adult) <= 24, `a man with a top hat: ${height(adult)} voxels`);
   assert.ok(height(lady) > height(kit.lady({})), 'a parasol is taller than its owner');
   assert.ok(height(kit.seatedLady({})) <= 15 && height(kit.child({})) < height(adult) && height(kit.reclining({})) < 13);
-  for (const name of ['lady', 'gent', 'seatedLady', 'seatedGent', 'reclining', 'child', 'dog', 'monkey', 'sailboat', 'steamer', 'scull']) {
+  for (const name of ['lady', 'gent', 'seatedLady', 'seatedGent', 'reclining', 'child', 'dog', 'monkey', 'sailboat', 'steamer', 'scull', 'rowboat', 'picnic', 'reeds']) {
     const a = kit[name]({}), b = kit[name]({}); let low = 99; a.each((x, y) => { low = Math.min(low, y); });
     assert.ok(a.cells.size > 20, name); assert.equal(low, 0, `${name} stands on y = 0`);
     assert.deepEqual([...a.cells], [...b.cells], `${name} builds the same twice`);

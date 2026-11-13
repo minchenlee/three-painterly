@@ -1,5 +1,5 @@
 // Hand-written types for painterly-pass. Keep in step with src/PainterlyPass.js (PainterlyPass.defaults).
-import { Camera, IUniform, Scene, WebGLRenderer, WebGLRenderTarget } from 'three';
+import { Camera, IUniform, Object3D, Scene, WebGLRenderer, WebGLRenderTarget } from 'three';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 
 /**
@@ -41,6 +41,15 @@ export function pointillist(options?: PointillistOptions): PainterlyBrush & {
   flying: { vertex: string; fragment: string };
 };
 
+/** A moving object whose marks ride with it. Marks inside the box are laid in the object's own space. */
+export interface PainterlyAnchor {
+  /** Its matrixWorld is read on every frame. */
+  object: Object3D;
+  /** The box that holds the object, in the object's own space. */
+  min: [number, number, number];
+  max: [number, number, number];
+}
+
 /** Options of new PainterlyPass(scene, camera, options). Each is also a field you can change at any time. */
 export interface PainterlyPassOptions {
   /** Stroke cell size in CSS pixels. Default 7. */
@@ -75,6 +84,8 @@ export interface PainterlyPassOptions {
   sky?: boolean;
   /** The kind of mark and its colours. Default null = impressionist(). */
   brush?: PainterlyBrush | null;
+  /** Moving objects whose marks ride with them; at most 4. Default []. */
+  anchors?: PainterlyAnchor[];
 }
 
 /**
@@ -106,6 +117,7 @@ export class PainterlyPass extends Pass implements Required<PainterlyPassOptions
   /** The current brush. Set it at any time (one shader compile); null gives the default. */
   get brush(): PainterlyBrush;
   set brush(value: PainterlyBrush | null | undefined);
+  anchors: PainterlyAnchor[];
 
   /** HDR scene colour + depth texture at the paint resolution; null until the first render. */
   sceneTarget: WebGLRenderTarget | null;

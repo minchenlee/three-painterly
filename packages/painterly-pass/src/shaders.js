@@ -36,6 +36,17 @@ uniform mat4 uCamWorld;
 uniform mat4 uViewProj;
 uniform vec3 uCamPos;
 uniform float uPixAng;        // radians per paint-target pixel at the screen centre
+// ANCHORS (a #define, 0..4): moving objects whose marks ride with them (see the anchors option)
+#if ANCHORS > 0
+uniform mat4 uAnchor[ANCHORS];      // the object's matrixWorld
+uniform mat4 uAnchorInv[ANCHORS];
+uniform vec3 uAnchorMin[ANCHORS];   // a box in the object's own space; marks inside it are laid in that space
+uniform vec3 uAnchorMax[ANCHORS];
+mat4 paintToWorld = mat4(1.0);      // from the space the marks are laid in back to the world
+#define TO_WORLD(p) (paintToWorld * vec4(p, 1.0)).xyz
+#else
+#define TO_WORLD(p) (p)
+#endif
 varying vec2 vUv;
 
 float h1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -94,7 +105,7 @@ vec4 paintPlane(vec2 q, float C, int axis, float a, float seed, float baseAng, v
     if (e < 1.0) { bestZ = z; bestE = e; bestK = k; bestQ = ctr + at; bestV = v; }
   } }
   if (bestZ < 0.0) return vec4(under, bestZ);
-  vec3 col = brushPalette(colAtWorld(planeToWorld(bestQ, axis, a)), h1(bestK + 7.7) * 100.0);
+  vec3 col = brushPalette(colAtWorld(TO_WORLD(planeToWorld(bestQ, axis, a))), h1(bestK + 7.7) * 100.0);
   return vec4(brushShade(col, bestE, bestV, bestK), bestZ);
 }
 
@@ -112,10 +123,17 @@ void main() {
     outc = paintPlane(q, uS * uPixAng, 3, 0.0, 91.0, 0.15, under).rgb;
   } else {
     vec3 N = cross(surfaceStep(px, W, depth, vec2(1.0, 0.0), uRes.x), surfaceStep(px, W, depth, vec2(0.0, 1.0), uRes.y));
+    vec3 P = W;   // where the marks are laid: the world, or the own space of an anchored object, so its marks move with it
+    #if ANCHORS > 0
+    for (int i = 0; i < ANCHORS; i++) {
+      vec3 L = (uAnchorInv[i] * vec4(W, 1.0)).xyz;
+      if (all(greaterThan(L, uAnchorMin[i])) && all(lessThan(L, uAnchorMax[i]))) { P = L; N = mat3(uAnchorInv[i]) * N; paintToWorld = uAnchor[i]; break; }
+    }
+    #endif
     vec3 an = abs(N);
     int axis = an.x > an.y && an.x > an.z ? 0 : (an.y > an.z ? 1 : 2);
-    float a = axis == 0 ? W.x : (axis == 1 ? W.y : W.z);
-    vec2 q = axis == 0 ? W.zy : (axis == 1 ? W.xz : W.xy);
+    float a = axis == 0 ? P.x : (axis == 1 ? P.y : P.z);
+    vec2 q = axis == 0 ? P.zy : (axis == 1 ? P.xz : P.xy);
     float seed = floor(a * 4.0 + 0.5) * 3.17 + float(axis) * 11.3;
     float baseAng = axis == 1 ? 0.3 : 1.35;   // walls: mostly upright strokes; floors: lying down
     // keep marks about uS pixels on screen: pick two power-of-two cell sizes and cross-fade

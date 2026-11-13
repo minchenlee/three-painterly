@@ -54,7 +54,6 @@ python3 -m http.server     # or: npx serve .
 # http://localhost:8000/examples/split-time/
 # http://localhost:8000/examples/paint-pulse/
 # http://localhost:8000/examples/lightspeed-ram/
-# http://localhost:8000/examples/eiffel-fireworks/
 # http://localhost:8000/examples/balloon-house/
 ```
 
@@ -66,9 +65,7 @@ python3 -m http.server     # or: npx serve .
 
 `examples/lightspeed-ram`: a small cruiser jumps to lightspeed through a wide flagship. The cut wing breaks away, and the debris stream shreds the escorts behind it. There is no gravity: every piece gets its own launch time and velocity from where the ram passes it. A displace hook makes the two halves drift apart, and a material hook makes flying pieces glow white-hot and cool. Sliders set the paint stroke size, the debris stroke size, the debris amount (the cut is re-voxelized and re-baked) and a bloom glow. In painterly mode the stars are brush dabs over a faint painted nebula. The page remembers the last view and settings in the browser; Copy view copies them as text. The ships are original voxel shapes.
 
-`examples/eiffel-fireworks`: a 14 July show over a voxel Eiffel Tower, painted with the pointillist brush. Every star is a BakedDebris piece with its own velocity and launch time, and one dab of one pigment. Bullet time gives the drag: a star shoots out, then almost hovers. The bursts light the city. The Look control switches between dabs, oil strokes and plain cubes.
-
-`examples/balloon-house`: thousands of balloons burst through the roof of a small wooden house and carry it off. The balloons are BakedDebris pieces; a displace hook draws each one to its place in the cluster and moves the cluster with the house. A second bake handles the roof hatch and the ground that breaks at lift-off, with collisions. The house is an original voxel design.
+`examples/balloon-house`: thousands of balloons burst through the roof of a small wooden house and carry it off, painted with the pointillist brush. Every balloon is one dab of one pigment. The balloons are BakedDebris pieces; bullet time gives the drag (a balloon shoots out, then almost hovers); a displace hook draws each one to its place in the cluster and moves the cluster with the house. A second bake handles the roof hatch and the ground that breaks at lift-off, with collisions. The house is an original voxel design. The Look control switches between dabs, oil strokes and plain cubes.
 
 ## Use with your AI agent
 

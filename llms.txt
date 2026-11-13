@@ -19,8 +19,7 @@ Install: `npm i painterly-pass baked-debris three`
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
 - [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
 - [examples/lightspeed-ram/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/lightspeed-ram/index.html): no gravity, per-piece `velocity` and `launchTime` along a line, displace hook splits a ship in two
-- [examples/eiffel-fireworks/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/eiffel-fireworks/index.html): pointillist brush at night; fireworks from per-piece `velocity`, `launchTime` and `lifetime`, with `timeWarp` as drag; bloom after the painting
-- [examples/balloon-house/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/balloon-house/index.html): pointillist brush by day; a displace hook gathers pieces into a cluster that follows a moving object; two bakes
+- [examples/balloon-house/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/balloon-house/index.html): pointillist brush by day; per-piece `velocity` and `launchTime` with `timeWarp` as drag; a displace hook gathers pieces into a cluster that follows a moving object; two bakes
 
 ## PainterlyPass
 
@@ -69,6 +68,9 @@ Options (all are plain properties; change them at any time, e.g. `painter.stroke
 | canvas | 0.035 | Canvas weave strength. |
 | sky | true | Paint the background too. |
 | brush | null | The kind of mark. null = `impressionist()`. |
+| anchors | [] | Moving objects that carry their strokes: `[{ object, min, max }]`, at most 4. |
+
+Moving objects: strokes are fixed to the world, so an object that moves slides under its strokes. Fix: `painter.anchors = [{ object: house, min: [-4, 0, -5], max: [4, 11, 7] }]`. `min`/`max` are a box in the object's own space; keep it tight. `object.matrixWorld` is read every frame. Debris strokes from BakedDebris do not need this.
 
 Brushes: `import { PainterlyPass, impressionist, pointillist } from 'painterly-pass'`.
 - `impressionist()`: oil strokes, the default. The table above describes it.
@@ -145,6 +147,6 @@ Oil brush look for your own effects: `import { strokeFragment } from 'baked-debr
 - Changing physics options needs `rebake()`. Time, time warp and size do not.
 - The displace hook does not change collisions. Large offsets push pieces through walls and the floor. Fade offsets out as `d.local` approaches `d.rest`.
 - Pieces do not collide with each other. At most 6 path segments per piece.
-- `material` must be a lit material such as `MeshStandardMaterial`. `MeshBasicMaterial` does not compile with the patch. For unlit pieces, use a black `MeshStandardMaterial` and add `vColor.rgb` to `totalEmissiveRadiance` in `onBeforeCompile` (see examples/eiffel-fireworks).
+- `material` must be a lit material such as `MeshStandardMaterial`. `MeshBasicMaterial` does not compile with the patch. For unlit pieces, use a black `MeshStandardMaterial` and add `vColor.rgb` to `totalEmissiveRadiance` in `onBeforeCompile`.
 - Pieces that have not launched yet are drawn as cubes at their start position. To hide them, move them away in the displace hook while `d.local <= -0.05`; keep them in place for the last 0.05 s, so strokes point the right way at launch.
 - Serve examples over HTTP (`python3 -m http.server` at the repository root); `file://` does not load ES modules.

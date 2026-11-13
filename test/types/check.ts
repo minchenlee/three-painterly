@@ -12,6 +12,10 @@ const dabs = pointillist({ purity: 0.9, pigments: 12 });
 dabs.uniforms.uPurity.value = 0.5;
 painter.brush = dabs;
 painter.brush = null;
+painter.anchors = [{ object: new Mesh(), min: [-1, 0, -1], max: [1, 2, 1] }];
+new PainterlyPass(scene, camera, { anchors: painter.anchors });
+// @ts-expect-error: an anchor needs its box
+painter.anchors = [{ object: new Mesh() }];
 const oil: PainterlyBrush = impressionist();
 const mine: PainterlyBrush = { glsl: oil.glsl, reach: p => p.strokeWidth, uniforms: { uMine: { value: 1 } } };
 new PainterlyPass(scene, camera, { brush: mine });

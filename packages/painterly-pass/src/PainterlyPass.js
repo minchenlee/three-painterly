@@ -29,6 +29,8 @@ function checkRenderer(renderer) {
   if (caps.reverseDepthBuffer || renderer.reverseDepthBuffer) throw new Error('PainterlyPass does not support reverseDepthBuffer; create the WebGLRenderer without it');
 }
 
+const MAX_ANCHORS = 4;
+
 export class PainterlyPass extends Pass {
   static defaults = {
     strokeSize: 7,          // stroke cell size in CSS pixels
@@ -47,6 +49,7 @@ export class PainterlyPass extends Pass {
     canvas: 0.035,          // canvas weave strength
     sky: true,              // paint the background too
     brush: null,            // the kind of mark and its colours: impressionist() (the default) or pointillist()
+    anchors: [],            // moving objects whose marks ride with them: [{ object, min, max }], at most 4
   };
 
   constructor(scene, camera, options = {}) {
@@ -61,7 +64,9 @@ export class PainterlyPass extends Pass {
       uContrast: { value: 1.1 }, uSky: { value: true },
       uInvProj: { value: new Matrix4() }, uCamWorld: { value: new Matrix4() }, uViewProj: { value: new Matrix4() },
       uCamPos: { value: new Vector3() }, uPixAng: { value: 0.001 },
+      uAnchor: { value: [] }, uAnchorInv: { value: [] }, uAnchorMin: { value: [] }, uAnchorMax: { value: [] },
     };
+    for (let i = 0; i < MAX_ANCHORS; i++) { const u = this._uniforms; u.uAnchor.value.push(new Matrix4()); u.uAnchorInv.value.push(new Matrix4()); u.uAnchorMin.value.push(new Vector3()); u.uAnchorMax.value.push(new Vector3()); }
     // Own copies of every default (arrays too), then only the known options: a typo is reported,
     // and options cannot replace Pass fields such as enabled, renderToScreen or render.
     const defaults = PainterlyPass.defaults, copy = v => (Array.isArray(v) ? v.slice() : v);
@@ -106,7 +111,7 @@ export class PainterlyPass extends Pass {
     this._paint?.dispose();
     this._paint = new ShaderMaterial({
       uniforms: { ...this._uniforms, ...this._brush.uniforms },   // uniform objects are shared: brush.uniforms stays live
-      defines: { SEARCH: 4 },
+      defines: { SEARCH: 4, ANCHORS: 0 },
       vertexShader: quadVertex, fragmentShader: paintFragment(this._brush.glsl),
       depthTest: false, depthWrite: false, blending: NoBlending, toneMapped: false,
     });
@@ -156,6 +161,17 @@ export class PainterlyPass extends Pass {
     u.uReach.value = search === 7 ? Math.min(reach, 3) : reach;   // also the early-out radius
     u.uContrast.value = this.contrast;
     u.uSky.value = this.sky;
+    // Anchors: pixels inside an anchor's box (in the object's own space) get their marks laid in that space.
+    const anchors = this.anchors || [], n = Math.min(anchors.length, MAX_ANCHORS);
+    if (anchors.length > MAX_ANCHORS && !this._warnedAnchors) { console.warn(`PainterlyPass: only the first ${MAX_ANCHORS} anchors are used`); this._warnedAnchors = true; }
+    if (this._paint.defines.ANCHORS !== n) { this._paint.defines.ANCHORS = n; this._paint.needsUpdate = true; }   // recompiles only when the count changes
+    for (let i = 0; i < n; i++) {
+      const a = anchors[i];
+      if (!a?.object?.isObject3D || !a.min || !a.max) throw new Error(`PainterlyPass: anchors[${i}] needs object (an Object3D), min and max ([x, y, z] in the object's own space)`);
+      a.object.updateWorldMatrix(true, false);
+      u.uAnchor.value[i].copy(a.object.matrixWorld); u.uAnchorInv.value[i].copy(a.object.matrixWorld).invert();
+      u.uAnchorMin.value[i].fromArray(a.min); u.uAnchorMax.value[i].fromArray(a.max);
+    }
     u.uInvProj.value.copy(cam.projectionMatrixInverse);
     u.uCamWorld.value.copy(cam.matrixWorld);
     u.uViewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);

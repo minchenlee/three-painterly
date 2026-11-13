@@ -106,8 +106,19 @@ All options are also writable properties (`painter.strokeSize = 10`). Unknown op
 | `canvas` | `0.035` | Canvas weave strength (fixed to the screen). |
 | `sky` | `true` | Paint the background. |
 | `brush` | `null` | The brush (see Brushes). `null` = `impressionist()`. |
+| `anchors` | `[]` | Moving objects whose strokes ride with them (see Moving objects). At most 4. |
 
 The table describes the default brush. Another brush can read an option in its own way; its section says how.
+
+## Moving objects
+
+Strokes are fixed to the world. That suits a static scene and a moving camera. An object that moves slides under its strokes, as if it passed behind painted glass. To make an object carry its strokes, name it as an anchor:
+
+```js
+painter.anchors = [{ object: house, min: [-4, 0, -5], max: [4, 11, 7] }];   // the box that holds the house, in the house's own space
+```
+
+Every pixel inside the box gets its strokes laid in the object's own space, so they move and turn with it. The pass reads `object.matrixWorld` on every frame. Up to 4 anchors; changing their number compiles one shader. The box moves with the object: keep it tight, because anything else inside it (the ground under a house, for example) takes the same strokes.
 
 `painter.sceneTarget` holds the scene colour and depth (`sceneTarget.depthTexture`) at paint resolution, for effects that draw on top of the painting.
 
@@ -117,7 +128,7 @@ The table describes the default brush. Another brush can read an option in its o
 
 1. Render the scene into a half-float target with a depth texture, at `resolutionScale`.
 2. For each pixel, rebuild the world position from depth, and the surface direction from the neighbouring pixels.
-3. Pick the dominant axis of the surface and use the surface's own plane coordinates as the canvas. Lay one mark per grid cell there, at a random offset. The brush gives the mark its shape. The default is an ellipse with a random angle (upright on walls, lying on floors), a ragged bristle edge, a lighter paint ridge and bristle streaks. The topmost mark of the cells around the pixel wins (4x4, or up to 7x7 for strokeLength above 1; 3x3 for pointillist dabs).
+3. If the position is inside the box of an anchor, continue in that object's own space. Pick the dominant axis of the surface and use the surface's own plane coordinates as the canvas. Lay one mark per grid cell there, at a random offset. The brush gives the mark its shape. The default is an ellipse with a random angle (upright on walls, lying on floors), a ragged bristle edge, a lighter paint ridge and bristle streaks. The topmost mark of the cells around the pixel wins (4x4, or up to 7x7 for strokeLength above 1; 3x3 for pointillist dabs).
 4. Each mark takes its colour from the scene at its own centre, projected back to the screen, then passes through the brush's palette.
 5. Choose two power-of-two cell sizes from the distance and cross-fade, so strokes stay about `strokeSize` pixels on screen.
 6. Add the brush's canvas weave, scale up to the output and convert to the output colour space.
@@ -130,6 +141,7 @@ The pointillist brush follows the divided colour of Georges Seurat and Paul Sign
 
 ## Limitations
 
+- Strokes are fixed to the world, so a moving object slides under them unless it is an anchor (see Moving objects). Deforming meshes and large crowds of moving objects are not covered.
 - Surfaces are mapped by their dominant axis. Strongly slanted or curved surfaces get strokes from the nearest axis plane, which can show a seam where the dominant axis changes.
 - Perspective cameras only. `WebGLRenderer` only: `WebGPURenderer` is not supported. A renderer created with `logarithmicDepthBuffer` or `reverseDepthBuffer` is not supported; `render()` throws an error that says so.
 - Each pixel samples the scene many times. On weak GPUs lower `resolutionScale` or raise `strokeSize`.

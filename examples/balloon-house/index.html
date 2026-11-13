@@ -268,12 +268,31 @@ const hatchCells = [];
 }
 // strings: a fan of lines from the roof to the underside of the balloon cluster; they move with the house
 const CLUSTER = new THREE.Vector3(0.6, 18.4, 0), CL_R = new THREE.Vector3(7.4, 6.4, 7.4), ANCHOR = new THREE.Vector3(1.6, 7.4, 0);
-const strings = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xf2efe6, transparent: true, opacity: 0.55 }));
+// In the painted looks they are drawn on top of the painting, where there is no scene depth: the shader tests
+// against the painter's depth texture itself, so the house hides the strings behind it.
+const strings = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, toneMapped: false,
+  uniforms: { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) }, uOpacity: { value: 0.55 } },
+  vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDepth; uniform bool uUseDepth; uniform vec2 uRes; uniform float uOpacity;
+    void main() {
+      if (uUseDepth && gl_FragCoord.z > texture2D(tDepth, gl_FragCoord.xy / uRes).x + 1e-5) discard;   // behind the scene
+      gl_FragColor = vec4(0.89, 0.87, 0.80, uOpacity);
+      #include <colorspace_fragment>
+    }`,
+}));
 {
   const pts = [];
   for (let i = 0; i < 150; i++) { const a = R(0, 6.283), e = R(0.15, 1.2), r = Math.sin(e); pts.push(ANCHOR.x, ANCHOR.y, ANCHOR.z, CLUSTER.x + Math.cos(a) * r * CL_R.x * 0.9, CLUSTER.y - Math.cos(e) * CL_R.y * 0.9, CLUSTER.z + Math.sin(a) * r * CL_R.z * 0.9); }
   strings.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   strings.frustumCulled = false;
+  const size = new THREE.Vector2();
+  strings.onBeforeRender = renderer => {
+    const u = strings.material.uniforms, target = renderer.getRenderTarget(), depth = look === 'cubes' ? null : painter.sceneTarget?.depthTexture ?? null;
+    if (target) size.set(target.width, target.height); else renderer.getDrawingBufferSize(size);
+    u.uRes.value.copy(size); u.tDepth.value = depth; u.uUseDepth.value = !!depth;
+  };
 }
 
 /* ---------- balloons: BakedDebris pieces with their own velocity and launch time ----------
@@ -328,7 +347,11 @@ scene.add(rubble.mesh);
 
 /* ---------- painting and strokes ---------- */
 const brushes = { dabs: pointillist({ purity: 0.8, hueSpread: 0.055 }), oil: impressionist() };
-const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 6, saturation: 1.1, resolutionScale: LITE ? 0.55 : 0.7 });
+const painter = new PainterlyPass(scene, camera, {
+  brush: brushes.dabs, strokeSize: 6, saturation: 1.1, resolutionScale: LITE ? 0.55 : 0.7,
+  // the house carries its own dabs when it flies; the box holds the roof overhang, the chimney and the porch
+  anchors: [{ object: house, min: [-4.05, 0.02, -4.55], max: [4.05, 10.7, 6.55] }],
+});
 let look = 'dabs', balloonScale = 1;
 const STROKE = { dabs: { strokeScale: 1.55 }, oil: { strokeScale: 0.95 } };
 function setLook(name) {
@@ -356,7 +379,7 @@ function applyTime(t) {
   house.rotation.set(0.012 * Math.sin(t * 31) * creak, 0.02 * Math.sin(u * 0.5) * Math.min(1, u / 3), 0.012 * Math.sin(t * 37) * creak - 0.035 * Math.sin(u * 0.8) * Math.min(1, u / 2));
   boom.uniforms.uLift.value.copy(lift);
   boom.setTime(t); rubble.setTime(t);
-  strings.position.copy(lift); strings.material.opacity = 0.55 * Math.min(1, Math.max(0, (t - 3.2) / 2));
+  strings.position.copy(lift); strings.material.uniforms.uOpacity.value = 0.55 * Math.min(1, Math.max(0, (t - 3.2) / 2));
   // the camera rides up with the house, and keeps the offset the viewer chose
   target.set(TARGET0.x + lift.x, TARGET0.y + 0.8 * lift.y, TARGET0.z + lift.z);
   delta.subVectors(target, controls.target); camera.position.add(delta); controls.target.copy(target);

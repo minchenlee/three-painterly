@@ -2,7 +2,7 @@
 // Compile checks need a browser: open examples/basic.html and switch brushes (see AGENTS.md, GPU checks).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PerspectiveCamera, Scene } from 'three';
+import { Object3D, PerspectiveCamera, Scene } from 'three';
 import { PainterlyPass, impressionist, pointillist } from '../src/index.js';
 import { paintHead, paintBody } from '../src/shaders.js';
 
@@ -98,6 +98,48 @@ test('setting brush builds a new material; null gives the default', () => {
   pass.brush = null; sync(pass);
   assert.equal(pass.brush.name, 'impressionist');
   assert.ok(!pass._paint.fragmentShader.includes('uPigments'));
+  pass.dispose();
+});
+
+test('anchors set the ANCHORS define and the matrices; none by default', () => {
+  const pass = make();
+  sync(pass);
+  assert.equal(pass._paint.defines.ANCHORS, 0);
+  assert.deepEqual(pass.anchors, []);
+  assert.notEqual(pass.anchors, PainterlyPass.defaults.anchors, 'each pass has its own list');
+  const parent = new Object3D(), object = new Object3D();
+  parent.add(object); parent.position.set(0, 10, 0); object.position.set(3, 0, 0);
+  pass.anchors = [{ object, min: [-1, -2, -3], max: [1, 2, 3] }];
+  const v = pass._paint.version;
+  sync(pass);
+  assert.equal(pass._paint.defines.ANCHORS, 1);
+  assert.ok(pass._paint.version > v, 'a new count recompiles');
+  const u = pass._paint.uniforms;
+  assert.deepEqual(u.uAnchor.value[0].elements.slice(12, 15), [3, 10, 0], 'the world matrix includes the parents');
+  assert.deepEqual(u.uAnchorInv.value[0].elements.slice(12, 15), [-3, -10, 0]);
+  assert.deepEqual([u.uAnchorMin.value[0].toArray(), u.uAnchorMax.value[0].toArray()], [[-1, -2, -3], [1, 2, 3]]);
+  const v2 = pass._paint.version;
+  object.position.x = 5; sync(pass);
+  assert.equal(u.uAnchor.value[0].elements[12], 5, 'the matrix is read on every frame');
+  assert.equal(pass._paint.version, v2, 'a moving anchor does not recompile');
+  pass.brush = pointillist(); sync(pass);
+  assert.equal(pass._paint.defines.ANCHORS, 1, 'a new brush keeps the anchors');
+  pass.dispose();
+});
+
+test('at most 4 anchors are used; a malformed anchor throws', () => {
+  const anchor = () => ({ object: new Object3D(), min: [0, 0, 0], max: [1, 1, 1] });
+  const pass = make({ anchors: [anchor(), anchor(), anchor(), anchor(), anchor()] });
+  const warn = console.warn, seen = [];
+  console.warn = m => seen.push(m);
+  try { sync(pass); sync(pass); } finally { console.warn = warn; }
+  assert.equal(pass._paint.defines.ANCHORS, 4);
+  assert.equal(seen.length, 1, 'one warning');
+  assert.match(seen[0], /first 4 anchors/);
+  pass.anchors = [{ object: {}, min: [0, 0, 0], max: [1, 1, 1] }];
+  assert.throws(() => sync(pass), /anchors\[0\] needs object/);
+  pass.anchors = [{ object: new Object3D(), min: [0, 0, 0] }];
+  assert.throws(() => sync(pass), /anchors\[0\] needs object/);
   pass.dispose();
 });
 

@@ -19,7 +19,7 @@ Install: `npm i painterly-pass baked-debris three`
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
 - [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
 - [examples/lightspeed-ram/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/lightspeed-ram/index.html): no gravity, per-piece `velocity` and `launchTime` along a line, displace hook splits a ship in two
-- [examples/balloon-house/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/balloon-house/index.html): pointillist brush by day; per-piece `velocity` and `launchTime` with `timeWarp` as drag; a displace hook gathers pieces into a cluster that follows a moving object; two bakes
+- [examples/balloon-house/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/balloon-house/index.html): pointillist brush on a voxel street; a house that flies as a PainterlyPass anchor; debris that rests on it rides along through a displace hook; balloons from per-piece `velocity` and `launchTime` with `timeWarp` as drag
 
 ## PainterlyPass
 

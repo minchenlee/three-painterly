@@ -22,7 +22,7 @@ Both packages share one version number until the first public release.
 ### examples
 - `examples/voxel-paris`: a Brush control in the Paint tab switches between oil strokes and pointillist dabs. The fire follows.
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
-- `examples/balloon-house`: balloons burst through a roof and carry a house off, in pointillist dabs. Balloons are pieces with their own velocity and launch time; bullet time is the drag. A displace hook gathers them into a cluster that follows the house.
+- `examples/balloon-house`: balloons burst through a roof and carry a house off over a voxel street, in pointillist dabs. Roof and turf debris collide with the voxels. Balloons are pieces with their own velocity and launch time; bullet time is the drag; a displace hook gathers them into a bunch that follows the house. The house is an anchor.
 
 ## 0.1.0 (2026-11-05)
 

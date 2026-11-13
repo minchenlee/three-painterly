@@ -60,22 +60,24 @@ details[open] > summary { margin-bottom: 8px; }
 #liteNote { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
   padding: 3px 9px; border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 12px; }
 html[data-ui-hidden] #liteNote { display: none !important; }
+#status { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--ink); font-size: 14px; z-index: 5; }
 [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="liteNote" hidden>Lite mode · fewer balloons</div>
+<div id="status" role="status">Stacking voxels…</div>
 <button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
 
 <div id="ui">
   <header>
     <h1>Balloon House</h1>
-    <p>Thousands of balloons burst through the roof of a small wooden house and carry it off. Every balloon is one dab of one pigment. Scrub the time, or play it backwards.</p>
+    <p>Thousands of balloons burst through the roof of a wooden house and carry it off over its street. Every balloon is one dab of one pigment. Scrub the time, or play it backwards.</p>
   </header>
 
   <div class="grp">
-    <div class="lab"><span>Time</span><output id="tOut">0.0 / 22.0 s</output></div>
+    <div class="lab"><span>Time</span><output id="tOut">0.0 / 26.0 s</output></div>
     <input type="range" id="time" min="0" max="1000" value="0" aria-label="Time">
     <div class="row">
       <button type="button" id="bStart" title="Back to the start" aria-label="Back to the start">⏮</button>
@@ -93,6 +95,14 @@ html[data-ui-hidden] #liteNote { display: none !important; }
   </div>
 
   <div class="grp">
+    <div class="row"><span class="lab">View</span>
+      <div class="seg" role="group" aria-label="View" id="shots">
+        <button type="button" data-shot="street" aria-pressed="true" title="From across the street (1)">Street</button>
+        <button type="button" data-shot="garden" aria-pressed="false" title="From the garden gate (2)">Gate</button>
+        <button type="button" data-shot="roof" aria-pressed="false" title="Level with the roof (3)">Roof</button>
+        <button type="button" data-shot="above" aria-pressed="false" title="Over the street (4)">Above</button>
+      </div>
+    </div>
     <div class="row"><span class="lab">Look</span>
       <div class="seg" role="group" aria-label="Look" id="looks">
         <button type="button" data-look="dabs" aria-pressed="true" title="Pointillist dabs (B switches)">Dabs</button>
@@ -101,8 +111,10 @@ html[data-ui-hidden] #liteNote { display: none !important; }
       </div>
     </div>
     <details id="more" open>
-      <summary>Brush settings</summary>
+      <summary>Light and brush</summary>
       <div class="grp">
+        <div class="lab"><span>Time of day</span><output id="sunOut">17:00</output></div>
+        <input type="range" id="sun" min="6.5" max="19.5" step="0.25" value="17" aria-label="Time of day">
         <div class="lab"><span>Dab size</span><output id="szOut">6 px</output></div>
         <input type="range" id="size" min="3" max="16" step="1" value="6" aria-label="Dab size">
         <div class="lab"><span>Pigment purity</span><output id="puOut">0.80</output></div>
@@ -125,322 +137,568 @@ html[data-ui-hidden] #liteNote { display: none !important; }
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 import { PainterlyPass, impressionist, pointillist } from '../../packages/painterly-pass/src/index.js';
-import { BakedDebris } from '../../packages/baked-debris/src/index.js';
+import { BakedDebris, voxelCollider, anyCollider } from '../../packages/baked-debris/src/index.js';
 
+addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);
 const QS = new URLSearchParams(location.search);
-// lite mode (phones, narrow windows): pixel ratio 1, fewer balloons and flowers, a smaller painting. ?full=1 turns it off, ?lite=1 forces it.
+// lite mode (phones, narrow windows): pixel ratio 1, a third of the balloons, 2048 shadows, a smaller painting. ?full=1 turns it off, ?lite=1 forces it.
 const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
 $('liteNote').hidden = !LITE;
 const NARROW = innerWidth <= 600, PORTRAIT = innerWidth / innerHeight < 0.8;
 $('more').open = !NARROW;                                        // on a phone the panel starts short: time and look only
-const T_END = 22, T_HATCH = 1.0, T_LIFT = 6.8;
+const T_END = 26, T_BURST = 1.2, T_LIFT = 8.2;
+function h01(a, b, c = 0) { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1442695041); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
 function mulberry32(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const rnd = mulberry32(2009);
-const R = (a, b) => a + (b - a) * rnd();
+const R = (a, b) => a + (b - a) * rnd(), RI = (a, b) => Math.floor(R(a, b + 1));
 
-const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: !LITE, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 1.5));
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;   // the plain path; PainterlyPass tone-maps by itself
+/* ---------- palette: every voxel holds an index into it ---------- */
+const PAL = [[0, 0, 0]], HEX = [0], C = {};
+function def(names, ...hexes) { names.split(' ').forEach((n, i) => { const c = new THREE.Color(hexes[i]); C[n] = PAL.length; PAL.push([c.r, c.g, c.b]); HEX.push(hexes[i]); }); }
+def('GRASS1 GRASS2 GRASS3', 0x669848, 0x71a24e, 0x5c8e43); def('DIRT1 DIRT2', 0x6f5137, 0x7c5c40);
+def('ASPH1 ASPH2 PAINT CURB', 0x4a4b50, 0x53545a, 0xe8e2c8, 0xb9b3a6); def('WALK1 WALK2 GRAVEL1 GRAVEL2', 0xc9c2b4, 0xbdb5a6, 0xcdbb97, 0xbfae8b);
+def('TRUNK LEAF1 LEAF2 LEAF3 LEAF4 BLOSSOM1 BLOSSOM2 HEDGE1 HEDGE2 STEM', 0x6a4a33, 0x4f8a3a, 0x5d9a42, 0x437a36, 0x6aa84a, 0xf3a6c0, 0xf7c3d4, 0x3f7438, 0x4a8240, 0x4c8a3c);
+def('FL_R FL_Y FL_P FL_W FL_V FL_O', 0xe9382d, 0xf7c81e, 0xf06aa9, 0xf7f4ea, 0x7a59e0, 0xf58a1f);
+def('TRIM WHITE GLASS1 GLASS2 STONE1 STONE2 BRICK1 BRICK2 MORTAR', 0xf3ecd8, 0xf7f5ee, 0x9cc7dc, 0x7fb0cb, 0x9a9a9e, 0x8b8b90, 0xa5482f, 0x963f2a, 0xc9a08a);
+def('PORCH1 PORCH2 FENCEB1 FENCEB2 METAL LAMP DARK', 0xcdb68e, 0xbfa87f, 0x8a6a48, 0x7d5f40, 0x2e3136, 0xfff0b8, 0x3a2f2a);
+def('TEAL1 TEAL2 DKTEAL SLATE1 SLATE2 SLATE3 MUSTARD', 0x2f8088, 0x2a747c, 0x1f5960, 0x7483ad, 0x6876a2, 0x7f8db6, 0xe2a72e);
+def('BUTTER1 BUTTER2 TERRA1 TERRA2 TERRA3 DOORBLUE SHUTGREEN', 0xf0d684, 0xe6ca76, 0xb5553d, 0xa64b35, 0xc1614a, 0x3f6fb0, 0x4f7a56);
+def('BARN1 BARN2 CHAR1 CHAR2 CHAR3', 0xb7412f, 0xa7392a, 0x4b4a50, 0x434248, 0x55545b);
+def('SAGE1 SAGE2 BROWN1 BROWN2 BROWN3 SHUTBROWN', 0x9db88a, 0x90ab7e, 0x7a5a44, 0x6d4f3b, 0x86654d, 0x5a4636);
+def('DUSTY1 DUSTY2 NAVY LILAC1 LILAC2 PLUM CREAM1 CREAM2', 0x8fb0d0, 0x82a3c4, 0x3d5a80, 0xc7b0d8, 0xbaa2cc, 0x6b5a8a, 0xf1e7cf, 0xe6dbc1);
+def('CARRED CARBLUE TIRE CHROME PUMPKIN POOL', 0xc8382c, 0x3b6fb8, 0x1d1d20, 0xc9ccd2, 0xe8791c, 0x4fb6e0);
+const FLOWERS = [C.FL_R, C.FL_Y, C.FL_P, C.FL_W, C.FL_V, C.FL_O];
 
-const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xbfe0f2, 140, 900);
-const camera = new THREE.PerspectiveCamera(50, 1, 0.3, 4000);
-// a tall window: step back, and aim low so the panel covers meadow, not balloons
-const CAM0 = PORTRAIT ? new THREE.Vector3(34, 3.0, 60) : new THREE.Vector3(21, 3.0, 33), TARGET0 = PORTRAIT ? new THREE.Vector3(0, 4.5, 0) : new THREE.Vector3(-2.5, 12, 0);
-camera.position.copy(CAM0);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.copy(TARGET0); controls.enableDamping = true; controls.minDistance = 8; controls.maxDistance = 160;
+/* ---------- voxel grids: 1 voxel = 25 cm. G is the street; HG is the hero house, which has to move ---------- */
+const OX = 160, OY = 4, OZ = 128, NX = 320, NY = 96, NZ = 288;
+const G = new Uint8Array(NX * NY * NZ);
+const I = (x, y, z) => ((x + OX) * NY + (y + OY)) * NZ + (z + OZ);
+const ok = (x, y, z) => x >= -OX && x < NX - OX && y >= -OY && y < NY - OY && z >= -OZ && z < NZ - OZ;
+const get = (x, y, z) => (ok(x, y, z) ? G[I(x, y, z)] : 0);
+const set = (x, y, z, c) => { if (ok(x, y, z)) G[I(x, y, z)] = c; };
+const setE = (x, y, z, c) => { if (ok(x, y, z) && !G[I(x, y, z)]) G[I(x, y, z)] = c; };
+const box = (x0, x1, y0, y1, z0, z1, c) => { for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) set(x, y, z, typeof c === 'function' ? c(x, y, z) : c); };
+const HW = 28, HH = 72, HZ0 = -26, HZ1 = 36, HG = new Uint8Array(2 * HW * HH * (HZ1 - HZ0));
+const hok = (x, y, z) => x >= -HW && x < HW && y >= 0 && y < HH && z >= HZ0 && z < HZ1;
+const HI = (x, y, z) => ((x + HW) * HH + y) * (HZ1 - HZ0) + (z - HZ0);
+const hget = (x, y, z) => (hok(x, y, z) ? HG[HI(x, y, z)] : 0);
+const hset = (x, y, z, c) => { if (hok(x, y, z)) HG[HI(x, y, z)] = c; };
+const HERO = { x: 0, y: 1, z: -6 };                              // where the hero house stands: its local (0, 0, 0) in the world
 
-/* ---------- sky, light ---------- */
-{
-  const g = new THREE.SphereGeometry(3000, 32, 16), col = [], p = g.attributes.position;
-  const zen = new THREE.Color(0x2f7fe0), hor = new THREE.Color(0xc4e6f6), c = new THREE.Color();
-  for (let i = 0; i < p.count; i++) { c.copy(hor).lerp(zen, Math.pow(Math.max(0, p.getY(i) / 3000), 0.55)); col.push(c.r, c.g, c.b); }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false })));   // no depth: the painter treats it as sky
-}
-scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x86965e, 1.0));
-const sun = new THREE.DirectionalLight(0xfff0d2, 2.9);
-sun.position.set(-34, 52, 26); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004;
-Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 260 });
-scene.add(sun, sun.target);
-
-/* ---------- helpers: instanced boxes with a colour each ---------- */
-const boxGeo = new THREE.BoxGeometry(1, 1, 1), M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V3 = new THREE.Vector3(), S3 = new THREE.Vector3(), C = new THREE.Color();
-const std = (color, roughness = 0.9) => new THREE.MeshStandardMaterial({ color, roughness });
-function boxes(list, parent = scene, shadow = true) {   // list: [x, y, z, sx, sy, sz, colour]
-  const m = new THREE.InstancedMesh(boxGeo, std(0xffffff), list.length);
-  list.forEach((b, i) => { m.setMatrixAt(i, M4.compose(V3.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); m.setColorAt(i, C.set(b[6])); });
-  m.castShadow = shadow; m.receiveShadow = true; parent.add(m); return m;
-}
-const tint = (hex, dl) => C.set(hex).offsetHSL(0, 0, dl).getHex();
-
-/* ---------- the land: a meadow with wild flowers, a path, a fence, trees, far hills, clouds ---------- */
-{
-  const lawn = new THREE.Mesh(new THREE.CircleGeometry(1200, 48), std(0x6f9f52, 1)); lawn.rotation.x = -Math.PI / 2; lawn.receiveShadow = true; scene.add(lawn);
-  const list = [];
-  for (let i = 0; i < 90; i++) { const a = R(0, 6.283), r = R(8, 140), s = R(4, 14); list.push([Math.cos(a) * r, 0.02, Math.sin(a) * r, s, 0.04, s, tint(0x6f9f52, R(-0.06, 0.06))]); }   // patches of other greens
-  list.push([0, 0.05, 11.5, 1.6, 0.1, 11, 0xd9c49a]);                                    // the path to the gate
-  const FLOWERS = [0xff3b30, 0xffcc00, 0xff7ac8, 0xffffff, 0x7d5cff, 0xff8a1f];
-  for (let i = 0, n = LITE ? 900 : 2600; i < n; i++) {
-    const a = R(0, 6.283), r = 7 + Math.pow(rnd(), 0.7) * 85, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (Math.abs(x) < 1.2 && z > 0) continue;
-    list.push([x, 0.2, z, 0.22, 0.4, 0.22, FLOWERS[Math.floor(R(0, 6))]]);
+/* ---------- a wooden house. put(x, y, z, c): x across, y up from the ground, z towards the front ---------- */
+function house(put, o) {
+  const { hw, hd, floors = 2, axis = 'x', slope = 0.75, sid, trim = C.TRIM, roof, door, shut, porch = 8, chim = null, dormers = [], doorX = 0, gable = null } = o;
+  const wallTop = 2 + floors * 11, over = 2;
+  const run = axis === 'x' ? (x, z) => hd + over - Math.abs(z) : (x, z) => hw + over - Math.abs(x);
+  const roofY = (x, z) => wallTop + Math.floor(run(x, z) * slope);
+  const ridge = wallTop + Math.floor(((axis === 'x' ? hd : hw) + over) * slope);
+  const shingle = (x, y, z) => roof[Math.floor(h01(x >> 1, y, z >> 1) * 3)];
+  const centres = (half, skip) => { const n = Math.max(1, Math.floor((2 * half - 5) / 11)), out = []; for (let i = 0; i < n; i++) { const c = Math.round(-half + (2 * half) * (i + 0.5) / n); if (skip === undefined || Math.abs(c - skip) > 6) out.push(c); } return out; };
+  // a window in a wall plane: glass with a cross bar, a frame, shutters. Returns 0 outside it.
+  const win = (u, y, c, y0, w = 2, h = 6) => {
+    const du = u - c, dy = y - y0;
+    if (dy < -1 || dy > h || Math.abs(du) > w + 2) return 0;
+    if (Math.abs(du) === w + 2) return dy >= 0 && dy < h ? shut : 0;
+    if (Math.abs(du) === w + 1 || dy === -1 || dy === h) return trim;
+    return du === 0 || dy === (h >> 1) ? trim : (h01(c, y0, u + y) < 0.5 ? C.GLASS1 : C.GLASS2);
+  };
+  const wallColour = (x, y, z) => {
+    const ax = Math.abs(x), az = Math.abs(z), front = z === hd, sideWall = ax === hw;
+    if (ax === hw && az === hd) return trim;                                           // corner boards
+    if (floors > 1 && y === 13) return trim;                                           // the band between the floors
+    if (y === wallTop - 1) return trim;                                                // the frieze under the eaves
+    const u = sideWall ? z : x, half = sideWall ? hd : hw;
+    if (y >= wallTop) {                                                                // the gable: an attic window, shingles
+      const a = (Math.abs(u) <= 1 && y >= wallTop + 3 && y <= wallTop + 6) ? (u === 0 || y === wallTop + 3 || y === wallTop + 6 ? trim : C.GLASS1) : 0;
+      return a || (gable ? gable[(u + y) & 1] : sid[y & 1]);
+    }
+    if (front) {
+      const dx = x - doorX;
+      if (dx >= -2 && dx <= 1 && y <= 10) return y >= 8 && y <= 9 ? C.GLASS2 : (dx === -2 || dx === 1 || y === 2 || y === 6 ? door : door);
+      if (dx >= -3 && dx <= 2 && y <= 11) return trim;
+    }
+    for (let f = 0; f < floors; f++) for (const c of centres(half, front && f === 0 ? doorX : undefined)) { const w = win(u, y, c, 5 + f * 11); if (w) return w; }
+    return sid[y & 1];                                                                 // clapboards
+  };
+  // foundation, walls, a floor under the attic
+  for (let x = -hw; x <= hw; x++) for (let z = -hd; z <= hd; z++) {
+    const edge = Math.abs(x) === hw || Math.abs(z) === hd;
+    if (edge) { for (let y = 0; y < 2; y++) put(x, y, z, h01(x, y, z) < 0.5 ? C.STONE1 : C.STONE2);
+      const top = (axis === 'x' ? Math.abs(x) === hw : Math.abs(z) === hd) ? roofY(x, z) : wallTop;
+      for (let y = 2; y < top; y++) put(x, y, z, wallColour(x, y, z)); }
+    else { put(x, wallTop, z, C.DARK); put(x, 1, z, C.DARK); }
   }
-  // a picket fence around the yard, with a gap for the gate
-  for (let u = -8; u <= 8; u += 0.5) for (const [x, z] of [[u, 9], [u, -9], [8, u * 9 / 8], [-8, u * 9 / 8]]) {
-    if (z === 9 && Math.abs(x) < 1.1) continue;
-    list.push([x, 0.5, z, 0.14, 1.0, 0.14, 0xf6f1e4]);
+  // roof: two voxels thick, shingles in three shades, trim boards on the rake
+  for (let x = -hw - over; x <= hw + over; x++) for (let z = -hd - over; z <= hd + over; z++) {
+    const y = roofY(x, z), rake = axis === 'x' ? Math.abs(x) === hw + over : Math.abs(z) === hd + over;
+    put(x, y, z, rake ? trim : shingle(x, y, z)); put(x, y + 1, z, y + 1 >= ridge ? roof[1] : shingle(x, y + 1, z));
   }
-  for (const [x, z, w, d] of [[0, -9, 16, 0.08], [8, 0, 0.08, 18], [-8, 0, 0.08, 18], [-4.6, 9, 6.9, 0.08], [4.6, 9, 6.9, 0.08]]) list.push([x, 0.62, z, w, 0.12, d, 0xf6f1e4]);
-  for (const [x, z, s] of [[-14, -7, 1.1], [17, -13, 1.25], [-19, 10, 0.9], [27, 7, 1.0], [-32, -26, 1.4], [38, -32, 1.3]]) {   // trees: a trunk and a hollow round crown
-    list.push([x, 1.7 * s, z, 0.6 * s, 3.4 * s, 0.6 * s, 0x6b4a32]);
-    for (let a = -3; a <= 3; a++) for (let b = -2; b <= 3; b++) for (let c = -3; c <= 3; c++) {   // a round crown of 0.9 m leaves
-      const d = Math.hypot(a / 3.3, (b - 0.5) / 2.9, c / 3.3); if (d > 1 || d < 0.62 || rnd() < 0.12) continue;
-      list.push([x + a * 0.9 * s, (5.6 + b * 0.9) * s, z + c * 0.9 * s, 0.92 * s, 0.92 * s, 0.92 * s, tint(0x4f8a3a, R(-0.07, 0.07))]);
+  // dormers on the front slope (ridge along x only): a small gabled box with a window
+  for (const cx of dormers) {
+    const top = wallTop + 9, zf = hd - 3;
+    for (let dx = -4; dx <= 4; dx++) for (let z = zf; z >= -hd; z--) {
+      const x = cx + dx, ry = top + Math.floor((4 - Math.abs(dx)) * 0.75), base = roofY(x, z);
+      if (ry <= base) break;
+      if (Math.abs(dx) <= 3) for (let y = base + 2; y < ry; y++) if (z === zf || Math.abs(dx) === 3) put(x, y, z, z === zf ? (Math.abs(dx) === 3 || y === top - 1 ? trim : (Math.abs(dx) <= 1 && y >= wallTop + 4 && y <= wallTop + 7 ? C.GLASS1 : sid[y & 1])) : sid[y & 1]);
+      put(x, ry, z, Math.abs(dx) === 4 || z === zf ? trim : shingle(x, ry, z)); if (z < zf || Math.abs(dx) < 4) put(x, ry + 1, z, shingle(x, ry + 1, z));
     }
   }
-  boxes(list);
-  for (let i = 0; i < 7; i++) {                                                            // far hills
-    const a = i / 7 * 6.283 + 0.4, hill = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), std(tint(0x5f9f58, R(-0.05, 0.05)), 1));
-    hill.scale.set(R(140, 230), R(26, 60), R(140, 230)); hill.position.set(Math.cos(a) * 520, -4, Math.sin(a) * 520); scene.add(hill);
+  // porch across the front: deck, posts, a rail with a gap at the steps, a low roof
+  if (porch) {
+    const z1 = hd + porch, posts = [-hw, hw]; for (let x = -hw + 9; x < hw - 4; x += 9) posts.push(x);
+    for (let x = -hw; x <= hw; x++) for (let z = hd + 1; z <= z1; z++) {
+      put(x, 2, z, (x & 3) === 0 ? C.PORCH2 : C.PORCH1);
+      if (z === z1 || Math.abs(x) === hw) { for (let y = 0; y < 2; y++) if ((x + z + y) & 1) put(x, y, z, trim);                    // lattice skirt
+        const gap = z === z1 && x - doorX >= -3 && x - doorX <= 2;
+        if (!gap) { put(x, 5, z, trim); if ((x + z) & 1) { put(x, 3, z, trim); put(x, 4, z, trim); } } }
+      const ry = 14 - Math.floor((z - hd) / 4); put(x, ry, z, shingle(x, ry, z));
+    }
+    for (let x = -hw - 1; x <= hw + 1; x++) { const ry = 14 - Math.floor((z1 + 1 - hd) / 4); put(x, ry, z1 + 1, trim); put(x, ry - 1, z1, trim); }
+    for (const x of posts) for (let y = 3; y <= 12; y++) put(x, y, z1, trim);
+    for (let s = 0; s < 2; s++) for (let x = doorX - 3; x <= doorX + 2; x++) put(x, 1 - s, z1 + 1 + s, C.PORCH2);                    // steps
   }
-  const puffs = [];
-  for (let i = 0; i < 9; i++) {                                                            // clouds: a few flat white boxes each
-    const a = R(0, 6.283), r = R(120, 420), cx = Math.cos(a) * r, cy = R(55, 130), cz = Math.sin(a) * r, s = R(0.8, 1.7);
-    for (let j = 0; j < 6; j++) puffs.push([cx + R(-16, 16) * s, cy + R(-3, 3) * s, cz + R(-9, 9) * s, R(12, 24) * s, R(5, 9) * s, R(10, 18) * s, 0xffffff]);
+  // chimney: brick with mortar courses, a stone cap
+  if (chim) { const [cx, cz] = chim, top = ridge + 7;
+    for (let x = cx; x < cx + 4; x++) for (let z = cz; z < cz + 4; z++) for (let y = 0; y < top; y++) put(x, y, z, y % 4 === 3 ? C.MORTAR : (h01(x + (y >> 2 & 1), y >> 2, z) < 0.5 ? C.BRICK1 : C.BRICK2));
+    for (let x = cx - 1; x < cx + 5; x++) for (let z = cz - 1; z < cz + 5; z++) put(x, top, z, C.STONE1);
+    for (let x = cx + 1; x < cx + 3; x++) for (let z = cz + 1; z < cz + 3; z++) put(x, top + 1, z, C.METAL);
   }
-  const clouds = boxes(puffs, scene, false); clouds.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0x9aa6b8 });   // lit from all sides
+  return { wallTop, ridge, roofY };
 }
 
-/* ---------- the house: an original design on 0.25 m voxels, 7 m wide, 8 m deep, ridge at 9 m ---------- */
-const S = 0.25;
-const COL = { siding: 0x2f8088, siding2: 0x2a747c, trim: 0xf4ecd6, door: 0xe2a72e, glass: 0xa9d8ea, roof: 0x7483ad, roof2: 0x6574a0, brick: 0xa8452f, mortar: 0xc98a72, stone: 0x8f8f93, porch: 0xcbb894 };
-const HATCH = { x0: 0.75, x1: 2.5, z0: -1.25, z1: 1.25 };       // the patch of roof that the balloons blow off
-// a rectangular window in a wall plane: glass inside, a trim frame one cell wide
-function win(u, y, u0, u1, y0, y1) { if (u < u0 - S || u > u1 + S || y < y0 - S || y > y1 + S) return 0; return u > u0 && u < u1 && y > y0 && y < y1 ? COL.glass : COL.trim; }
-function houseCell(i, j, k) {
-  const x = (i + 0.5) * S, y = (j + 0.5) * S, z = (k + 0.5) * S, ax = Math.abs(x), az = Math.abs(z);
-  // chimney, on the left slope
-  if (x > -3.0 && x < -2.0 && z > -1.75 && z < -0.75 && y > 4.5 && y < 10.5) return y > 10.0 ? COL.stone : (j % 2 === 0 && (i + k + j) % 4 === 0 ? COL.mortar : COL.brick);
-  // roof: 45 degrees, ridge along z, half a metre of overhang
-  const roofY = 5.5 + (3.5 - ax);
-  if (ax < 4.0 && az < 4.5 && y >= roofY && y < roofY + 2 * S) return ax < S ? COL.roof2 : ((i + 2 * k) % 5 === 0 ? COL.roof2 : COL.roof);
-  if (ax > 3.5 || az > 4.0) {
-    // porch in front: floor, steps, four posts, a flat roof
-    if (az <= 4.0 || z < 0 || ax > 3.25) return 0;
-    if (z < 6.0 && y > 0.25 && y < 0.5) return COL.porch;
-    if (z >= 6.0 && z < 6.5 && ax < 1.25 && y < 0.25) return COL.porch;
-    if (z > 5.6 && z < 5.9 && y > 0.5 && y < 2.75 && [3.0, 1.0].some(p => Math.abs(ax - p) < 0.15)) return COL.trim;
-    if (z < 6.25 && y > 2.75 && y < 3.0) return z > 6.0 || ax > 3.0 ? COL.trim : COL.roof;
-    return 0;
+/* ---------- garden things ---------- */
+function tree(x, z, h, r, blossom = false) {
+  for (let y = 1; y <= h; y++) for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) set(x + a, y, z + b, C.TRUNK);
+  const L = blossom ? [C.BLOSSOM1, C.BLOSSOM2, C.BLOSSOM1, C.LEAF4] : [C.LEAF1, C.LEAF2, C.LEAF3, C.LEAF4];
+  for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let c = -r; c <= r; c++) {
+    const d = Math.hypot(a, b * 1.25, c) / r + (h01(x + a >> 1, b >> 1, z + c >> 1) - 0.5) * 0.45;   // a lumpy ball, hollow inside
+    if (d > 1 || d < 0.55) continue;
+    setE(x + a, h + Math.round(r * 0.55) + b, z + c, L[Math.floor(h01(x + a >> 1, b, z + c >> 1) * 4)]);
   }
-  if (y < 0.25) return COL.stone;                                // foundation
-  const wallX = ax > 3.5 - S, wallZ = az > 4.0 - S;
-  if (!wallX && !wallZ) return 0;                                // hollow inside
-  if (y >= roofY) return 0;
-  if (wallX && wallZ) return COL.trim;                           // corner boards
-  if (wallZ && y > roofY - 1.5 * S) return COL.trim;             // the board along the gable
-  if (Math.abs(y - 2.9) < S * 0.6) return COL.trim;              // the band between the two floors
-  let c = 0;
-  if (wallZ) {
-    if (z > 0 && ax < 0.55 && y < 2.3) return y > 1.2 && y < 1.9 && ax < 0.3 ? COL.glass : COL.door;
-    if (z > 0 && ax < 0.8 && y < 2.55) return COL.trim;
-    c = win(ax, y, 1.4, 2.7, 0.9, 2.3) || win(ax, y, 1.4, 2.7, 3.5, 4.8) || (z > 0 && Math.hypot(x, y - 6.7) < 0.7 ? (Math.hypot(x, y - 6.7) < 0.45 ? COL.glass : COL.trim) : 0);
-  } else c = win(az, y, 1.0, 2.6, 0.9, 2.3) || win(az, y, 1.0, 2.6, 3.5, 4.8);
-  return c || (j % 2 ? COL.siding : COL.siding2);                // clapboards
 }
-const house = new THREE.Group(); scene.add(house);
-const hatchCells = [];
-{
-  const cells = [];
-  for (let j = 0; j < 44; j++) for (let i = -17; i < 17; i++) for (let k = -19; k < 27; k++) {
-    const c = houseCell(i, j, k); if (!c) continue;
-    const x = (i + 0.5) * S, y = (j + 0.5) * S, z = (k + 0.5) * S;
-    if (c === COL.roof || c === COL.roof2) { if (x > HATCH.x0 && x < HATCH.x1 && z > HATCH.z0 && z < HATCH.z1) { hatchCells.push({ position: [x, y, z], color: c }); continue; } }
-    cells.push([x, y, z, S, S, S, tint(c, R(-0.025, 0.025))]);
+function picket(x0, z0, x1, z1, gap = null) {                    // a white fence along one axis; gap = [from, to] along it
+  const along = x0 !== x1, n = along ? x1 - x0 : z1 - z0;
+  for (let i = 0; i <= n; i++) { const x = along ? x0 + i : x0, z = along ? z0 : z0 + i, u = along ? x : z;
+    if (gap && u > gap[0] && u < gap[1]) continue;
+    set(x, 3, z, C.WHITE); if ((i & 1) === 0) for (let y = 1; y <= 4; y++) set(x, y, z, C.WHITE); }
+}
+function boards(x0, z0, x1, z1, h = 7) { const along = x0 !== x1, n = along ? x1 - x0 : z1 - z0;   // a tall brown fence between back yards
+  for (let i = 0; i <= n; i++) for (let y = 1; y <= h - ((i & 3) === 0 ? 0 : 1); y++) set(along ? x0 + i : x0, y, along ? z0 : z0 + i, (i & 3) === 0 ? C.FENCEB2 : C.FENCEB1); }
+function flowerBed(x0, x1, z0, z1) { for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { set(x, 0, z, h01(x, z) < 0.5 ? C.DIRT1 : C.DIRT2);
+  const r = h01(x, z, 7); if (r < 0.55) { const hgt = 1 + (r < 0.2 ? 1 : 0); for (let y = 1; y < hgt; y++) set(x, y, z, C.STEM); set(x, hgt, z, FLOWERS[Math.floor(h01(x >> 1, z >> 1, 9) * 6)]); } } }
+function hedge(x0, x1, z0, z1, h = 5) { for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) for (let y = 1; y <= h - (h01(x, z, 4) < 0.25 ? 1 : 0); y++) set(x, y, z, h01(x >> 1, y, z >> 1) < 0.5 ? C.HEDGE1 : C.HEDGE2); }
+function car(x, z, body) {                                       // parked along x: 20 long, 9 wide
+  for (let a = 0; a < 20; a++) for (let b = 0; b < 9; b++) {
+    const wheel = (a >= 2 && a <= 5) || (a >= 14 && a <= 17);
+    if (wheel && (b === 0 || b === 8)) { for (let y = 0; y < 3; y++) set(x + a, y, z + b, y === 1 && (a === 3 || a === 4 || a === 15 || a === 16) ? C.CHROME : C.TIRE); }
+    for (let y = 1; y <= 4; y++) if (!(wheel && (b === 0 || b === 8) && y < 3)) set(x + a, y, z + b, y === 1 && (a === 0 || a === 19) ? C.CHROME : body);
+    if (a >= 5 && a <= 14) for (let y = 5; y <= 7; y++) set(x + a, y, z + b, y === 7 ? body : ((a === 5 || a === 14 || b === 0 || b === 8) && (a + b) % 5 ? C.GLASS2 : (b === 0 || b === 8 || a === 5 || a === 14 ? body : 0)));
   }
-  boxes(cells, house);
-  const attic = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 7.4), std(0x2a2320, 1)); attic.rotation.x = -Math.PI / 2; attic.position.y = 5.4; house.add(attic);   // a dark attic floor under the hatch
+  set(x + 19, 3, z + 1, C.LAMP); set(x + 19, 3, z + 7, C.LAMP); set(x, 3, z + 1, C.FL_R); set(x, 3, z + 7, C.FL_R);
 }
-// strings: a fan of lines from the roof to the underside of the balloon cluster; they move with the house
-const CLUSTER = new THREE.Vector3(0.6, 18.4, 0), CL_R = new THREE.Vector3(7.4, 6.4, 7.4), ANCHOR = new THREE.Vector3(1.6, 7.4, 0);
-// In the painted looks they are drawn on top of the painting, where there is no scene depth: the shader tests
-// against the painter's depth texture itself, so the house hides the strings behind it.
-const strings = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, toneMapped: false,
-  uniforms: { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) }, uOpacity: { value: 0.55 } },
-  vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: /* glsl */`
-    uniform sampler2D tDepth; uniform bool uUseDepth; uniform vec2 uRes; uniform float uOpacity;
-    void main() {
-      if (uUseDepth && gl_FragCoord.z > texture2D(tDepth, gl_FragCoord.xy / uRes).x + 1e-5) discard;   // behind the scene
-      gl_FragColor = vec4(0.89, 0.87, 0.80, uOpacity);
-      #include <colorspace_fragment>
-    }`,
-}));
-{
-  const pts = [];
-  for (let i = 0; i < 150; i++) { const a = R(0, 6.283), e = R(0.15, 1.2), r = Math.sin(e); pts.push(ANCHOR.x, ANCHOR.y, ANCHOR.z, CLUSTER.x + Math.cos(a) * r * CL_R.x * 0.9, CLUSTER.y - Math.cos(e) * CL_R.y * 0.9, CLUSTER.z + Math.sin(a) * r * CL_R.z * 0.9); }
-  strings.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  strings.frustumCulled = false;
-  const size = new THREE.Vector2();
-  strings.onBeforeRender = renderer => {
-    const u = strings.material.uniforms, target = renderer.getRenderTarget(), depth = look === 'cubes' ? null : painter.sceneTarget?.depthTexture ?? null;
-    if (target) size.set(target.width, target.height); else renderer.getDrawingBufferSize(size);
-    u.uRes.value.copy(size); u.tDepth.value = depth; u.uUseDepth.value = !!depth;
+function lamp(x, z, dz) { for (let y = 1; y <= 20; y++) set(x, y, z, C.METAL); for (let i = 1; i <= 3; i++) set(x, 20, z + dz * i, C.METAL); set(x, 19, z + dz * 3, C.LAMP); set(x, 19, z + dz * 2, C.LAMP); }
+function mailbox(x, z, c) { set(x, 1, z, C.FENCEB1); set(x, 2, z, C.FENCEB1); set(x, 3, z, C.FENCEB1); for (let a = 0; a < 2; a++) for (let b = -1; b <= 1; b++) set(x + a, 4, z + b, c); set(x, 5, z, c); }
+
+/* ---------- the street: three lots on each side of a road; the hero stands in the middle of the far side ---------- */
+const ROAD = [70, 100], WALK = [[62, 69], [101, 108]], LOTS = [-106, 0, 106];
+let heroInfo = null;
+const heroPut = (x, y, z, c) => hset(x, y, z, c);
+const at = (cx, cz, flip) => (x, y, z, c) => set(flip ? cx - x : cx + x, 1 + y, flip ? cz - z : cz + z, c);
+function buildWorld() {
+  for (let x = -OX; x < NX - OX; x++) for (let z = -OZ; z < NZ - OZ; z++) {
+    for (let y = -4; y < -1; y++) set(x, y, z, h01(x >> 1, y, z >> 1) < 0.5 ? C.DIRT1 : C.DIRT2);
+    if (z >= ROAD[0] && z <= ROAD[1]) { set(x, -1, z, (z === 85 && (x & 15) < 8) ? C.PAINT : (h01(x, z, 1) < 0.5 ? C.ASPH1 : C.ASPH2)); continue; }
+    set(x, -1, z, C.DIRT1);
+    const walk = WALK.some(w => z >= w[0] && z <= w[1]), curb = z === ROAD[0] - 1 || z === ROAD[1] + 1;
+    set(x, 0, z, curb ? C.CURB : walk ? ((x % 12 === 0 || z === 65 || z === 105) ? C.WALK2 : C.WALK1) : [C.GRASS1, C.GRASS2, C.GRASS3][Math.floor(h01(x >> 1, z >> 1, 3) * 3)]);
+    if (!walk && !curb && h01(x, z, 11) < 0.012) set(x, 1, z, FLOWERS[Math.floor(h01(x, z, 12) * 6)]);   // wild flowers in the grass
+  }
+  // the hero house, in its own grid: teal clapboards, cream trim, slate roof, two dormers, a brick chimney
+  heroInfo = house(heroPut, { hw: 15, hd: 14, sid: [C.TEAL1, C.TEAL2], roof: [C.SLATE1, C.SLATE2, C.SLATE3], door: C.MUSTARD, shut: C.DKTEAL, dormers: [-8, 8], chim: [-14, -10], porch: 9, gable: [C.TEAL2, C.DKTEAL] });
+  for (let x = -17; x <= 17; x++) for (let z = -17; z <= 26; z++) { set(HERO.x + x, 0, HERO.z + z, h01(x, z, 5) < 0.5 ? C.DIRT1 : C.DIRT2); set(HERO.x + x, 1, HERO.z + z, 0); }   // bare earth under it
+  // neighbours: [lot centre x, z, flipped to face the road from the near side, options]
+  const N = [
+    [-106, -8, false, { hw: 13, hd: 15, axis: 'z', slope: 1, sid: [C.BUTTER1, C.BUTTER2], roof: [C.TERRA1, C.TERRA2, C.TERRA3], door: C.DOORBLUE, shut: C.SHUTGREEN, chim: [9, -6], porch: 8 }],
+    [106, -6, false, { hw: 16, hd: 13, floors: 1, sid: [C.BARN1, C.BARN2], trim: C.WHITE, roof: [C.CHAR1, C.CHAR2, C.CHAR3], door: C.WHITE, shut: C.WHITE, dormers: [0], chim: [12, -8], porch: 7 }],
+    [-104, 140, true, { hw: 14, hd: 13, sid: [C.SAGE1, C.SAGE2], roof: [C.BROWN1, C.BROWN2, C.BROWN3], door: C.BARN1, shut: C.SHUTBROWN, dormers: [-7, 7], porch: 8 }],
+    [2, 142, true, { hw: 12, hd: 14, axis: 'z', slope: 1, sid: [C.LILAC1, C.LILAC2], roof: [C.SLATE1, C.SLATE2, C.SLATE3], door: C.PLUM, shut: C.PLUM, chim: [-12, -4], porch: 7 }],
+    [108, 140, true, { hw: 15, hd: 13, floors: 1, sid: [C.DUSTY1, C.DUSTY2], trim: C.WHITE, roof: [C.CHAR1, C.CHAR2, C.CHAR3], door: C.BUTTER1, shut: C.NAVY, dormers: [-6, 6], porch: 8 }],
+  ];
+  for (const [cx, cz, flip, o] of N) house(at(cx, cz, flip), o);
+  // far side: front fences with gates, paths, flower beds, hedges, back-yard fences
+  for (const cx of LOTS) {
+    picket(cx - 46, 58, cx + 46, 58, [cx - 4, cx + 3]); picket(cx - 46, 24, cx - 46, 58); picket(cx + 46, 24, cx + 46, 58);
+    boards(cx - 46, -120, cx - 46, 22); boards(cx + 46, -120, cx + 46, 22); boards(cx - 46, -120, cx + 46, -120);
+    const hz = cx === 0 ? HERO.z : (cx < 0 ? -8 : -6), front = hz + (cx === 0 ? 14 + 9 : cx < 0 ? 15 + 8 : 13 + 7) + 3;
+    for (let z = front; z <= 61; z++) for (let x = cx - 3; x <= cx + 2; x++) set(x, 0, z, h01(x, z, 6) < 0.5 ? C.GRAVEL1 : C.GRAVEL2);
+    flowerBed(cx - 30, cx - 6, front - 2, front); flowerBed(cx + 5, cx + 30, front - 2, front); flowerBed(cx - 44, cx - 41, 28, 54);
+    mailbox(cx + 6, 60, [C.FL_R, C.DOORBLUE, C.FL_Y][(cx + 106) / 106]);
+  }
+  hedge(-44, -22, 44, 47); hedge(22, 40, 44, 47);
+  // near side: fences and paths the other way round
+  for (const cx of [-104, 2, 108]) { picket(cx - 44, 112, cx + 44, 112, [cx - 4, cx + 3]);
+    for (let z = 109; z <= 118; z++) for (let x = cx - 3; x <= cx + 2; x++) set(x, 0, z, h01(x, z, 6) < 0.5 ? C.GRAVEL1 : C.GRAVEL2);
+    flowerBed(cx - 28, cx - 6, 114, 116); flowerBed(cx + 5, cx + 28, 114, 116); boards(cx - 50, 124, cx - 50, 159); }
+  // back yards of the far side: a vegetable patch with pumpkins, a washing line, a shed, a paddling pool
+  for (let r = 0; r < 5; r++) for (let x = -34; x <= -10; x++) { const z = -60 - r * 6; set(x, 0, z, C.DIRT1); set(x, 0, z + 1, C.DIRT2); if (h01(x, r, 2) < 0.5) set(x, 1, z, C.STEM); if (h01(x, r, 3) < 0.08) { box(x, x + 1, 1, 2, z + 1, z + 2, C.PUMPKIN); } }
+  for (const x of [8, 40]) for (let y = 1; y <= 9; y++) set(x, y, -70, C.FENCEB2);
+  for (let x = 9; x < 40; x++) { set(x, 9, -70, C.WHITE); if ((x % 5) < 3) for (let y = 5; y <= 8; y++) set(x, y, -70, FLOWERS[Math.floor((x - 9) / 5) % 6]); }
+  box(-140, -122, 1, 11, -108, -92, (x, y, z) => (y > 9 ? C.CHAR1 : (x === -140 || x === -122 || z === -108 || z === -92 ? ((x + z) & 3 ? C.FENCEB1 : C.FENCEB2) : 0)));
+  for (let a = -8; a <= 8; a++) for (let b = -8; b <= 8; b++) { const d = Math.hypot(a, b); if (d < 8.5) { set(112 + a, 1, -66 + b, d > 7 ? C.WHITE : C.POOL); if (d > 7) set(112 + a, 2, -66 + b, C.WHITE); } }
+  // trees: on both verges, in the yards, one in blossom
+  for (const [x, z, h, r, b] of [[-140, 34, 16, 13], [-62, 40, 13, 10], [52, 38, 15, 12, true], [140, 36, 14, 11], [-80, -84, 20, 16], [60, -96, 18, 14], [136, -30, 14, 11], [-150, -40, 15, 12],
+    [-150, 132, 15, 12], [-52, 126, 13, 10, true], [58, 128, 14, 11], [150, 130, 16, 13], [30, -40, 12, 9]]) tree(x, z, h, r, !!b);
+  // the street: lamps, a hydrant, two parked cars
+  for (const x of [-130, -20, 90]) lamp(x, 66, 1); for (const x of [-70, 40, 150]) lamp(x, 104, -1);
+  box(34, 35, 1, 3, 66, 67, C.FL_R); set(34, 4, 66, C.FL_R);
+  car(-96, 72, C.CARRED); car(70, 90, C.CARBLUE);
+}
+
+/* ---------- mesher: visible faces only, ambient occlusion baked per vertex, same-looking faces merged (up to 2 m) ---------- */
+const AOV = [0.5, 0.68, 0.84, 1.0], DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+const ORD_P = [[0, 0], [1, 0], [1, 1], [0, 1]], ORD_N = [[0, 0], [0, 1], [1, 1], [1, 0]], MAXF = 300000, GREEDY_MAX = 8;
+const sP = new Float32Array(MAXF * 12), sN = new Int8Array(MAXF * 12), sC = new Float32Array(MAXF * 12), sI = new Uint32Array(MAXF * 6);
+function meshGrid(at, lo, hi, noBottomAt = -1e9) {              // at(x, y, z) -> palette index; faces that look down at y <= noBottomAt are skipped
+  let nf = 0;
+  const q = [0, 0, 0], o1 = [0, 0, 0], o2 = [0, 0, 0], ao = [0, 0, 0, 0], cell = [0, 0, 0], v = [0, 0, 0];
+  const emit = (D, d, s, ua, va, ord, bx, by, bz, w, h, col, a4) => {
+    if (nf >= MAXF) return;
+    const vb = nf * 4;
+    for (let i = 0; i < 4; i++) { const cu = ord[i][0], cv = ord[i][1];
+      v[0] = bx; v[1] = by; v[2] = bz; if (s > 0) v[d] += 1; v[ua] += cu * w; v[va] += cv * h;
+      const k = AOV[a4[i]], o = (vb + i) * 3;
+      sP[o] = v[0]; sP[o + 1] = v[1]; sP[o + 2] = v[2]; sN[o] = D[0]; sN[o + 1] = D[1]; sN[o + 2] = D[2];
+      sC[o] = col[0] * k; sC[o + 1] = col[1] * k; sC[o + 2] = col[2] * k; }
+    const ii = nf * 6;
+    if (a4[0] + a4[2] > a4[1] + a4[3]) { sI[ii] = vb; sI[ii + 1] = vb + 1; sI[ii + 2] = vb + 2; sI[ii + 3] = vb; sI[ii + 4] = vb + 2; sI[ii + 5] = vb + 3; }
+    else { sI[ii] = vb + 1; sI[ii + 1] = vb + 2; sI[ii + 2] = vb + 3; sI[ii + 3] = vb + 1; sI[ii + 4] = vb + 3; sI[ii + 5] = vb; }
+    nf++;
   };
+  for (let f = 0; f < 6; f++) {
+    const D = DIRS[f], d = f >> 1, s = (f & 1) ? -1 : 1, ua = (d + 1) % 3, va = (d + 2) % 3, ord = s > 0 ? ORD_P : ORD_N;
+    const nu = hi[ua] - lo[ua], nv = hi[va] - lo[va], mask = new Int32Array(nu * nv);
+    for (let sl = lo[d]; sl < hi[d]; sl++) {
+      mask.fill(0);
+      for (let a = 0; a < nu; a++) for (let b = 0; b < nv; b++) {
+        cell[d] = sl; cell[ua] = lo[ua] + a; cell[va] = lo[va] + b;
+        const x = cell[0], y = cell[1], z = cell[2], c = at(x, y, z); if (!c) continue;
+        if (at(x + D[0], y + D[1], z + D[2])) continue; if (f === 3 && y <= noBottomAt) continue;
+        q[0] = x + D[0]; q[1] = y + D[1]; q[2] = z + D[2];
+        for (let i = 0; i < 4; i++) { const cu = ord[i][0], cv = ord[i][1];
+          o1[0] = q[0]; o1[1] = q[1]; o1[2] = q[2]; o1[ua] += cu ? 1 : -1;
+          o2[0] = q[0]; o2[1] = q[1]; o2[2] = q[2]; o2[va] += cv ? 1 : -1;
+          const s1 = at(o1[0], o1[1], o1[2]) ? 1 : 0, s2 = at(o2[0], o2[1], o2[2]) ? 1 : 0;
+          o1[va] += cv ? 1 : -1; const s3 = at(o1[0], o1[1], o1[2]) ? 1 : 0;
+          ao[i] = (s1 && s2) ? 0 : 3 - (s1 + s2 + s3); }
+        if (ao[0] === ao[1] && ao[1] === ao[2] && ao[2] === ao[3]) mask[a * nv + b] = 1 + c + 256 * ao[0];
+        else emit(D, d, s, ua, va, ord, x, y, z, 1, 1, PAL[c], ao.slice());   // an AO gradient: keep the single face
+      }
+      for (let a = 0; a < nu; a++) for (let b = 0; b < nv;) {
+        const k = mask[a * nv + b]; if (!k) { b++; continue; }
+        let h = 1; while (b + h < nv && h < GREEDY_MAX && mask[a * nv + b + h] === k) h++;
+        let w = 1; grow: while (a + w < nu && w < GREEDY_MAX) { for (let t = 0; t < h; t++) if (mask[(a + w) * nv + b + t] !== k) break grow; w++; }
+        for (let i = 0; i < w; i++) for (let t = 0; t < h; t++) mask[(a + i) * nv + b + t] = 0;
+        const kk = k - 1, al = kk >> 8;
+        cell[d] = sl; cell[ua] = lo[ua] + a; cell[va] = lo[va] + b;
+        emit(D, d, s, ua, va, ord, cell[0], cell[1], cell[2], w, h, PAL[kk & 255], [al, al, al, al]);
+        b += h;
+      }
+    }
+  }
+  if (!nf) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(sP.slice(0, nf * 12), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(sN.slice(0, nf * 12), 3, true));
+  g.setAttribute('color', new THREE.BufferAttribute(sC.slice(0, nf * 12), 3));
+  g.setIndex(new THREE.BufferAttribute(sI.slice(0, nf * 6), 1));
+  return g;
 }
 
-/* ---------- balloons: BakedDebris pieces with their own velocity and launch time ----------
-   Bullet time is the air drag: a balloon shoots out for about WARP.burst seconds of its own clock, then almost hovers.
-   The displace hook then draws each one to its own place in the cluster, and moves the cluster with the house. */
+/* ---------- three.js scene: sky, sun, the meshes ---------- */
+const lin = h => new THREE.Color().setHex(h, THREE.LinearSRGBColorSpace);
+const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: !LITE, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 1.5));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;   // redrawn only when something moves
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.6;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(lin(0xdfe4e6), 700, 2600);
+const sky = new Sky(); sky.scale.setScalar(7000); scene.add(sky);
+Object.assign(sky.material.uniforms.turbidity, { value: 3.0 }); sky.material.uniforms.rayleigh.value = 1.3;
+sky.material.uniforms.mieCoefficient.value = 0.004; sky.material.uniforms.mieDirectionalG.value = 0.82;
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 9000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 20; controls.maxDistance = 900;
+scene.add(new THREE.HemisphereLight(lin(0xbfd4ff), lin(0x6f7a4a), 0.45));
+const sun = new THREE.DirectionalLight(0xffffff, 5), sunDir = new THREE.Vector3(0, 1, 0);
+sun.castShadow = true; sun.shadow.mapSize.setScalar(LITE ? 2048 : 4096); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.2;
+Object.assign(sun.shadow.camera, { left: -300, right: 300, top: 300, bottom: -300, near: 20, far: 1500 });
+scene.add(sun, sun.target);
+const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 }); mat.envMapIntensity = 0.45;
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+let pmrem = null, envRT = null, envDirty = true, dirty = 2, shadowDirty = true;
+const markDirty = shadows => { dirty = 2; if (shadows) shadowDirty = true; };
+// The sun crosses from east (+x) to west and leans to the street side, so house fronts on the far side are lit.
+function setSun(hour) {
+  const a = (hour - 6) / 14 * Math.PI; sunDir.set(Math.cos(a), Math.sin(a) * 0.86 + 0.02, Math.sin(a) * 0.5 + 0.14).normalize();
+  const elD = Math.asin(sunDir.y) * 180 / Math.PI;
+  sky.material.uniforms.sunPosition.value.copy(sunDir);
+  // direct sun reddens with air mass (Kasten and Young)
+  const am = 1 / (Math.max(0, sunDir.y) + 0.50572 * Math.pow(Math.max(0.1, elD + 6.07995), -1.6364));
+  const T = [Math.exp(-0.09 * am), Math.exp(-0.17 * am), Math.exp(-0.36 * am)], dusk = Math.exp(-(((elD - 1) / 8) ** 2));
+  sun.color.setRGB(T[0], T[1], T[2]); sun.intensity = 5.2 * smooth(-1, 4, elD);
+  scene.fog.color.setRGB(0.85 + 0.1 * dusk, 0.89, 0.92 - 0.06 * dusk);
+  $('sunOut').textContent = `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.round((hour % 1) * 60)).padStart(2, '0')}`;
+  envDirty = true; markDirty(true);
+}
+function refreshEnv() {                                          // the sky lights the shaded sides
+  if (!pmrem) pmrem = new THREE.PMREMGenerator(renderer);
+  const s = new THREE.Scene(); s.add(sky); const rt = pmrem.fromScene(s, 0, 1, 9000); scene.add(sky);
+  scene.environment = rt.texture; envRT?.dispose(); envRT = rt; envDirty = false;
+}
+const hero = new THREE.Group(); hero.position.set(HERO.x, HERO.y, HERO.z); scene.add(hero);
+{
+  // beyond the slab: a plain meadow, the road running on, far hills, a few clouds
+  const far = new THREE.Mesh(new THREE.CircleGeometry(6000, 48), new THREE.MeshStandardMaterial({ color: HEX[C.GRASS3], roughness: 1 })); far.rotation.x = -Math.PI / 2; far.position.y = 0.9; far.receiveShadow = true; scene.add(far);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(6000, 31), new THREE.MeshStandardMaterial({ color: HEX[C.ASPH1], roughness: 1 })); road.rotation.x = -Math.PI / 2; road.position.set(0, 0.95, 85.5); scene.add(road);
+  for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + 0.3, hill = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), new THREE.MeshStandardMaterial({ color: new THREE.Color(HEX[C.LEAF3]).offsetHSL(0, -0.1, R(0, 0.08)), roughness: 1 }));
+    hill.scale.set(R(600, 900), R(110, 240), R(600, 900)); hill.position.set(Math.cos(a) * 2300, -20, Math.sin(a) * 2300); scene.add(hill); }
+  // the street goes on: plain houses and trees, far enough to need no detail
+  const list = [], sidings = [C.BUTTER1, C.BARN1, C.SAGE1, C.DUSTY1, C.LILAC1, C.CREAM1, C.TEAL1, C.WHITE], roofs = [C.TERRA1, C.CHAR1, C.BROWN1, C.SLATE1];
+  for (const side of [-1, 1]) for (let i = 0; i < 9; i++) for (const row of [0, 1]) {
+    const x = side * (230 + i * 104 + R(-8, 8)), z = row ? 142 + R(-4, 4) : -8 + R(-4, 4), w = R(26, 34), h = R(13, 24), d = R(26, 32), rc = HEX[roofs[RI(0, 3)]];
+    list.push([x, 1 + h / 2, z, w, h, d, HEX[sidings[RI(0, 7)]]], [x, 1 + h + 3, z, w + 4, 6, d + 4, rc], [x, 1 + h + 8, z, w + 4, 5, d * 0.55, rc], [x, 1 + h + 12, z, w + 4, 4, d * 0.2, rc]);
+  }
+  for (let i = 0; i < 260; i++) { const a = R(0, 6.283), r = 190 + Math.pow(rnd(), 0.8) * 1500, x = Math.cos(a) * r, z = Math.sin(a) * r, k = R(0.8, 1.5);
+    if ((z > 56 && z < 114) || (Math.abs(x) < 170 && z > -135 && z < 165)) continue;
+    list.push([x, 1 + 7 * k, z, 2 * k, 14 * k, 2 * k, HEX[C.TRUNK]], [x, 1 + 19 * k, z, 20 * k, 14 * k, 20 * k, HEX[[C.LEAF1, C.LEAF2, C.LEAF3][RI(0, 2)]]], [x + 2 * k, 1 + 27 * k, z - k, 13 * k, 9 * k, 13 * k, HEX[[C.LEAF2, C.LEAF4][RI(0, 1)]]]); }
+  // farmland behind the two rows of houses: a patchwork of crops
+  const CROPS = [0xd9c26a, 0x7fae4e, 0x4f8040, 0x8a6a48, 0xe6d23a, 0x9a86c8, 0x6f9f52, 0xc9b06a];
+  for (let gx = -11; gx <= 11; gx++) for (let gz = -11; gz <= 11; gz++) {
+    const x = gx * 250 + R(-30, 30), z = gz * 250 + 60 + R(-30, 30); if (z > -260 && z < 330) continue;
+    list.push([x, 1.0, z, R(190, 240), 0.5, R(190, 240), CROPS[RI(0, 7)]]);
+  }
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.9 }), list.length), M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S3 = new THREE.Vector3(), col = new THREE.Color();
+  list.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
+  inst.castShadow = inst.receiveShadow = true; scene.add(inst);
+  const puff = new THREE.BoxGeometry(1, 1, 1), white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0x8f9bb0 });
+  for (let i = 0; i < 11; i++) { const a = R(0, 6.283), r = R(500, 1700), s = R(3, 7);
+    for (let j = 0; j < 6; j++) { const m = new THREE.Mesh(puff, white); m.scale.set(R(12, 24) * s, R(5, 9) * s, R(10, 18) * s); m.position.set(Math.cos(a) * r + R(-16, 16) * s, R(260, 520) + R(-3, 3) * s, Math.sin(a) * r + R(-9, 9) * s); scene.add(m); } }
+}
+
+/* ---------- debris ----------
+   Rubble: the middle of the roof blows off when the balloons come through; later the ground around the house breaks as it tears free.
+   Balloons: pieces with their own velocity and launch time. Bullet time is the air drag: a balloon shoots out, then almost hovers;
+   a displace hook then draws each one to its own place in the cluster, and moves the cluster with the house. */
+const GRAV = 39.24;                                              // 9.81 m/s2 in voxels
 const WARP = { burst: 0.9, hover: 0.03 };
 const PIGMENTS = [0xff2d21, 0xff7a00, 0xffc800, 0x8fd400, 0x00b36b, 0x00a8e8, 0x2b59ff, 0x8a3ffc, 0xff3fa4, 0xff5e7a];
-const balloons = [];
-for (let i = 0, n = LITE ? 2400 : 5200; i < n; i++) {
-  const u = i / n;                                               // fast at first, then a thinning stream
-  balloons.push({
-    position: [R(HATCH.x0 + 0.2, HATCH.x1 - 0.3), R(5.7, 6.6), R(HATCH.z0 + 0.2, HATCH.z1 - 0.2)],
-    velocity: [R(-1.5, 5.5), R(13, 26), R(-4.5, 4.5)], launchTime: T_HATCH + 0.1 + 3.3 * Math.pow(u, 1.5) + R(0, 0.05),
-    size: R(0.5, 0.68), color: PIGMENTS[Math.floor(R(0, PIGMENTS.length))], spin: 0,
+const CLUSTER = new THREE.Vector3(), CL_R = new THREE.Vector3(31, 27, 31), ANCHOR = new THREE.Vector3();
+const liftU = { value: new THREE.Vector3() };
+let boom = null, rubble = null, strings = null;
+function buildDebris() {
+  const { ridge, wallTop } = heroInfo, wy = y => y + HERO.y, wz = z => z + HERO.z;
+  CLUSTER.set(HERO.x, wy(ridge) + 40, wz(0)); ANCHOR.set(HERO.x, wy(ridge) - 3, wz(0));
+  const pieces = [];
+  // the roof around the ridge, between the dormers: taken out of the house mesh, launched by three bursts along the ridge
+  for (let x = -12; x <= 12; x++) for (let y = ridge - 8; y < HH; y++) for (let z = HZ0; z < HZ1; z++) {
+    const c = hget(x, y, z); if (!c || hget(x, y - 3, z) === C.DARK) continue;
+    if (c === C.BRICK1 || c === C.BRICK2 || c === C.MORTAR) continue;
+    hset(x, y, z, 0); pieces.push({ position: [HERO.x + x + 0.5, wy(y) + 0.5, wz(z) + 0.5], color: HEX[c] });
+  }
+  // the ground around the house: a ring of turf and soil that flies when the house lifts
+  for (let x = -20; x <= 20; x++) for (let z = -20; z <= 29; z++) {
+    if (Math.abs(x) <= 17 && z >= -17 && z <= 26) continue;
+    const gx = HERO.x + x, gz = wz(z), out = new THREE.Vector3(x, 0, z - 4).normalize();
+    for (const y of [0, 1]) { const c = get(gx, y, gz); if (!c) continue; set(gx, y, gz, 0);
+      pieces.push({ position: [gx + 0.5, y + 0.5, gz + 0.5], color: HEX[c], velocity: [out.x * R(3, 16), R(8, 30), out.z * R(3, 16)], launchTime: T_LIFT + R(0, 1.3) }); }
+  }
+  const solid = anyCollider(voxelCollider(get, 1), voxelCollider((i, j, k) => hget(i - HERO.x, j - HERO.y, k - HERO.z), 1));
+  rubble = new BakedDebris({
+    pieces, pieceSize: 1, gravity: GRAV, speed: [26, 62], stagger: 0.35, restitution: 0.3, friction: 0.6, stopSpeed: 2.5, snap: 1, spin: 9,
+    bursts: [-7, 0, 7].map((x, i) => ({ position: [HERO.x + x, wy(ridge) - 5, wz(0)], radius: 16, time: T_BURST + i * 0.16, direction: [0, 1, 0.2], strength: 0.8 })),
+    solid, ground: null, killY: -40, duration: 18, material: new THREE.MeshStandardMaterial({ roughness: 0.88 }),
+    // a piece that came to rest on the house (a porch roof, a dormer) goes up with the house
+    displace: { uniforms: { uLift: liftU, uHouseMin: { value: new THREE.Vector3(HERO.x - 18, 4, wz(-17)) }, uHouseMax: { value: new THREE.Vector3(HERO.x + 18, 80, wz(26)) } },
+      glsl: `uniform vec3 uLift; uniform vec3 uHouseMin; uniform vec3 uHouseMax;
+        vec3 debrisDisplace(vec3 p, DebrisInfo d) { return d.local >= d.rest && all(greaterThan(p, uHouseMin)) && all(lessThan(p, uHouseMax)) ? uLift : vec3(0.0); }` },
   });
+  scene.add(rubble.mesh);
+  const balloons = [];
+  for (let i = 0, n = LITE ? 3000 : 9000; i < n; i++) {
+    balloons.push({ position: [HERO.x + R(-9, 9), wy(wallTop) + R(2, 7), wz(R(-5, 5))], velocity: [R(-14, 14), R(52, 108), R(-12, 16)],
+      launchTime: T_BURST + 0.12 + 4.0 * Math.pow(i / n, 1.5) + R(0, 0.05), size: R(2.0, 2.8), color: PIGMENTS[RI(0, 9)], spin: 0 });
+  }
+  boom = new BakedDebris({
+    pieces: balloons, bursts: [], gravity: 0, ground: null, killY: -1e6, duration: 3, step: 1 / 60, timeWarp: WARP, material: new THREE.MeshStandardMaterial({ roughness: 0.35 }),
+    displace: { uniforms: { uLift: liftU, uCluster: { value: CLUSTER }, uClusterR: { value: CL_R } },
+      glsl: /* glsl */`
+        uniform vec3 uLift;       // where the house is now, from where it stood
+        uniform vec3 uCluster;    // centre of the bunch above the roof
+        uniform vec3 uClusterR;
+        float bh(float n) { return fract(sin(n) * 43758.5453); }
+        vec3 debrisDisplace(vec3 p, DebrisInfo d) {
+          if (d.local <= -0.05) return vec3(0.0, -900.0, 0.0);     // not out yet: wait out of sight
+          if (d.local <= 0.0) return vec3(0.0);
+          float i = d.index;
+          // its own place: a point in a ball, a little wider at the top, like a bunch held from below
+          vec3 r = normalize(vec3(bh(i * 1.31) - 0.5, bh(i * 2.17) - 0.5, bh(i * 3.71) - 0.5)) * pow(bh(i * 5.3), 0.36);
+          vec3 place = uCluster + r * uClusterR * (1.0 + 0.22 * r.y);
+          place += 0.7 * vec3(sin(d.time * 1.3 + i), sin(d.time * 1.7 + i * 1.7), cos(d.time * 1.1 + i * 0.6));   // the bunch never holds still
+          return (place + uLift - p) * smoothstep(0.22, 0.9, d.local);   // d.local is on the warped clock: it settles near 0.9
+        }` },
+  });
+  boom.mesh.frustumCulled = false; scene.add(boom.mesh);
+  // strings: a fan of lines from the ridge to the underside of the bunch. In the painted looks they are drawn on top of the
+  // painting, where there is no scene depth: the shader tests against the painter's depth texture, so the house hides them.
+  const pts = [];
+  for (let i = 0; i < 220; i++) { const a = R(0, 6.283), e = R(0.15, 1.2), r = Math.sin(e);
+    pts.push(ANCHOR.x + R(-9, 9), ANCHOR.y, ANCHOR.z + R(-2, 2), CLUSTER.x + Math.cos(a) * r * CL_R.x * 0.9, CLUSTER.y - Math.cos(e) * CL_R.y * 0.9, CLUSTER.z + Math.sin(a) * r * CL_R.z * 0.9); }
+  strings = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, toneMapped: false,
+    uniforms: { tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) }, uOpacity: { value: 0 } },
+    vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: /* glsl */`
+      uniform sampler2D tDepth; uniform bool uUseDepth; uniform vec2 uRes; uniform float uOpacity;
+      void main() {
+        if (uUseDepth && gl_FragCoord.z > texture2D(tDepth, gl_FragCoord.xy / uRes).x + 1e-5) discard;   // behind the scene
+        gl_FragColor = vec4(0.89, 0.87, 0.80, uOpacity);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  strings.frustumCulled = false;
+  const size = new THREE.Vector2();
+  strings.onBeforeRender = r => { const u = strings.material.uniforms, target = r.getRenderTarget(), depth = look === 'cubes' ? null : painter.sceneTarget?.depthTexture ?? null;
+    if (target) size.set(target.width, target.height); else r.getDrawingBufferSize(size);
+    u.uRes.value.copy(size); u.tDepth.value = depth; u.uUseDepth.value = !!depth; };
 }
-const balloonHook = {
-  uniforms: { uLift: { value: new THREE.Vector3() }, uCluster: { value: CLUSTER }, uClusterR: { value: CL_R } },
-  glsl: /* glsl */`
-    uniform vec3 uLift;       // where the house is now, from where it stood
-    uniform vec3 uCluster;    // centre of the cluster above the roof
-    uniform vec3 uClusterR;
-    float bh(float n) { return fract(sin(n) * 43758.5453); }
-    vec3 debrisDisplace(vec3 p, DebrisInfo d) {
-      if (d.local <= -0.05) return vec3(0.0, -400.0, 0.0);       // not out yet: wait out of sight
-      if (d.local <= 0.0) return vec3(0.0);
-      float i = d.index;
-      // its own place: a point in a ball, a little wider at the top, like a bunch held from below
-      vec3 r = normalize(vec3(bh(i * 1.31) - 0.5, bh(i * 2.17) - 0.5, bh(i * 3.71) - 0.5)) * pow(bh(i * 5.3), 0.36);
-      vec3 place = uCluster + r * uClusterR * (1.0 + 0.22 * r.y);
-      place += 0.18 * vec3(sin(d.time * 1.3 + i), sin(d.time * 1.7 + i * 1.7), cos(d.time * 1.1 + i * 0.6));   // the bunch never holds still
-      float s = smoothstep(0.22, 0.9, d.local);                  // d.local is on the warped clock: it settles near 0.9
-      return (place + uLift - p) * s;
-    }`,
-};
-const boom = new BakedDebris({ pieces: balloons, bursts: [], gravity: 0, ground: null, killY: -1e6, duration: 3, step: 1 / 60, timeWarp: WARP, displace: balloonHook, material: std(0xffffff, 0.35) });
-boom.mesh.frustumCulled = false; scene.add(boom.mesh);
 
-/* ---------- rubble: the roof hatch blows off; later the ground around the house breaks as it tears free ---------- */
-const rubblePieces = hatchCells.map(c => ({ ...c, size: S }));
-for (let u = -3.75; u <= 3.75; u += S) for (const [x, z] of [[u, 4.25], [u, -4.25], [3.75, u * 4.25 / 3.75], [-3.75, u * 4.25 / 3.75]]) for (let layer = 0; layer < 2; layer++) {
-  if (z > 4 && Math.abs(x) < 3.3) continue;                      // the porch covers the front
-  const out = V3.set(x, 0, z).normalize();
-  rubblePieces.push({ position: [x + out.x * layer * S, S / 2 + (1 - layer) * S, z + out.z * layer * S], size: S, color: tint(layer ? 0x6f4b2c : 0x7c7c80, R(-0.05, 0.05)),
-    velocity: [out.x * R(0.5, 3.5), R(1.5, 6.5), out.z * R(0.5, 3.5)], launchTime: T_LIFT + R(0, 1.1) });
-}
-const rubble = new BakedDebris({
-  pieces: rubblePieces, bursts: [{ position: [1.5, 6.6, 0], radius: 2.6, time: T_HATCH, direction: [0.75, 1, 0], strength: 0.75 }],
-  pieceSize: S, ground: 0, snap: 0, stagger: 0.25, restitution: 0.3, duration: 14, material: std(0xffffff, 0.9),
-});
-scene.add(rubble.mesh);
-
-/* ---------- painting and strokes ---------- */
+/* ---------- painting ---------- */
 const brushes = { dabs: pointillist({ purity: 0.8, hueSpread: 0.055 }), oil: impressionist() };
-const painter = new PainterlyPass(scene, camera, {
-  brush: brushes.dabs, strokeSize: 6, saturation: 1.1, resolutionScale: LITE ? 0.55 : 0.7,
-  // the house carries its own dabs when it flies; the box holds the roof overhang, the chimney and the porch
-  anchors: [{ object: house, min: [-4.05, 0.02, -4.55], max: [4.05, 10.7, 6.55] }],
-});
+const still = pointillist({ purity: 0.8, hueSpread: 0.055, trail: 0 });   // balloons stay one round dab each, however fast
+const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 6, saturation: 1.1, exposure: 0.6, resolutionScale: LITE ? 0.55 : 0.7 });
 let look = 'dabs', balloonScale = 1;
-const STROKE = { dabs: { strokeScale: 1.55 }, oil: { strokeScale: 0.95 } };
 function setLook(name) {
   look = name;
   for (const b of $('looks').children) b.setAttribute('aria-pressed', String(b.dataset.look === name));
   if (name === 'cubes') { boom.removeStrokes(); rubble.removeStrokes(); }
   else {
-    painter.brush = brushes[name];                               // both sets of strokes follow painter.brush
-    if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, maxWidth: 60, jitter: 0.1 }));
-    if (!rubble.strokes) painter.overlayScene.add(rubble.createStrokes({ painter }));
-    boom.strokes.material.uniforms.uStrokeScale.value = STROKE[name].strokeScale * balloonScale;
+    painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 1.1 : 1.3;
+    painter.overlayScene.add(boom.createStrokes({ painter, brush: name === 'dabs' ? still : null, maxWidth: 60, jitter: 0.1 }));
+    boom.strokes.material.uniforms.uStrokeScale.value = (name === 'dabs' ? 1.5 : 0.95) * balloonScale;
+    if (!rubble.strokes) painter.overlayScene.add(rubble.createStrokes({ painter }));   // these follow painter.brush
   }
-  (name === 'cubes' ? scene : painter.overlayScene).add(strings);   // thin lines do not survive the painting: draw them on top of it
-  $('purity').disabled = name !== 'dabs';
+  (name === 'cubes' ? scene : painter.overlayScene).add(strings);
+  $('purity').disabled = name !== 'dabs'; markDirty(false);
 }
 
 /* ---------- time: everything is a function of t, so any moment can be shown ---------- */
+const SHOTS = {
+  street: [[66, 6, 105], [-4, 50, -6], 54], garden: [[30, 4, 56], [0, 34, -6], 58], above: [[150, 150, 190], [0, 40, 0], 46], roof: [[44, 62, 44], [0, 46, -6], 50],
+};
+if (PORTRAIT) SHOTS.street = [[-84, 6, 100], [0, 34, -6], 62];   // a tall window: step back along the road, and aim low so the panel covers the road, not the balloons
 const play = { t: 0, dir: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1, speed: 1 };
-if (!play.dir) play.t = 9.5;                                     // a still frame just after lift-off
-const lift = new THREE.Vector3(), target = new THREE.Vector3(), delta = new THREE.Vector3();
+if (!play.dir) play.t = 10.5;                                    // a still frame just after lift-off
+const lift = new THREE.Vector3(), base = new THREE.Vector3(), target = new THREE.Vector3(), delta = new THREE.Vector3();
+let lastT = -1;
+function setShot(name) { const [p, t, fov] = SHOTS[name]; base.set(...t); camera.position.set(...p).add(lift).setY(p[1] + 0.8 * lift.y); controls.target.set(...t).add(lift).setY(t[1] + 0.8 * lift.y);
+  camera.fov = fov; camera.updateProjectionMatrix();
+  for (const b of $('shots').children) b.setAttribute('aria-pressed', String(b.dataset.shot === name)); markDirty(false); }
 function applyTime(t) {
   const u = Math.max(0, t - T_LIFT), creak = Math.max(0, 1 - Math.abs(t - T_LIFT) / 0.9);
-  lift.set(0.22 * Math.pow(u, 1.5), 0.85 * Math.pow(u, 1.6), 0.05 * Math.pow(u, 1.5));   // up, and off with the wind
-  house.position.copy(lift);
-  house.rotation.set(0.012 * Math.sin(t * 31) * creak, 0.02 * Math.sin(u * 0.5) * Math.min(1, u / 3), 0.012 * Math.sin(t * 37) * creak - 0.035 * Math.sin(u * 0.8) * Math.min(1, u / 2));
-  boom.uniforms.uLift.value.copy(lift);
+  lift.set(1.0 * Math.pow(u, 1.5), 2.7 * Math.pow(u, 1.6), 0.5 * Math.pow(u, 1.5));   // up, and off with the wind
+  hero.position.set(HERO.x + lift.x, HERO.y + lift.y, HERO.z + lift.z);
+  hero.rotation.set(0.012 * Math.sin(t * 31) * creak, 0.02 * Math.sin(u * 0.5) * Math.min(1, u / 3), 0.012 * Math.sin(t * 37) * creak - 0.03 * Math.sin(u * 0.8) * Math.min(1, u / 2));
+  liftU.value.copy(lift);
   boom.setTime(t); rubble.setTime(t);
-  strings.position.copy(lift); strings.material.uniforms.uOpacity.value = 0.55 * Math.min(1, Math.max(0, (t - 3.2) / 2));
+  strings.position.copy(lift); strings.material.uniforms.uOpacity.value = 0.55 * smooth(3.6, 6.2, t);
   // the camera rides up with the house, and keeps the offset the viewer chose
-  target.set(TARGET0.x + lift.x, TARGET0.y + 0.8 * lift.y, TARGET0.z + lift.z);
+  target.set(base.x + lift.x, base.y + 0.8 * lift.y, base.z + lift.z);
   delta.subVectors(target, controls.target); camera.position.add(delta); controls.target.copy(target);
-  sun.target.position.set(lift.x, 0.5 * lift.y, 0); sun.position.set(lift.x - 34, 0.5 * lift.y + 52, 26);
+  sun.target.position.set(lift.x * 0.5, lift.y * 0.5, 0); sun.position.copy(sun.target.position).addScaledVector(sunDir, 700);
+  if (t !== lastT) { lastT = t; markDirty(true); }
 }
 function syncUI() {
   $('time').value = play.t / T_END * 1000; $('tOut').textContent = `${play.t.toFixed(1)} / ${T_END.toFixed(1)} s`;
   $('bPlay').textContent = play.dir === 1 ? '❚❚ Pause' : '▶ Play'; $('bRev').textContent = play.dir === -1 ? '❚❚ Pause' : '◀ Reverse';
 }
-$('time').oninput = e => { play.t = e.target.value / 1000 * T_END; play.dir = 0; syncUI(); };
+$('time').oninput = e => { play.t = e.target.value / 1000 * T_END; play.dir = 0; syncUI(); markDirty(true); };
 $('bPlay').onclick = () => { play.dir = play.dir === 1 ? 0 : 1; syncUI(); };
 $('bRev').onclick = () => { play.dir = play.dir === -1 ? 0 : -1; syncUI(); };
-$('bStart').onclick = () => { play.t = 0; syncUI(); };
+$('bStart').onclick = () => { play.t = 0; syncUI(); markDirty(true); };
 function setSpeed(s) { play.speed = s; for (const b of $('speeds').children) b.setAttribute('aria-pressed', String(+b.dataset.s === s)); }
 for (const b of $('speeds').children) b.onclick = () => setSpeed(+b.dataset.s);
 for (const b of $('looks').children) b.onclick = () => setLook(b.dataset.look);
-$('size').oninput = e => { painter.strokeSize = +e.target.value; $('szOut').textContent = `${e.target.value} px`; };
-$('purity').oninput = e => { brushes.dabs.uniforms.uPurity.value = +e.target.value; $('puOut').textContent = (+e.target.value).toFixed(2); };
-$('bsize').oninput = e => { balloonScale = +e.target.value; $('bsOut').textContent = `${balloonScale.toFixed(1)}×`; boom.setSizeScale(balloonScale); if (look !== 'cubes') setLook(look); };
+for (const b of $('shots').children) b.onclick = () => setShot(b.dataset.shot);
+$('sun').oninput = e => setSun(+e.target.value);
+$('size').oninput = e => { painter.strokeSize = +e.target.value; $('szOut').textContent = `${e.target.value} px`; markDirty(false); };
+$('purity').oninput = e => { brushes.dabs.uniforms.uPurity.value = still.uniforms.uPurity.value = +e.target.value; $('puOut').textContent = (+e.target.value).toFixed(2); markDirty(false); };
+$('bsize').oninput = e => { balloonScale = +e.target.value; $('bsOut').textContent = `${balloonScale.toFixed(1)}×`; boom.setSizeScale(balloonScale); if (look !== 'cubes') setLook(look); markDirty(true); };
 function setPanel(show, byKey = false) { $('ui').hidden = !show; $('bShow').hidden = show || byKey; document.documentElement.toggleAttribute('data-ui-hidden', !show); }
 $('bHide').onclick = () => setPanel(false); $('bShow').onclick = () => setPanel(true);
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || !boom) return;
   if (e.code === 'Space' && e.target.tagName !== 'BUTTON') { e.preventDefault(); $('bPlay').click(); return; }
   if (e.target.tagName === 'INPUT') return;
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); play.t = Math.min(T_END, Math.max(0, play.t + (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 0.25))); play.dir = 0; syncUI(); return; }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); play.t = Math.min(T_END, Math.max(0, play.t + (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 0.25))); play.dir = 0; syncUI(); markDirty(true); return; }
   switch (e.code) {
     case 'KeyR': $('bRev').click(); break;
     case 'Digit0': case 'Home': $('bStart').click(); break;
+    case 'Digit1': setShot('street'); break; case 'Digit2': setShot('garden'); break; case 'Digit3': setShot('roof'); break; case 'Digit4': setShot('above'); break;
     case 'KeyB': setLook(look === 'dabs' ? 'oil' : 'dabs'); break;
     case 'KeyP': setLook(look === 'cubes' ? 'dabs' : 'cubes'); break;
     case 'KeyH': setPanel($('ui').hidden, true); break;
   }
 });
 
-/* ---------- loop ---------- */
+/* ---------- loop: a frame is drawn only when something changed ---------- */
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y);
+  const s = renderer.getDrawingBufferSize(new THREE.Vector2()); painter.setSize(s.x, s.y); markDirty(false);
 }
-addEventListener('resize', resize); resize();
-setLook('dabs'); syncUI();
-const fps = { frames: 0, at: performance.now(), value: 0 };
 function draw() {
   applyTime(play.t);
   controls.update();
-  if (camera.position.y < 0.6) camera.position.y = 0.6;          // stay above the meadow
+  if (camera.position.y < 2.5) camera.position.y = 2.5;          // stay above the ground
+  if (envDirty) refreshEnv();
+  if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
   if (look === 'cubes') renderer.render(scene, camera); else painter.render(renderer);
 }
-let prev = performance.now();
-renderer.setAnimationLoop(now => {
+const fps = { frames: 0, at: performance.now() };
+let prev = performance.now(), voxels = 0;
+function frame(now) {
   const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
   if (play.dir) {
     play.t += dt * play.dir * play.speed;
     if (play.t > T_END) play.t = 0; else if (play.t < 0) play.t = T_END;   // loops both ways
-    syncUI();
+    syncUI(); markDirty(true);
   }
-  draw();
-  if (++fps.frames >= 20) { fps.value = fps.frames * 1000 / (now - fps.at); fps.frames = 0; fps.at = now; $('stat').textContent = `${boom.stats.pieces.toLocaleString('en-US')} balloons · ${fps.value.toFixed(0)} fps`; }
-});
-window.__ex = { boom, rubble, painter, play, setLook, applyTime, draw, syncUI, camera, controls, renderer, house };
+  controls.update();
+  if (dirty > 0) { dirty--; draw(); fps.frames++; }
+  if (now - fps.at > 1000) { $('stat').textContent = `${voxels.toLocaleString('en-US')} voxels · ${boom.stats.pieces.toLocaleString('en-US')} balloons · ${Math.round(fps.frames * 1000 / (now - fps.at))} fps`; fps.frames = 0; fps.at = now; }
+}
+function init() {
+  buildWorld();
+  buildDebris();                                                 // takes the roof patch and the turf ring out of the grids, so do it before meshing
+  for (let i = 0; i < G.length; i++) if (G[i]) voxels++; for (let i = 0; i < HG.length; i++) if (HG[i]) voxels++;
+  const CH = 32;
+  for (let x = -OX; x < NX - OX; x += CH) for (let z = -OZ; z < NZ - OZ; z += CH) {
+    const g = meshGrid(get, [x, -4, z], [x + CH, 72, z + CH], -4); if (!g) continue;
+    const m = new THREE.Mesh(g, mat); m.castShadow = m.receiveShadow = true; scene.add(m);
+  }
+  const hm = new THREE.Mesh(meshGrid(hget, [-HW, 0, HZ0], [HW, HH, HZ1]), mat); hm.castShadow = hm.receiveShadow = true; hero.add(hm);
+  // the house carries its own dabs when it flies: the box holds the roof overhang, the chimney and the porch
+  painter.anchors = [{ object: hero, min: [-18.5, 0.05, -17.5], max: [18.5, heroInfo.ridge + 12, 27.5] }];
+  controls.addEventListener('change', () => markDirty(false));
+  addEventListener('resize', resize); resize();
+  setSun(+$('sun').value); setLook('dabs'); setShot('street'); syncUI();
+  $('status').hidden = true;
+  renderer.setAnimationLoop(frame);
+  window.__ex = { boom, rubble, painter, play, setLook, setShot, setSun, applyTime, draw, syncUI, camera, controls, renderer, hero };
+}
+setTimeout(() => { try { init(); } catch (e) { $('status').textContent = 'Build failed: ' + e.message; throw e; } }, 30);   // let the page paint "Stacking voxels" first
 </script>
 </body>
 </html>

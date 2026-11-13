@@ -20,6 +20,8 @@ Both packages share one version number until the first public release.
 
 ### examples
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
+- `examples/eiffel-fireworks`: a 14 July show over a voxel Eiffel Tower in pointillist dabs. Stars are pieces with their own velocity, launch time and lifetime; bullet time is the drag.
+- `examples/balloon-house`: balloons burst through a roof and carry a house off, in pointillist dabs. A displace hook gathers the balloons into a cluster that follows the house.
 
 ## 0.1.0 (2026-11-05)
 

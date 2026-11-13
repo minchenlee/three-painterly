@@ -107,7 +107,7 @@ html[data-ui-hidden] #liteNote { display: none !important; }
       <div class="seg" role="group" aria-label="Look" id="looks">
         <button type="button" data-look="dabs" aria-pressed="true" title="Pointillist dabs (B switches)">Dabs</button>
         <button type="button" data-look="oil" aria-pressed="false" title="Impressionist oil strokes">Oil</button>
-        <button type="button" data-look="cubes" aria-pressed="false" title="The scene without paint (P)">Plain</button>
+        <button type="button" data-look="cubes" aria-pressed="false" title="The voxel scene without paint (P)">Voxels</button>
       </div>
     </div>
     <details id="more" open>
@@ -137,12 +137,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PainterlyPass, impressionist, pointillist } from '../../packages/painterly-pass/src/index.js';
 import { BakedDebris } from '../../packages/baked-debris/src/index.js';
-import { h01, mulberry32, createPalette } from '../lib/voxels.js';
-import { createShapes, buildShapes, surfaceDabs } from '../lib/shapes.js';
+import { h01, mulberry32, createPalette, createGrid, meshGrid, modelPieces } from '../lib/voxels.js';
 import { peoplePalette, createPeople } from '../lib/people.js';
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
-const $ = id => document.getElementById(id);
+const $ = id => document.getElementById(id), T0 = performance.now();
 const QS = new URLSearchParams(location.search);
 // lite mode (phones, narrow windows): pixel ratio 1, half the dabs, 2048 shadows, a smaller painting. ?full=1 turns it off, ?lite=1 forces it.
 const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
@@ -165,20 +164,49 @@ const rnd = mulberry32(1884), R = (a, b) => a + (b - a) * rnd();
 const palette = createPalette(), { C, def } = palette;
 peoplePalette(def);
 def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0x6f6270, 0x7f7078, 0x4a6e3c, 0x5c7f42, 0x3f5f3a, 0x748f48, 0x8c9c52);
-// Everything is drawn in round shapes (../lib/shapes.js): balls, rods, caps and panels.
-const people = createPeople(C, createShapes), far = people, hero = people;
-// A tree, in metres: a trunk that leans a little, three boughs, and a crown of soft masses with small ones on its surface for a lumpy edge.
-function tree(h, r, lean, seed) {
-  const m = createShapes({ cell: false }), L = [C.LEAF3, C.LEAF1, C.LEAF2, C.LEAF4, C.LEAF5], k = 0.05 * h, H = (a, b) => h01(seed, a, b);
-  m.line([0, 0, 0], [lean * 0.12, h * 0.6, 0], C.TRUNK, 0.6 * k); m.line([lean * 0.12, h * 0.6, 0], [lean * 0.25, h, 0], C.TRUNK2, 0.48 * k);
-  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) m.line([lean * 0.12, h * 0.62, 0], [lean * 0.25 + dx * r * 0.6, h + r * 0.1, dz * r * 0.6], C.TRUNK2, 0.3 * k);
-  const cx = lean * 0.25, cy = h + r * 0.45;
-  m.ellipsoid(cx, cy, 0, r, r * 0.74, r, L[1]);
+def('FAR1 FAR2 FAR3 FAR4', 0x5f8448, 0x4f7440, 0x6f9050, 0x7f9a56);
+// Everything is voxels, small enough for a smooth outline from where Seurat stood: about 2 cm in the foreground, 4 cm in the
+// middle distance, 8 cm far away. Nothing here is a debris piece, so the count does not matter: each thing is meshed once.
+const hero = createPeople(C, LITE ? 3 : 4), people = createPeople(C, LITE ? 2 : 3), far = createPeople(C, 2);
+// A tree in voxels of v metres: a trunk that leans a little, three boughs, and a crown of leaf masses with small ones on its surface.
+function tree(h, r, lean, seed, v) {
+  const S = 1 / v, L = [C.LEAF3, C.LEAF1, C.LEAF2, C.LEAF4, C.LEAF5], k = 0.05 * h, H = (a, b) => h01(seed, a, b);
+  const rods = [[[0, 0, 0], [lean * 0.12, h * 0.6, 0], 0.6 * k, C.TRUNK], [[lean * 0.12, h * 0.6, 0], [lean * 0.25, h, 0], 0.48 * k, C.TRUNK2]];
+  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) rods.push([[lean * 0.12, h * 0.62, 0], [lean * 0.25 + dx * r * 0.6, h + r * 0.1, dz * r * 0.6], 0.3 * k, C.TRUNK2]);
+  const cx = lean * 0.25, cy = h + r * 0.45, lumps = [];            // [x, y, z, radius, colour], small ones first: they give a spot its colour
+  for (let i = 0; i < 16; i++) { const a = H(i, 4) * 6.283, e = (H(i, 5) - 0.3) * 1.5, c = Math.cos(e), q = 0.2 + H(i, 6) * 0.16;
+    lumps.push([cx + Math.cos(a) * c * r * 0.92, cy + Math.sin(e) * r * 0.68, Math.sin(a) * c * r * 0.92, r * q, L[Math.min(4, Math.max(0, Math.floor(1.2 + Math.sin(e) * 2.2 + H(i, 7) * 1.6)))]]); }
   for (let i = 0; i < 6; i++) { const a = i * 1.047 + H(i, 0) * 0.8, y = (H(i, 1) - 0.35) * 0.9, q = 0.5 + H(i, 2) * 0.22;
-    m.ellipsoid(cx + Math.cos(a) * r * 0.6, cy + y * r * 0.6, Math.sin(a) * r * 0.6, r * q, r * q * 0.78, r * q, L[Math.min(4, Math.floor(1 + y * 2 + H(i, 3) * 2.2))]); }
-  for (let i = 0; i < 16; i++) { const a = H(i, 4) * 6.283, e = (H(i, 5) - 0.3) * 1.5, c = Math.cos(e), q = 0.2 + H(i, 6) * 0.16;   // small masses on the surface
-    m.ellipsoid(cx + Math.cos(a) * c * r * 0.92, cy + Math.sin(e) * r * 0.68, Math.sin(a) * c * r * 0.92, r * q, r * q * 0.8, r * q, L[Math.min(4, Math.max(0, Math.floor(1.2 + Math.sin(e) * 2.2 + H(i, 7) * 1.6)))]); }
-  return m;
+    lumps.push([cx + Math.cos(a) * r * 0.6, cy + y * r * 0.6, Math.sin(a) * r * 0.6, r * q, L[Math.min(4, Math.floor(1 + y * 2 + H(i, 3) * 2.2))]]); }
+  lumps.push([cx, cy, 0, r, L[1]]);
+  const FLAT = 0.78, reach = r * 1.4;                               // a leaf mass is this much lower than it is wide
+  const w = Math.ceil(reach * S) + 2, top = Math.ceil((cy + r) * S) + 3, grid = createGrid(2 * w, top, 2 * w, w, 0, w);
+  // the crown: only the shell between "deep inside" and "out of reach" needs the leaf masses
+  for (let Y = Math.max(0, Math.floor((cy - reach) * S)); Y < top; Y++) for (let X = -w; X < w; X++) for (let Z = -w; Z < w; Z++) {
+    const x = (X + 0.5) * v, y = (Y + 0.5) * v, z = (Z + 0.5) * v, ax = x - cx, ay = (y - cy) / FLAT, m0 = Math.sqrt(ax * ax + ay * ay + z * z) / r;
+    if (m0 > 1.42) continue;
+    if (m0 < 0.7) { grid.set(X, Y, Z, L[1]); continue; }            // deep inside: never seen
+    const n = (h01(X >> 2, Y >> 2, (Z >> 2) + seed) - 0.5) * 0.14 + (h01(X, Y, Z + seed) - 0.5) * 0.05;   // a ragged leafy edge
+    for (const l of lumps) { const d = Math.sqrt((x - l[0]) ** 2 + ((y - l[1]) / FLAT) ** 2 + (z - l[2]) ** 2) / l[3];
+      if (d + n < 1) { grid.set(X, Y, Z, h01(X >> 1, Y >> 1, Z >> 1) < 0.3 && l[4] !== L[4] ? L[L.indexOf(l[4]) + 1] : l[4]); break; } }   // with flecks of the next green
+  }
+  const tw = Math.ceil(r * 0.72 * S);
+  for (let Y = 0; Y < Math.min(top, (h + r * 0.3) * S); Y++) for (let X = -tw; X <= tw; X++) for (let Z = -tw; Z <= tw; Z++) {
+    const x = (X + 0.5) * v, y = (Y + 0.5) * v, z = (Z + 0.5) * v;
+    for (const [a, b, rr, c] of rods) {
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], t = Math.min(1, Math.max(0, ((x - a[0]) * dx + (y - a[1]) * dy + (z - a[2]) * dz) / (dx * dx + dy * dy + dz * dz)));
+      if ((x - a[0] - dx * t) ** 2 + (y - a[1] - dy * t) ** 2 + (z - a[2] - dz * t) ** 2 < rr * rr) { grid.setE(X, Y, Z, c); break; }
+    }
+  }
+  // spots on the crown and the trunk for the dabs of its sheet, in the tree's own metres; `towards` is the unit direction to the viewer
+  const spots = (n, towards) => { const out = [];
+    for (let i = 0; i < n; i++) {
+      if (rnd() < 0.1) { const y = rnd() * h; out.push([lean * 0.2 * y / h, y, 0, C.TRUNK]); continue; }
+      const l = lumps[Math.floor(rnd() * rnd() * lumps.length + 16 * (rnd() < 0.5 ? 1 : 0)) % lumps.length], u = [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5], len = Math.hypot(...u) || 1;
+      const sgn = u[0] * towards[0] + u[1] * towards[1] + u[2] * towards[2] < 0 ? -1 : 1;   // on the side we see
+      out.push([l[0] + sgn * u[0] / len * l[3], l[1] + sgn * u[1] / len * l[3] * FLAT, l[2] + sgn * u[2] / len * l[3], l[4]]); }
+    return out; };
+  return { tree: true, get: grid.get, lo: [-w, 0, -w], hi: [w, top, w], spots, area: 6.3 * r * r };
 }
 const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C.OCHRE], [4, 5, -1, C.ROSE], [3, 5, 1, C.WHITEW], [4, 3, 0, C.GREEND]]) m.set(x, y, z, c); return m; };
 
@@ -187,14 +215,15 @@ const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C
 const bankX = z => -5.0 + 0.079 * z;                             // from the picture: the bank enters at the left edge, half way up, and runs to the horizon
 const cast = [];
 // `start` only picks the sheet a thing belongs to (see SHEETS)
-const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, size, sheet: start < 13 ? 0 : start < 17.8 ? 1 : start < 23 ? 2 : 3, weight: size === 1 ? 0.2 : 1 });   // a crown is many overlapping balls: few dabs each
+const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, size, sheet: start < 13 ? 0 : start < 17.8 ? 1 : start < 23 ? 2 : 3 });
 // boats
 add(far.sailboat(), -17, -50, 1, 5.0, 1.6, 0.1); add(far.steamer(), -14, -34, 3, 5.6, 2.0, 0.1); add(far.sailboat(), -12.5, -22, 1, 6.4, 1.8, 0.11); add(far.scull(), -9.5, -12, 1, 7.4, 1.6, 0.1);
 // trees: the far rows first, then the ones that frame the picture, last the two behind us that shade the foreground
 // [x, z, height of the trunk (m), radius of the crown (m), lean, start]
 for (const [x, z, h, r, lean, t, v] of [[-3, -62, 4.4, 3.2, 1, 6.0, 0.4], [7, -56, 4.8, 3.4, -1, 6.3, 0.4], [0, -50, 4.4, 3.0, 0, 6.6, 0.4], [14, -46, 5.2, 3.6, 1, 6.9, 0.4], [4, -39, 4.4, 3.0, 1, 7.2, 0.4], [-2.5, -34, 4.0, 2.6, -1, 7.5, 0.4], [9.5, -30, 4.8, 3.2, 0, 7.8, 0.4],
   [12.5, -20, 6.0, 3.4, -1, 8.2, 0.3], [8.6, -8, 8.0, 4.2, -2, 9.0, 0.3], [2.9, -11.5, 6.6, 3.0, 1, 9.8, 0.3], [-2.2, -5.2, 7.6, 2.6, -1, 10.6, 0.3], [5.7, -1.4, 9.0, 4.4, 1, 11.4, 0.3], [8.5, 10, 7.6, 5.0, -2, 12.4, 0.45], [12.5, 6.5, 7.0, 4.8, 1, 12.8, 0.45]])
-  add(tree(h, r, lean, cast.length * 7 + 1), x, z, 0, t, 2.4, 1);
+{ const v = z > 5 ? 0.2 : Math.min(0.3, Math.max(LITE ? 0.14 : 0.09, 0.0075 * Math.hypot(x - EYE[0], z - EYE[2])));   // voxels about 7 pixels wide from Seurat's viewpoint; coarser behind it
+  add(tree(h, r, lean, cast.length * 7 + 1, v), x, z, 0, t, 2.4, v); }
 // far figures, small in the distance
 add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 0.9, -21, 1, 13.0, 1.0); add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 1.6, -21.3, 1, 13.3, 1.0);
 add(far.lady({ dress: C.ROSE, bodice: C.RED, parasol: C.CREAMW }), -1.6, -27, 2, 13.6, 1.0); add(far.gent({ cane: true }), -0.9, -27.3, 2, 13.8, 1.0);
@@ -220,11 +249,25 @@ add(hero.monkey({}), 1.5, 5.3, 2, 29.0, 0.8); add(hero.dog({ c: C.TAN, size: 0.5
    No dab stays. Where one lands, the shape or the ground under it takes its colour at that moment (see `revealing`), and the dab is hidden. */
 const pieces = [];
 const DAB = dist => 0.0075 * dist;                                // the size of a dab in the world, for the same size on Seurat's canvas
-// the shapes of the cast, placed in the world; `begin` is when their sheet starts to land
-const built = buildShapes(cast.map(o => ({ model: o.model, origin: [o.x, 0, o.z], size: o.size, turn: o.turn, begin: SHEETS[o.sheet], weight: o.weight })), { hex: palette.HEX, material: kind => shapeMaterial(kind) });
-for (const d of surfaceDabs(built.shapes, { eye: EYE, dab: DAB, cover: LITE ? 0.16 : 0.32, rnd })) {
-  const arrive = d.begin + SPAN * sweep(d.position[0], d.position[2]) + 0.4 * rnd();
-  pieces.push({ position: d.position, size: DAB(Math.max(EYE[2] - d.position[2], 1)), color: d.color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 });
+// The cast: each thing is meshed (visible faces, baked ambient occlusion) and stands in the scene from the start; its material hides
+// it until its sheet lands. Its dabs are aimed at a share of its surface voxels: enough to cover it once at the size of a dab.
+let castMat = null, castDepthMat = null;                          // made on first use, further down (castMaterial, castDepth)
+const castGroup = new THREE.Group(), COVER = LITE ? 0.3 : 0.55;
+for (const o of cast) {
+  const m = o.model, begin = SHEETS[o.sheet], unit = m.tree ? o.size : o.size / m.detail, { lo, hi } = m.tree ? m : m.bounds(), dist = Math.max(Math.hypot(o.x - EYE[0], o.z - EYE[2]), 1);
+  for (let y0 = lo[1]; y0 < hi[1]; y0 += 48) {                    // in slabs, to stay under the mesher's limit of quads for one call
+    const g = meshGrid(m.get, [lo[0], y0, lo[2]], [hi[0], Math.min(hi[1], y0 + 48), hi[2]], { palette: palette.PAL }); if (!g) continue;
+    g.setAttribute('aBegin', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(begin), 1));
+    const mesh = new THREE.Mesh(g, castMaterial()); mesh.customDepthMaterial = castDepth();
+    mesh.position.set(o.x, 0, o.z); mesh.scale.setScalar(unit); mesh.rotation.y = -o.turn * Math.PI / 2;   // a quarter turn takes +x to +z, as modelPieces does
+    mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; castGroup.add(mesh);
+  }
+  const land = (x, y, z, color) => { const arrive = begin + SPAN * sweep(x, z) + 0.4 * rnd();
+    pieces.push({ position: [x, y, z], size: DAB(Math.max(EYE[2] - z, 1)), color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 }); };
+  if (m.tree) { const towards = new THREE.Vector3(EYE[0] - o.x, 0.3, EYE[2] - o.z).normalize().toArray();
+    for (const [x, y, z, c] of m.spots(Math.round(COVER * 0.5 * m.area / DAB(dist) ** 2), towards)) land(o.x + x, y, o.z + z, palette.HEX[c]); }
+  else { const share = COVER * 0.6 * unit * unit / DAB(dist) ** 2;                                   // about half its surface faces away
+    for (const p of modelPieces(m, { palette, origin: [o.x, 0, o.z], size: o.size, turn: o.turn, ao: false })) if (rnd() < share) land(p.position[0], p.position[1], p.position[2], p.color); }
 }
 
 // The ground sheet: dabs spread evenly over Seurat's frame, each aimed at the spot of sky, river or lawn it covers there.
@@ -261,7 +304,7 @@ Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, n
 scene.add(sun, sun.target);
 
 // A blank canvas that fills in. Each dab-sized patch of a surface appears at its own moment: when its sheet of dabs lands there.
-// The ground turns from canvas to its colour; a shape is simply not drawn before (and casts no shadow: see shapeDepth).
+// The ground turns from canvas to its colour; a thing of the cast is simply not drawn before (and casts no shadow: see castDepth).
 const revealU = { uT: { value: 0 }, uCanvas: { value: CANVAS.clone().multiplyScalar(1.25) } };
 const REVEAL_VERT = [['#include <common>', '#include <common>\nvarying vec3 vWp; varying float vBegin;\n#ifdef SHAPE\nattribute float aBegin;\n#endif'], ['#include <project_vertex>', `#include <project_vertex>
       vec4 rwp = vec4(transformed, 1.0);
@@ -295,20 +338,21 @@ function revealing(mat) {                                          // the ground
   return mat;
 }
 const discardFirst = sh => { sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'void main() {\nif (revealed() < 0.5) discard;'); };
-function shapeMaterial(kind) {                                     // a shape of the cast: not there until its sheet lands
-  const mat = new THREE.MeshStandardMaterial({ roughness: 1, side: kind === 'cap' || kind === 'panel' ? THREE.DoubleSide : THREE.FrontSide });
-  mat.onBeforeCompile = sh => { patch(sh, true); discardFirst(sh); };
-  mat.customProgramCacheKey = () => 'reveal-shape';
-  return mat;
+function castMaterial() {                                          // a thing of the cast: not there until its sheet lands
+  if (castMat) return castMat;
+  castMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  castMat.onBeforeCompile = sh => { patch(sh, true); discardFirst(sh); };
+  castMat.customProgramCacheKey = () => 'reveal-cast';
+  return castMat;
 }
-function shapeDepth() {                                            // the same test in the shadow pass
-  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
-  mat.onBeforeCompile = sh => { patch(sh, true); discardFirst(sh); };
-  mat.customProgramCacheKey = () => 'reveal-depth';
-  return mat;
+function castDepth() {                                             // the same test in the shadow pass
+  if (castDepthMat) return castDepthMat;
+  castDepthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  castDepthMat.onBeforeCompile = sh => { patch(sh, true); discardFirst(sh); };
+  castDepthMat.customProgramCacheKey = () => 'reveal-depth';
+  return castDepthMat;
 }
-for (const mesh of built.group.children) { mesh.castShadow = mesh.receiveShadow = true; mesh.customDepthMaterial = shapeDepth(); }
-scene.add(built.group);
+scene.add(castGroup);
 {
   // the lawn: the island's bank, receding to the right of the river
   const shape = new THREE.Shape([[bankX(16), -16], [70, -16], [70, 92], [bankX(-92), 92]].map(([x, z]) => new THREE.Vector2(x, z)));
@@ -317,19 +361,30 @@ scene.add(built.group);
   lawn.material.side = THREE.DoubleSide;
   const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c9da, roughness: 0.5 })));
   river.rotation.x = -Math.PI / 2; river.position.set(-60, -0.3, -38); river.receiveShadow = true; scene.add(river);
-  // the far bank: a strip of grass, a white wall, a few houses (boxes) and soft masses of trees (flattened balls), washed in with the rest
-  const boxes = [], balls = [], box = (x, y, z, sx, sy, sz, c) => boxes.push([x, y, z, sx, sy, sz, c]), ball = (x, y, z, sx, sy, sz, c) => balls.push([x, y, z, sx, sy, sz, c]);
-  const GREENS = [0x5f8448, 0x4f7440, 0x6f9050, 0x7f9a56];
+  // the far bank: a strip of grass, a white wall and a few houses (boxes), washed in with the rest
+  const boxes = [], box = (x, y, z, sx, sy, sz, c) => boxes.push([x, y, z, sx, sy, sz, c]);
   box(-95, 0.1, -40, 70, 0.9, 130, 0x8a9a52); box(-60.2, 1.0, -40, 0.6, 1.2, 120, 0xf0ead8);
   for (const [z, w, h] of [[-12, 6, 4], [-30, 8, 5], [-52, 5, 4], [-70, 7, 5]]) { box(-66, h / 2 + 0.5, z, w, h, w, 0xf2ecdc); box(-66, h + 1.0, z, w + 0.6, 1.0, w + 0.6, 0xc0694c); }
-  for (let i = 0; i < 70; i++) { const z = -104 + i * 2.1 + R(-1, 1), k = R(0.7, 1.5); ball(-63 - R(0, 14), 2.6 * k + 1, z, 3.4 * k, 3.0 * k, 3.4 * k, GREENS[i % 4]); }       // along the far bank
-  for (let i = 0; i < 80; i++) { const x = -62 + i * 1.7, k = R(0.8, 1.7); ball(x, 3.0 * k, -96 - R(0, 12), 4.0 * k, 3.6 * k, 4.0 * k, GREENS[(i * 3) % 4]); }          // across the horizon
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S3 = new THREE.Vector3(), col = new THREE.Color();
-  for (const [list, geo] of [[boxes, new THREE.BoxGeometry(1, 1, 1)], [balls, new THREE.IcosahedronGeometry(1, 2)]]) {
-    const inst = new THREE.InstancedMesh(geo, revealing(new THREE.MeshStandardMaterial({ roughness: 1 })), list.length);
-    list.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
-    scene.add(inst);
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), revealing(new THREE.MeshStandardMaterial({ roughness: 1 })), boxes.length);
+  boxes.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
+  scene.add(inst);
+  // its trees, and the line of trees at the horizon: leaf masses stamped into two voxel grids (40 cm voxels: a few pixels wide at that distance)
+  const FV = 0.4, FAR = [C.FAR1, C.FAR2, C.FAR3, C.FAR4], farMat = revealing(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  function masses(x0, z0, nx, nz, list) {                           // list: [x, y, z, radius, colour index]; the grid starts at (x0, 0, z0)
+    const ny = 40, grid = createGrid(nx, ny, nz);
+    for (const [bx, by, bz, br, c] of list) { const X = (bx - x0) / FV, Y = by / FV, Z = (bz - z0) / FV, Rr = br / FV;
+      for (let x = Math.floor(X - Rr * 1.2); x <= X + Rr * 1.2; x++) for (let y = Math.max(0, Math.floor(Y - Rr)); y <= Y + Rr; y++) for (let z = Math.floor(Z - Rr * 1.2); z <= Z + Rr * 1.2; z++) {
+        const d = Math.hypot(x - X, (y - Y) / 0.85, z - Z) / Rr + (h01(x >> 1, y >> 1, z >> 1) - 0.5) * 0.3;
+        if (d < 1) grid.set(x, y, z, h01(x >> 1, y, z >> 1) < 0.3 ? FAR[(c + 1) % 4] : FAR[c]); } }
+    for (let a = 0; a < Math.max(nx, nz); a += 64) { const lo = nx > nz ? [a, 0, 0] : [0, 0, a], hi = nx > nz ? [Math.min(nx, a + 64), ny, nz] : [nx, ny, Math.min(nz, a + 64)];
+      const g = meshGrid(grid.get, lo, hi, { palette: palette.PAL }); if (!g) continue;
+      const mesh = new THREE.Mesh(g, farMat); mesh.position.set(x0, 0, z0); mesh.scale.setScalar(FV); mesh.frustumCulled = false; scene.add(mesh); }
   }
+  const along = [], across = [];
+  for (let i = 0; i < 70; i++) { const z = -104 + i * 2.1 + R(-1, 1), k = R(0.7, 1.5); along.push([-63 - R(0, 14), 2.6 * k + 1, z, 3.4 * k, i % 4]); }
+  for (let i = 0; i < 80; i++) { const x = -62 + i * 1.7, k = R(0.8, 1.7); across.push([x, 3.0 * k, -96 - R(0, 12), 4.0 * k, (i * 3) % 4]); }
+  masses(-86, -112, 80, 400, along); masses(-72, -118, 380, 80, across);
 }
 // the sky: a dome that writes no depth, so the painter treats it as sky; it washes in first
 const skyU = { uT: revealU.uT, uCanvas: { value: CANVAS } };

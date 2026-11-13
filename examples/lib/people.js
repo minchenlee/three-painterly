@@ -1,6 +1,6 @@
-// People, pets and boats for a park of the 1880s. Each builder returns a model that faces +x, stands on y = 0 and is centred
-// on z = 0. One unit is about 10 cm: an adult is 19 units tall. The model is voxels (createModel of voxels.js) or round
-// shapes (createShapes of shapes.js); a builder reads m.smooth where the two need different drawing.
+// People, pets and boats for a park of the 1880s, on top of voxels.js. Each builder returns a model (createModel) that faces +x,
+// stands on y = 0 and is centred on z = 0. One unit is about 10 cm: an adult is 19 units tall. At detail 1 a unit is one voxel and
+// the drawing is blocky on purpose; from detail 2 up the same figure is drawn with rods, cylinders and a profile, and fine voxels keep it.
 // Not part of any package. It serves the examples and may change with them.
 import { createModel as newModel } from './voxels.js';
 
@@ -11,32 +11,30 @@ export function peoplePalette(def) {
   def('BLUE SKYBLUE GREEND BROWN TAN BRASS WOODB SAIL SMOKE', 0x3f6fb8, 0x8fb4dc, 0x3f6a48, 0x6a4a33, 0xc59a66, 0xd8b23a, 0x7a5a3c, 0xf4f0e4, 0x9a9aa2);
 }
 
-/**
- * createPeople(C, 2)              voxel figures at detail 2 (see createModel)
- * createPeople(C, createShapes)   smooth figures: pass the function that makes an empty model
- */
+/** createPeople(C, detail): builders for figures at that detail (see createModel). 1 = one voxel a unit; 4 = voxels of about 2 cm. */
 export function createPeople(C, detail = 2) {
-  const createModel = typeof detail === 'function' ? detail : () => newModel(detail);
-  const thin = m => (m.smooth ? 0.2 : 0.5);                        // a cane, a rod, the stick of a parasol
+  const createModel = () => { const m = newModel(detail); m.smooth = detail > 1; return m; };   // smooth: draw with the finer shapes
+  const thin = m => (m.smooth ? 0.22 : 0.5);                        // a cane, a rod, the stick of a parasol
   const head = (m, x, y, skin = C.SKIN) => {
     m.ellipsoid(x, y, 0, 1.5, 1.7, 1.5, skin);
-    if (m.smooth) { m.ellipsoid(x + 1.45, y - 0.2, 0, 0.5, 0.42, 0.4, skin); m.ellipsoid(x + 0.9, y - 1.3, 0, 0.75, 0.6, 0.9, skin); }   // a nose and a chin: a profile
+    if (m.detail > 2) { m.ellipsoid(x + 1.45, y - 0.2, 0, 0.5, 0.42, 0.4, skin); m.ellipsoid(x + 0.9, y - 1.3, 0, 0.75, 0.6, 0.9, skin); }   // a nose and a chin: a profile
   };
-  const arm = (m, pts, c, hand = C.SKIN) => { for (let i = 0; i + 1 < pts.length; i++) m.line(pts[i], pts[i + 1], c, 0.75); const h = pts[pts.length - 1]; m.set(h[0], h[1], h[2], hand); };
+  const dot = (m, x, y, z, c, r = 0.62) => { if (m.smooth) m.ellipsoid(x, y, z, r, r, r, c); else m.set(x, y, z, c); };   // one voxel, or a small ball on a fine model
+  const arm = (m, pts, c, hand = C.SKIN) => { for (let i = 0; i + 1 < pts.length; i++) m.line(pts[i], pts[i + 1], c, 0.75); const h = pts[pts.length - 1]; dot(m, h[0], h[1], h[2], hand, 1.0); };   // a hand a little wider than the sleeve
   const leg = (m, a, b, c, r = 0.9) => { if (m.smooth) m.line(a, b, c, r); else m.box(Math.min(a[0], b[0]) - (a[0] === b[0] ? 1 : 0), Math.max(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[1], b[1]) + (a[1] !== b[1] ? 0 : 1), a[2], a[2], c); };
   const tube = (m, x, y0, y1, r, c) => { if (m.smooth) m.line([x, y0 - 0.5, 0], [x, y1 - 0.5, 0], c, r, true); else for (let y = Math.round(y0); y < y1; y++) m.ellipsoid(x, y, 0, r, 0.5, r, c); };   // an upright cylinder
   const brim = (m, x, y, r, c) => m.ellipsoid(x, y, 0, r, m.smooth ? 0.3 : 0.5, r, c);
   /** A parasol held at hand [x, y, z]: a stick and a cover. */
   const parasol = (m, hand, c, r = 4.6, lean = 0.6) => {
     const top = [hand[0] + lean, hand[1] + 10, hand[2] - 1];
-    m.line(hand, top, C.BROWN, thin(m)); m.dome(top[0], top[1] - 2, top[2], r, 2.2, (x, z) => (Math.hypot(x - top[0], z - top[2]) > r - 1 ? C.BLACK : c)); m.set(top[0], top[1] + 1, top[2], C.BROWN);
+    m.line(hand, top, C.BROWN, thin(m)); m.dome(top[0], top[1] - 2, top[2], r, 2.2, (x, z) => (Math.hypot(x - top[0], z - top[2]) > r - 1 ? C.BLACK : c)); dot(m, top[0], top[1] + 1, top[2], C.BROWN);
   };
   const hats = {
     top: (m, x, y, c = C.BLACK) => { brim(m, x, y, 2.4, c); tube(m, x, y + 0.5, y + 4, 1.6, c); },
     boater: (m, x, y, c = C.OCHRE, band = C.BLACK) => { brim(m, x, y, 2.5, c); if (m.smooth) { tube(m, x, y + 0.3, y + 2.4, 1.6, c); tube(m, x, y + 0.6, y + 1.3, 1.68, band); } else { m.ellipsoid(x, y + 1, 0, 1.6, 0.5, 1.6, band); m.ellipsoid(x, y + 2, 0, 1.6, 0.5, 1.6, c); } },
-    bonnet: (m, x, y, c = C.RED, trim = C.BLACK) => { m.ellipsoid(x - 0.4, y, 0, 2.0, 1.0, 1.9, c); m.ellipsoid(x - 0.2, y + 1, 0, 1.3, 0.8, 1.2, c); m.set(x + 1, y + 1, 1, trim); },
-    cap: (m, x, y, c = C.NAVY) => { m.ellipsoid(x, y, 0, 1.7, 0.9, 1.6, c); m.set(x + 2, y, 0, c); },
-    kepi: (m, x, y, c = C.RED) => { tube(m, x, y, y + 2, 1.5, c); m.set(x + 2, y, 0, C.BLACK); },
+    bonnet: (m, x, y, c = C.RED, trim = C.BLACK) => { m.ellipsoid(x - 0.4, y, 0, 2.0, 1.0, 1.9, c); m.ellipsoid(x - 0.2, y + 1, 0, 1.3, 0.8, 1.2, c); dot(m, x + 1, y + 1, 1, trim); },
+    cap: (m, x, y, c = C.NAVY) => { m.ellipsoid(x, y, 0, 1.7, 0.9, 1.6, c); dot(m, x + 2, y, 0, c); },
+    kepi: (m, x, y, c = C.RED) => { tube(m, x, y, y + 2, 1.5, c); dot(m, x + 2, y, 0, C.BLACK); },
   };
   const bell = (m, waist, c, wide = 2.4, hem = null) => { for (let y = 0; y < waist; y++) { const r = 1.5 + Math.pow(1 - y / waist, 0.75) * wide; m.ellipsoid(0.3, y, 0, r * 1.05, m.smooth ? 2.2 : 0.5, r * 0.85, y === 0 && hem && !m.smooth ? hem : c); } };
 
@@ -48,12 +46,12 @@ export function createPeople(C, detail = 2) {
     const m = createModel(), waist = 9;
     bell(m, waist, dress, 2.4, bodice);
     if (bustle) { m.ellipsoid(-2.7, waist - 1.6, 0, 2.3, 2.3, 1.9, dress); m.ellipsoid(-3.3, waist - 4.5, 0, 1.8, 2.6, 1.7, dress); }
-    m.ellipsoid(0, waist + 3, 0, 1.6, 3.4, 2.1, bodice); m.set(0, 16, 0, C.SKIN);
+    m.ellipsoid(0, waist + 3, 0, 1.6, 3.4, 2.1, bodice); dot(m, 0, 16, 0, C.SKIN);
     head(m, 0.2, 17.6); m.ellipsoid(-1.1, 18.0, 0, 1.2, 1.3, 1.4, hair);
     if (hat) hats[hat](m, 0.1, 19.4, hatC);
     arm(m, [[0, 14.5, -2.4], [0.6, 11, -2.6], [1.6, 9.5, -2.4]], bodice);                           // the far arm hangs
     if (par) { arm(m, [[0.4, 14.5, 2.4], [1.6, 11.5, 2.6], [3, 12.5, 2.4]], bodice); parasol(m, [3, 12.5, 2.4], par); }
-    else if (rod) { arm(m, [[0.4, 14.5, 2.4], [2, 12, 2.6], [3.4, 12.2, 2.2]], bodice); m.line([3.4, 12.2, 2.2], [17, 17, 1], C.BROWN, thin(m)); m.line([17, 17, 1], [17.5, 4, 1], C.GREYLT, m.smooth ? 0.08 : 0.5); }
+    else if (rod) { arm(m, [[0.4, 14.5, 2.4], [2, 12, 2.6], [3.4, 12.2, 2.2]], bodice); m.line([3.4, 12.2, 2.2], [17, 17, 1], C.BROWN, thin(m)); m.line([17, 17, 1], [17.5, 4, 1], C.GREYLT, m.smooth ? 0.1 : 0.5); }
     else arm(m, [[0.4, 14.5, 2.4], [1.2, 11, 2.6], [2.2, 10, 2.2]], bodice);
     return m;
   }
@@ -66,7 +64,7 @@ export function createPeople(C, detail = 2) {
     }
     m.ellipsoid(0, 11.6, 0, 1.6, 3.8, 2.2, coat);
     if (tails) { if (m.smooth) m.ellipsoid(-1.5, 7.6, 0, 0.9, 2.2, 1.6, coat); else m.box(-2, -1, 6, 9, -1, 1, coat); }
-    m.set(0, 16, 0, C.SKIN); m.set(1, 14, 0, C.WHITEW);
+    dot(m, 0, 16, 0, C.SKIN); dot(m, 1, 14, 0, C.WHITEW);
     head(m, 0.2, 17.6); m.ellipsoid(-1.0, 17.8, 0, 1.0, 1.2, 1.4, C.HAIR);
     hats[hat](m, 0.1, 19.4, hatC);
     arm(m, [[0, 14.5, -2.5], [0.3, 11, -2.7], [0.8, 8.5, -2.5]], coat);
@@ -77,7 +75,7 @@ export function createPeople(C, detail = 2) {
   /** A woman sitting on the grass, her skirt spread in front of her. */
   function seatedLady({ dress = C.NAVY, bodice = C.NAVY, hat = 'bonnet', hatC = C.RED, parasol: par = null, sewing = false } = {}) {
     const m = createModel();
-    m.ellipsoid(1.8, 0.9, 0, 4.4, 1.7, 2.9, dress); m.ellipsoid(0, 4.8, 0, 1.5, 3.0, 1.9, bodice); m.set(0, 8, 0, C.SKIN);
+    m.ellipsoid(1.8, 0.9, 0, 4.4, 1.7, 2.9, dress); m.ellipsoid(0, 4.8, 0, 1.5, 3.0, 1.9, bodice); dot(m, 0, 8, 0, C.SKIN);
     head(m, 0.2, 9.6); m.ellipsoid(-1.1, 10.0, 0, 1.2, 1.3, 1.4, C.HAIR); if (hat) hats[hat](m, 0.1, 11.4, hatC);
     arm(m, [[0.3, 6.8, -2.2], [1.6, 4.4, -2.0], [3, 3.4, -1]], bodice);
     if (par) { arm(m, [[0.3, 6.8, 2.2], [1.5, 5.4, 2.4], [2.4, 6.2, 2.2]], bodice); parasol(m, [2.4, 6.2, 2.2], par, 4.2, -0.6); }
@@ -91,7 +89,7 @@ export function createPeople(C, detail = 2) {
       if (m.smooth) { m.line([0, 0.5, z], [6.5, 0.5, z], trousers, 0.95); m.ellipsoid(7.2, 0.9, z, 0.8, 1.3, 0.8, C.BLACK); }
       else { m.box(0, 6, 0, 1, z, z, trousers); m.box(7, 7, 0, 2, z, z, C.BLACK); }
     }
-    m.ellipsoid(-0.2, 4.6, 0, 1.6, 3.2, 2.1, coat); m.set(0, 8, 0, C.SKIN); head(m, 0.2, 9.6); hats[hat](m, 0.1, 11.4, hatC);
+    m.ellipsoid(-0.2, 4.6, 0, 1.6, 3.2, 2.1, coat); dot(m, 0, 8, 0, C.SKIN); head(m, 0.2, 9.6); hats[hat](m, 0.1, 11.4, hatC);
     arm(m, [[0.2, 6.8, -2.3], [1.4, 4.2, -2.4], [2.6, 3, -2]], coat); arm(m, [[0.2, 6.8, 2.3], [1.6, 4.6, 2.4], [3, 4.2, 2.2]], coat);
     if (cane) m.line([3, 4.2, 2.2], [6, 0, 2.6], C.BLACK, thin(m));
     return m;
@@ -102,7 +100,7 @@ export function createPeople(C, detail = 2) {
     for (const z of [-1, 0.6]) m.line([-9, 0.8, z], [-1, 1.2, z], trousers, 1.0);
     if (m.smooth) m.ellipsoid(-10.2, 0.7, -0.2, 1.2, 0.9, 1.5, C.BLACK); else m.box(-11, -10, 0, 1, -1, 1, C.BLACK);
     for (let i = 0; i <= 5; i++) m.ellipsoid(-0.5 + i * 0.9, 1.6 + i * 0.75, 0, 1.6, 1.6, 2.0, shirt);
-    m.set(4.6, 6.2, 0, C.SKIN); head(m, 5.4, 7.4); hats[hat](m, 5.2, 9.0, hatC);
+    dot(m, 4.6, 6.2, 0, C.SKIN); head(m, 5.4, 7.4); hats[hat](m, 5.2, 9.0, hatC);
     arm(m, [[3.6, 4.6, 2.2], [4.6, 2, 2.6], [6.4, 0.6, 2.4]], C.SKIN); arm(m, [[3.6, 4.6, -2.2], [5, 2.6, -2.4], [6.4, 1.8, -1.6]], C.SKIN);
     m.line([7, 7, 0], [8.6, 6.4, 0], C.BROWN, thin(m));
     return m;
@@ -134,7 +132,7 @@ export function createPeople(C, detail = 2) {
   function monkey({ c = C.BROWN } = {}) {
     const m = createModel(), t = m.smooth ? 0.3 : 0.5;
     m.ellipsoid(0, 2.4, 0, 1.9, 1.2, 1.0, c); for (const [x, z] of [[-1.2, -1], [-1.2, 1], [1.4, -1], [1.4, 1]]) m.line([x, 0, z], [x, 2, z], c, t);
-    m.ellipsoid(2.6, 3.4, 0, 1.1, 1.1, 1.0, c); m.set(3.4, 3.2, 0, C.TAN);
+    m.ellipsoid(2.6, 3.4, 0, 1.1, 1.1, 1.0, c); dot(m, 3.4, 3.2, 0, C.TAN);
     m.line([-1.8, 2.6, 0], [-3.6, 3.4, 0], c, t); m.line([-3.6, 3.4, 0], [-3.8, 5.6, 0], c, t); m.line([-3.8, 5.6, 0], [-2.8, 6.4, 0], c, t);
     return m;
   }

@@ -53,10 +53,10 @@ export function createGrid(nx, ny, nz, ox = 0, oy = 0, oz = 0) {
  *   set(x, y, z, c), get(x, y, z)
  *   ellipsoid(cx, cy, cz, rx, ry, rz, c)      a solid ellipsoid
  *   box(x0, x1, y0, y1, z0, z1, c)            a block, both ends included
- *   line(a, b, c, r = 0.5)                    a rod from point a to point b ([x, y, z]), radius r
+ *   line(a, b, c, r = 0.5, flat = false)      a rod from point a to point b ([x, y, z]), radius r, with round ends; flat = a cylinder
  *   dome(cx, cy, cz, r, h, c)                 a thin cap, like the cover of a parasol: radius r, height h, open below
  *   panel(points, c)                          a flat convex polygon (a sail, a flag)
- * createShapes (shapes.js) takes the same calls and keeps them round. `smooth` tells a builder which one it draws on.
+ *   each(fn), bounds()                        every cell as fn(x, y, z, c); { lo, hi } around them, hi excluded: the box for meshGrid
  */
 export function createModel(detail = 1) {
   // detail: every unit of the shapes below becomes `detail` voxels, so the same builder gives a finer model
@@ -72,10 +72,20 @@ export function createModel(detail = 1) {
       if (((x - X) / RX) ** 2 + ((y - Y) / RY) ** 2 + ((z - Z) / RZ) ** 2 <= 1) put(x, y, z, typeof c === 'function' ? c(coarse(x), coarse(y), coarse(z)) : c);
   };
   const box = (x0, x1, y0, y1, z0, z1, c) => { for (let x = x0 * d; x < (x1 + 1) * d; x++) for (let y = y0 * d; y < (y1 + 1) * d; y++) for (let z = z0 * d; z < (z1 + 1) * d; z++) put(x, y, z, typeof c === 'function' ? c(coarse(x), coarse(y), coarse(z)) : c); };
-  const line = (a, b, c, r = 0.5) => {                              // (shapes.js also takes a `flat` flag here; voxels have no use for it)
-    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 2 * d));
-    for (let i = 0; i <= n; i++) { const t = i / n, x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, z = a[2] + (b[2] - a[2]) * t;
-      if (r * d <= 0.5) put(Math.round(f(x)), Math.round(f(y)), Math.round(f(z)), c); else ellipsoid(x, y, z, r, r, r, c); }
+  const line = (a, b, c, r = 0.5, flat = false) => {
+    const A = [f(a[0]), f(a[1]), f(a[2])], B = [f(b[0]), f(b[1]), f(b[2])], D = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], L2 = D[0] * D[0] + D[1] * D[1] + D[2] * D[2] || 1e-9, R = r * d;
+    if (R < 0.9) {                                                  // thinner than a voxel: a path one voxel wide
+      const n = Math.max(1, Math.ceil(Math.sqrt(L2) * 2));
+      for (let i = 0; i <= n; i++) { const t = i / n; put(Math.round(A[0] + D[0] * t), Math.round(A[1] + D[1] * t), Math.round(A[2] + D[2] * t), c); }
+      return;
+    }
+    const lo = k => Math.ceil(Math.min(A[k], B[k]) - R), hi = k => Math.floor(Math.max(A[k], B[k]) + R);
+    for (let x = lo(0); x <= hi(0); x++) for (let y = lo(1); y <= hi(1); y++) for (let z = lo(2); z <= hi(2); z++) {
+      let t = ((x - A[0]) * D[0] + (y - A[1]) * D[1] + (z - A[2]) * D[2]) / L2;
+      if (flat && (t < 0 || t > 1)) continue;                       // a cylinder stops at its ends; a rod has round ones
+      t = Math.min(1, Math.max(0, t));
+      if ((x - A[0] - D[0] * t) ** 2 + (y - A[1] - D[1] * t) ** 2 + (z - A[2] - D[2] * t) ** 2 <= R * R) put(x, y, z, c);
+    }
   };
   const dome = (cx, cy, cz, r, h, c) => {
     const X = f(cx), Z = f(cz), R = r * d, top = (x, z) => { const q = Math.hypot(x - X, z - Z) / R; return q <= 1 ? Math.round(f(cy) + h * d * Math.sqrt(1 - q * q)) : null; };
@@ -92,7 +102,8 @@ export function createModel(detail = 1) {
         put(Math.round(f(A[0] + (B[0] - A[0]) * a + (D[0] - A[0]) * b)), Math.round(f(A[1] + (B[1] - A[1]) * a + (D[1] - A[1]) * b)), Math.round(f(A[2] + (B[2] - A[2]) * a + (D[2] - A[2]) * b)), c); } }
   };
   const each = fn => { for (const [k, c] of cells) fn((k % 1024) - 512, (Math.floor(k / 1024) % 1024) - 512, Math.floor(k / 1048576) - 512, c); };
-  return { cells, detail, smooth: false, set, get, ellipsoid, box, line, dome, panel, each };
+  const bounds = () => { const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9]; each((x, y, z) => { lo[0] = Math.min(lo[0], x); lo[1] = Math.min(lo[1], y); lo[2] = Math.min(lo[2], z); hi[0] = Math.max(hi[0], x + 1); hi[1] = Math.max(hi[1], y + 1); hi[2] = Math.max(hi[2], z + 1); }); return { lo, hi }; };
+  return { cells, detail, set, get, ellipsoid, box, line, dome, panel, each, bounds };
 }
 
 /**

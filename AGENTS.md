@@ -7,7 +7,7 @@ Guide for coding agents that work on this repository. To use the library in anot
 - `packages/painterly-pass/src/`: `PainterlyPass.js` (the Pass), `shaders.js` (GLSL shared by every brush), `brushes/*.js` (one brush per file: mark shape, palette, canvas), `index.js` (public exports).
 - `packages/baked-debris/src/`: `BakedDebris.js` (class, GPU side), `bake.js` (CPU collision bake), `colliders.js` (`voxelCollider`, `boxCollider`, `anyCollider`), `shaders.js` (GLSL and three.js chunk patches; `oilStroke` is the built-in look of flying strokes), `index.js`.
 - `packages/*/examples/`: small examples. `examples/`: large demos that use both packages.
-- `examples/lib/`: voxel tools shared by the demos. `voxels.js` (hash, palette, grid, mesher with baked ambient occlusion, small models and their pieces), `town.js` (wooden houses, trees, fences, cars), `people.js` (figures, pets and boats of the 1880s). Not part of any package and not public API.
+- `examples/lib/`: voxel tools shared by the demos. `voxels.js` (hash, palette, grid, mesher with baked ambient occlusion, small models and their pieces), `town.js` (wooden houses, trees, fences, cars), `shapes.js` (the drawing calls of a voxel model kept as round shapes: balls, rods, caps, panels; instanced meshes and dab points on them), `people.js` (figures, pets and boats of the 1880s, as voxels or round shapes). Not part of any package and not public API.
 - `packages/*/test/` and `examples/lib/test/`: `*.test.js` run in Node; `api.html` runs in a browser.
 
 ## Rules

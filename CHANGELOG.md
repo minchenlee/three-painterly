@@ -22,7 +22,7 @@ Both packages share one version number until the first public release.
 
 ### examples
 - `examples/grande-jatte`: Seurat's *A Sunday on La Grande Jatte* paints itself in pointillist dabs, then lets you walk in. Dabs are BakedDebris pieces on a clock that runs backwards.
-- `examples/lib`: small sparse models (`createModel`, `modelPieces`) in `voxels.js`, and a new `people.js` (figures, pets and boats of the 1880s).
+- `examples/lib`: small sparse models (`createModel`, `modelPieces`) in `voxels.js`; a new `shapes.js` keeps the same drawing calls as round shapes; a new `people.js` builds figures, pets and boats of the 1880s on either.
 - New `examples/lib`: the voxel grid, palette and mesher (`voxels.js`) and a small-town kit (`town.js`), shared by `voxel-paris` and `balloon-house`. Both demos draw the same pixels as before. `npm test` runs its tests.
 - `examples/voxel-paris`: a Brush control in the Paint tab switches between oil strokes and pointillist dabs. The fire follows.
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.

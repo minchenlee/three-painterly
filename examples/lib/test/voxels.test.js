@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { h01, mulberry32, createPalette, createGrid, createModel, modelPieces, meshGrid, AOV } from '../voxels.js';
 import { peoplePalette, createPeople } from '../people.js';
+import { createShapes, buildShapes, surfaceDabs } from '../shapes.js';
+import { MeshBasicMaterial, Vector3 } from 'three';
 import { townPalette, createTown } from '../town.js';
 
 const palette = () => { const p = createPalette(); p.def('A B', 0xff0000, 0x00ff00); return p; };
@@ -137,6 +139,53 @@ test('people: every builder gives a figure of a sensible height, the same every 
     assert.deepEqual([...a.cells], [...b.cells], `${name} builds the same twice`);
   }
   assert.ok(createPeople(p.C, 2).gent({}).cells.size > 4 * adult.cells.size, 'detail 2 has about eight times the voxels');
+});
+
+test('shapes: the same calls as a voxel model, kept round', () => {
+  const m = createShapes();
+  m.ellipsoid(0, 0, 0, 2, 1, 2, 5); m.set(3, 0, 0, 2); m.set(3, 1, 0, 0); m.box(0, 1, 0, 0, 0, 0, 4); m.line([0, 0, 0], [0, 4, 0], 3, 0.5); m.line([0, 0, 0], [0, 4, 0], 3, 0.5, true);
+  m.dome(0, 5, 0, 3, 1, (x, z) => 6); m.panel([[0, 0, 0], [2, 0, 0], [0, 2, 0]], 7);
+  assert.equal(m.smooth, true); assert.equal(createModel().smooth, false);
+  assert.deepEqual(m.prims.map(p => p.kind), ['ball', 'ball', 'box', 'rod', 'rod', 'cap', 'panel'], 'colour 0 draws nothing');
+  assert.deepEqual(m.prims[0].p, [0.5, 0.5, 0.5], 'a cell is centred half a unit in');
+  assert.deepEqual([m.prims[2].p, m.prims[2].r], [[1, 0.5, 0.5], [1, 0.5, 0.5]], 'a box covers whole cells');
+  assert.equal(m.prims[5].c, 6);
+  assert.deepEqual(createShapes({ cell: false }).ellipsoid(1, 2, 3, 1, 1, 1, 5), undefined);
+  const plain = createShapes({ cell: false }); plain.set(1, 2, 3, 5);
+  assert.deepEqual(plain.prims[0].p, [1, 2, 3]);
+});
+
+test('buildShapes: instanced meshes, placed and turned, with aBegin; surfaceDabs faces the eye', () => {
+  const p = palette(), m = createShapes({ cell: false });
+  m.ellipsoid(2, 0, 0, 1, 1, 1, p.C.A); m.line([0, 0, 0], [0, 3, 0], p.C.B, 0.5); m.panel([[0, 0, 0], [1, 0, 0], [0, 1, 0]], p.C.A);
+  const kinds = [], { group, shapes } = buildShapes([{ model: m, origin: [10, 0, 0], size: 2, turn: 1, begin: 7, weight: 1 }], { hex: p.HEX, material: k => { kinds.push(k); return new MeshBasicMaterial(); } });
+  assert.deepEqual(kinds.sort(), ['ball', 'panel', 'rod']);
+  const balls = group.children.find(c => c.name === 'ball'), rods = group.children.find(c => c.name === 'rod');
+  assert.equal(balls.count, 3, 'one ball and the two round ends of the rod'); assert.equal(rods.count, 1);
+  assert.deepEqual([...balls.geometry.getAttribute('aBegin').array], [7, 7, 7]);
+  const at = new Vector3().setFromMatrixPosition(shapes[0].matrix);
+  assert.ok(Math.abs(at.x - 10) < 1e-6 && Math.abs(at.z - 4) < 1e-6, `a quarter turn takes +x to +z, scaled by size: ${at.toArray()}`);
+  assert.ok(Math.abs(shapes[0].area - 4 * Math.PI * 4) < 1e-6, 'a ball of radius 2');
+  assert.ok(Math.abs(shapes.find(s => s.kind === 'panel').area - 2) < 1e-6, 'a triangle with legs of 2');
+  const eye = [10, 1, 30], dabs = surfaceDabs(shapes, { eye, dab: () => 0.2, cover: 0.5, rnd: mulberry32(3) });
+  assert.ok(dabs.length > 100 && dabs.length < 2000, `${dabs.length} dabs`);
+  const ball = dabs.filter(d => Math.hypot(d.position[0] - 10, d.position[1], d.position[2] - 4) < 2.01 && d.color === 0xff0000 && d.position[2] > 2);
+  assert.ok(ball.length > 20 && ball.every(d => d.position[2] >= 4 - 0.35), 'dabs sit on the half of the ball that faces the eye');
+  assert.ok(dabs.every(d => d.begin === 7));
+  assert.deepEqual(surfaceDabs(shapes, { eye, dab: () => 0.2, cover: 0.5, rnd: mulberry32(3) }), dabs, 'the same seed gives the same dabs');
+  assert.equal(surfaceDabs(shapes.map(s => ({ ...s, weight: 0 })), { eye, dab: () => 0.2, rnd: mulberry32(3) }).length, 0, 'weight scales the count');
+});
+
+test('people draw on round shapes too', () => {
+  const p = createPalette(); peoplePalette(p.def);
+  const kit = createPeople(p.C, createShapes);
+  for (const name of ['lady', 'gent', 'seatedLady', 'seatedGent', 'reclining', 'child', 'dog', 'monkey', 'sailboat', 'steamer', 'scull']) {
+    const m = kit[name]({});
+    assert.ok(m.smooth && m.prims.length >= 5 && m.prims.length < 60, `${name}: ${m.prims.length} shapes`);
+    assert.ok(m.prims.every(q => q.c > 0 && q.c < p.PAL.length), `${name}: every shape has a colour`);
+  }
+  assert.ok(kit.sailboat().prims.some(q => q.kind === 'panel'), 'sails are panels');
+  assert.ok(kit.lady({ parasol: p.C.BLACK }).prims.some(q => q.kind === 'cap'), 'a parasol is a cap');
 });
 
 test('town kit: a house builds the same every time and fits its numbers', () => {

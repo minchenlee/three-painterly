@@ -66,7 +66,7 @@ html[data-ui-hidden] #liteNote { display: none !important; }
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="liteNote" hidden>Lite mode · coarser figures</div>
+<div id="liteNote" hidden>Lite mode · fewer dabs</div>
 <div id="status" role="status">Mixing colours…</div>
 <button type="button" id="bShow" hidden aria-controls="ui" title="Show the panel (H)">Show controls</button>
 
@@ -77,7 +77,7 @@ html[data-ui-hidden] #liteNote { display: none !important; }
   </header>
 
   <div class="grp">
-    <div class="lab"><span>Time</span><output id="tOut">0.0 / 32.0 s</output></div>
+    <div class="lab"><span>Time</span><output id="tOut">0.0 / 20.0 s</output></div>
     <input type="range" id="time" min="0" max="1000" value="0" aria-label="Time">
     <div class="row">
       <button type="button" id="bStart" title="Back to the blank canvas" aria-label="Back to the blank canvas">⏮</button>
@@ -107,7 +107,7 @@ html[data-ui-hidden] #liteNote { display: none !important; }
       <div class="seg" role="group" aria-label="Look" id="looks">
         <button type="button" data-look="dabs" aria-pressed="true" title="Pointillist dabs (B switches)">Dabs</button>
         <button type="button" data-look="oil" aria-pressed="false" title="Impressionist oil strokes">Oil</button>
-        <button type="button" data-look="cubes" aria-pressed="false" title="The plain voxel scene (P)">Cubes</button>
+        <button type="button" data-look="cubes" aria-pressed="false" title="The scene without paint (P)">Plain</button>
       </div>
     </div>
     <details id="more" open>
@@ -137,47 +137,47 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PainterlyPass, impressionist, pointillist } from '../../packages/painterly-pass/src/index.js';
 import { BakedDebris } from '../../packages/baked-debris/src/index.js';
-import { h01, mulberry32, createPalette, createModel, modelPieces } from '../lib/voxels.js';
+import { h01, mulberry32, createPalette } from '../lib/voxels.js';
+import { createShapes, buildShapes, surfaceDabs } from '../lib/shapes.js';
 import { peoplePalette, createPeople } from '../lib/people.js';
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });
 const $ = id => document.getElementById(id);
 const QS = new URLSearchParams(location.search);
-// lite mode (phones, narrow windows): pixel ratio 1, figures at half the detail, 2048 shadows, a smaller painting. ?full=1 turns it off, ?lite=1 forces it.
+// lite mode (phones, narrow windows): pixel ratio 1, half the dabs, 2048 shadows, a smaller painting. ?full=1 turns it off, ?lite=1 forces it.
 const LITE = QS.get('full') === '1' ? false : QS.get('lite') === '1' || matchMedia('(pointer: coarse), (max-width: 820px)').matches;
 $('liteNote').hidden = !LITE;
 const NARROW = innerWidth <= 600, PORTRAIT = innerWidth / innerHeight < 0.8;
 $('more').open = !NARROW;
 // The picture is built by T_BUILD; then the camera leaves Seurat's viewpoint and the scene turns out to have depth.
-const T_BUILD = 23, T_END = 32, FLIGHT = 6;
+const T_BUILD = 12, T_END = 20, FLIGHT = 3.2;
 // Everything arrives from the left of the picture. sweep(x, z) is where a point sits across Seurat's frame: 0 = left edge, 1 = right edge.
 const EYE = [0.8, 1.7, 9.6];
 const sweep = (x, z) => Math.min(1, Math.max(0, 0.5 + (x - EYE[0]) / Math.max(EYE[2] - z, 1) / 1.4));
 const SWEEP_GLSL = `float sweepU(vec3 p) { return clamp(0.5 + (p.x - ${EYE[0].toFixed(1)}) / max(${EYE[2].toFixed(1)} - p.z, 1.0) / 1.4, 0.0, 1.0); }`;
-// The sheets: [first landing at the left edge, seconds for the landing to cross the picture]. A dab flies for FLIGHT seconds, twice as
+// The sheets: each number is its first landing at the left edge; the landing crosses the picture in SPAN seconds. A dab flies for FLIGHT seconds, twice as
 // long as the crossing, so a whole sheet is in the air at once: the picture slides in from the left, stretched and loose, and tightens into place.
 // First the ground: sky, river and lawn. Then trees and boats; far and middle figures; the middle group; the foreground.
-const GROUND = [3.6, 3.0], SHEETS = [[7.4, 3.0], [11.2, 3.0], [14.6, 3.0], [18.0, 3.0]];
+const SPAN = 1.6, GROUND = 1.9, SHEETS = [3.8, 5.7, 7.5, 9.3];
 const rnd = mulberry32(1884), R = (a, b) => a + (b - a) * rnd();
 
 /* ---------- palette, people, trees (../lib) ---------- */
 const palette = createPalette(), { C, def } = palette;
 peoplePalette(def);
 def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0x6f6270, 0x7f7078, 0x4a6e3c, 0x5c7f42, 0x3f5f3a, 0x748f48, 0x8c9c52);
-const people = createPeople(C, LITE ? 1 : 2), far = createPeople(C, 1), hero = createPeople(C, LITE ? 2 : 3);   // far figures and boats need no fine detail; the foreground gets the finest
-// A tree on 20 cm voxels: a trunk that leans a little, three boughs, a lumpy crown.
-function tree(h, r, lean, seed, tr) {                            // h, r in voxels; tr: radius of the trunk
-  const m = createModel(1), top = [lean, h, 0], L = [C.LEAF1, C.LEAF2, C.LEAF3, C.LEAF4, C.LEAF5];
-  m.line([0, 0, 0], [lean * 0.6, h * 0.6, 0], C.TRUNK, tr); m.line([lean * 0.6, h * 0.6, 0], top, C.TRUNK2, tr * 0.8);
-  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) m.line([lean * 0.6, h * 0.62, 0], [lean + dx * r * 0.6, h + r * 0.15, dz * r * 0.6], C.TRUNK2, tr * 0.6);
-  // the crown: one big mass and four smaller ones around it, lit leaves on top and darker ones below
-  const lumps = [[0, 0.45, 0, 1]];
-  for (let k = 0; k < 4; k++) { const a = k * 1.571 + h01(seed, k) * 1.2; lumps.push([Math.cos(a) * 0.55, 0.25 + h01(seed, k, 1) * 0.45, Math.sin(a) * 0.55, 0.55 + h01(seed, k, 2) * 0.2]); }
-  for (const [lx, ly, lz, lr] of lumps) { const R0 = r * lr, cx = lean + lx * r, cy = Math.round(h + ly * r), cz = lz * r;
-    for (let a = -R0; a <= R0; a++) for (let b = -R0; b <= R0; b++) for (let c = -R0; c <= R0; c++) {
-      const d = Math.hypot(a, b * 1.35, c) / R0 + (h01(a + seed >> 1, b >> 1, c >> 1) - 0.5) * 0.4;
-      if (d <= 1) m.set(Math.round(cx + a), cy + b, Math.round(cz + c), L[Math.min(4, Math.max(0, Math.floor(h01(a >> 1, b + seed, c >> 1) * 3 + (b / R0 + 1) * 1.2)))]);
-    } }
+// Everything is drawn in round shapes (../lib/shapes.js): balls, rods, caps and panels.
+const people = createPeople(C, createShapes), far = people, hero = people;
+// A tree, in metres: a trunk that leans a little, three boughs, and a crown of soft masses with small ones on its surface for a lumpy edge.
+function tree(h, r, lean, seed) {
+  const m = createShapes({ cell: false }), L = [C.LEAF3, C.LEAF1, C.LEAF2, C.LEAF4, C.LEAF5], k = 0.05 * h, H = (a, b) => h01(seed, a, b);
+  m.line([0, 0, 0], [lean * 0.12, h * 0.6, 0], C.TRUNK, 0.6 * k); m.line([lean * 0.12, h * 0.6, 0], [lean * 0.25, h, 0], C.TRUNK2, 0.48 * k);
+  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) m.line([lean * 0.12, h * 0.62, 0], [lean * 0.25 + dx * r * 0.6, h + r * 0.1, dz * r * 0.6], C.TRUNK2, 0.3 * k);
+  const cx = lean * 0.25, cy = h + r * 0.45;
+  m.ellipsoid(cx, cy, 0, r, r * 0.74, r, L[1]);
+  for (let i = 0; i < 6; i++) { const a = i * 1.047 + H(i, 0) * 0.8, y = (H(i, 1) - 0.35) * 0.9, q = 0.5 + H(i, 2) * 0.22;
+    m.ellipsoid(cx + Math.cos(a) * r * 0.6, cy + y * r * 0.6, Math.sin(a) * r * 0.6, r * q, r * q * 0.78, r * q, L[Math.min(4, Math.floor(1 + y * 2 + H(i, 3) * 2.2))]); }
+  for (let i = 0; i < 16; i++) { const a = H(i, 4) * 6.283, e = (H(i, 5) - 0.3) * 1.5, c = Math.cos(e), q = 0.2 + H(i, 6) * 0.16;   // small masses on the surface
+    m.ellipsoid(cx + Math.cos(a) * c * r * 0.92, cy + Math.sin(e) * r * 0.68, Math.sin(a) * c * r * 0.92, r * q, r * q * 0.8, r * q, L[Math.min(4, Math.max(0, Math.floor(1.2 + Math.sin(e) * 2.2 + H(i, 7) * 1.6)))]); }
   return m;
 }
 const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C.OCHRE], [4, 5, -1, C.ROSE], [3, 5, 1, C.WHITEW], [4, 3, 0, C.GREEND]]) m.set(x, y, z, c); return m; };
@@ -187,14 +187,14 @@ const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C
 const bankX = z => -5.0 + 0.079 * z;                             // from the picture: the bank enters at the left edge, half way up, and runs to the horizon
 const cast = [];
 // `start` only picks the sheet a thing belongs to (see SHEETS)
-const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, size, sheet: start < 13 ? 0 : start < 17.8 ? 1 : start < 23 ? 2 : 3 });
+const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, size, sheet: start < 13 ? 0 : start < 17.8 ? 1 : start < 23 ? 2 : 3, weight: size === 1 ? 0.2 : 1 });   // a crown is many overlapping balls: few dabs each
 // boats
 add(far.sailboat(), -17, -50, 1, 5.0, 1.6, 0.1); add(far.steamer(), -14, -34, 3, 5.6, 2.0, 0.1); add(far.sailboat(), -12.5, -22, 1, 6.4, 1.8, 0.11); add(far.scull(), -9.5, -12, 1, 7.4, 1.6, 0.1);
 // trees: the far rows first, then the ones that frame the picture, last the two behind us that shade the foreground
-// [x, z, height of the trunk (m), radius of the crown (m), lean, start, voxel size]: coarse leaves far away and off the picture
+// [x, z, height of the trunk (m), radius of the crown (m), lean, start]
 for (const [x, z, h, r, lean, t, v] of [[-3, -62, 4.4, 3.2, 1, 6.0, 0.4], [7, -56, 4.8, 3.4, -1, 6.3, 0.4], [0, -50, 4.4, 3.0, 0, 6.6, 0.4], [14, -46, 5.2, 3.6, 1, 6.9, 0.4], [4, -39, 4.4, 3.0, 1, 7.2, 0.4], [-2.5, -34, 4.0, 2.6, -1, 7.5, 0.4], [9.5, -30, 4.8, 3.2, 0, 7.8, 0.4],
   [12.5, -20, 6.0, 3.4, -1, 8.2, 0.3], [8.6, -8, 8.0, 4.2, -2, 9.0, 0.3], [2.9, -11.5, 6.6, 3.0, 1, 9.8, 0.3], [-2.2, -5.2, 7.6, 2.6, -1, 10.6, 0.3], [5.7, -1.4, 9.0, 4.4, 1, 11.4, 0.3], [8.5, 10, 7.6, 5.0, -2, 12.4, 0.45], [12.5, 6.5, 7.0, 4.8, 1, 12.8, 0.45]])
-  add(tree(Math.round(h / v), Math.round(r / v), lean, cast.length * 7, Math.max(0.6, 0.2 / v)), x, z, 0, t, 2.4, v);
+  add(tree(h, r, lean, cast.length * 7 + 1), x, z, 0, t, 2.4, 1);
 // far figures, small in the distance
 add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 0.9, -21, 1, 13.0, 1.0); add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 1.6, -21.3, 1, 13.3, 1.0);
 add(far.lady({ dress: C.ROSE, bodice: C.RED, parasol: C.CREAMW }), -1.6, -27, 2, 13.6, 1.0); add(far.gent({ cane: true }), -0.9, -27.3, 2, 13.8, 1.0);
@@ -216,31 +216,29 @@ add(hero.reclining({}), -1.7, 2.7, 2, 24.6, 1.5); add(hero.dog({ sniff: true }),
 add(hero.gent({ cane: true }), 3.0, 4.6, 2, 26.2, 1.8); add(hero.lady({ parasol: C.BLACK, hatC: C.BLACK }), 2.3, 5.1, 2, 27.0, 2.2);
 add(hero.monkey({}), 1.5, 5.3, 2, 29.0, 0.8); add(hero.dog({ c: C.TAN, size: 0.55 }), 1.0, 4.4, 2, 29.5, 0.8);
 
-/* ---------- pieces: every voxel that shows a face. The debris clock runs backwards, so "launch" is the moment a dab arrives ---------- */
+/* ---------- dabs: BakedDebris pieces. The debris clock runs backwards, so "launch" is the moment a dab arrives ----------
+   No dab stays. Where one lands, the shape or the ground under it takes its colour at that moment (see `revealing`), and the dab is hidden. */
 const pieces = [];
-for (const o of cast) {
-  const list = modelPieces(o.model, { palette, origin: [o.x, 0, o.z], size: o.size, turn: o.turn });
-  let top = 1; for (const p of list) top = Math.max(top, p.cell[1]);
-  const [begin, span] = SHEETS[o.sheet];
-  for (const p of list) {                                        // the sheet crosses the picture; within it a thing fills from the ground up, a little out of order
-    const arrive = begin + span * sweep(p.position[0], p.position[2]) + 0.3 * p.cell[1] / top + 0.5 * rnd();
-    pieces.push({ position: p.position, size: p.size, color: p.color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, spin: 0 });
-  }
+const DAB = dist => 0.0075 * dist;                                // the size of a dab in the world, for the same size on Seurat's canvas
+// the shapes of the cast, placed in the world; `begin` is when their sheet starts to land
+const built = buildShapes(cast.map(o => ({ model: o.model, origin: [o.x, 0, o.z], size: o.size, turn: o.turn, begin: SHEETS[o.sheet], weight: o.weight })), { hex: palette.HEX, material: kind => shapeMaterial(kind) });
+for (const d of surfaceDabs(built.shapes, { eye: EYE, dab: DAB, cover: LITE ? 0.16 : 0.32, rnd })) {
+  const arrive = d.begin + SPAN * sweep(d.position[0], d.position[2]) + 0.4 * rnd();
+  pieces.push({ position: d.position, size: DAB(Math.max(EYE[2] - d.position[2], 1)), color: d.color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 });
 }
 
 // The ground sheet: dabs spread evenly over Seurat's frame, each aimed at the spot of sky, river or lawn it covers there.
-// They do not stay: where one lands, the surface under it takes its colour at that moment (see `revealing`), and the dab is hidden.
 {
   const eye = new THREE.PerspectiveCamera(40, 2.1, 0.1, 600), v = new THREE.Vector3(), col = new THREE.Color();
   eye.position.set(...EYE); eye.lookAt(0.5, 0.36, -6.4); eye.updateMatrixWorld();
   const LAWN = [0x9aa84e, 0x86a04a, 0xb4b452, 0x6f9050, 0xa8b060, 0x7c9a58], WATER = [0xb4c9da, 0x9fb9d6, 0xd5dde2, 0xc9c2da], SKY = [0xdfe3df, 0xc5d3e6, 0xeee6d6, 0xd9d0e2], FAR = [0x5f8448, 0x6f9050, 0x7f9a56];
-  for (let i = 0, n = LITE ? 9000 : 22000; i < n; i++) {
+  for (let i = 0, n = LITE ? 8000 : 20000; i < n; i++) {
     v.set(R(-1.1, 1.1), R(-1.35, 1.35), 0.5).unproject(eye).sub(eye.position).normalize();
     let d = v.y < -0.004 ? -EYE[1] / v.y : 1e9, list = SKY;
     if (d < 104) { const x = EYE[0] + v.x * d, z = EYE[2] + v.z * d; list = x < bankX(z) ? (x < -60 ? FAR : WATER) : LAWN; }
     else { d = 100; if (EYE[1] + v.y * d < 7) list = FAR; }
     const pos = [EYE[0] + v.x * d, Math.max(0.05, EYE[1] + v.y * d), EYE[2] + v.z * d], dist = Math.max(EYE[2] - pos[2], 1);
-    const arrive = GROUND[0] + GROUND[1] * sweep(pos[0], pos[2]) + 0.5 * rnd();
+    const arrive = GROUND + SPAN * sweep(pos[0], pos[2]) + 0.4 * rnd();
     pieces.push({ position: pos, size: 0.0075 * dist, color: col.set(list[Math.floor(rnd() * list.length)]).offsetHSL(R(-0.02, 0.02), 0, R(-0.05, 0.05)).getHex(), velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 });
   }
 }
@@ -262,38 +260,62 @@ sun.castShadow = true; sun.shadow.mapSize.setScalar(LITE ? 2048 : 4096); sun.sha
 Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 10, far: 260 });
 scene.add(sun, sun.target);
 
-// A blank canvas that fills in. Each dab-sized patch of a surface turns from canvas to its colour at its own moment:
-// `delay` is GLSL for the second a spot starts (from wp, its world position), and noise spreads the patches over 0.6 s.
+// A blank canvas that fills in. Each dab-sized patch of a surface appears at its own moment: when its sheet of dabs lands there.
+// The ground turns from canvas to its colour; a shape is simply not drawn before (and casts no shadow: see shapeDepth).
 const revealU = { uT: { value: 0 }, uCanvas: { value: CANVAS.clone().multiplyScalar(1.25) } };
-function revealing(mat, delay) {
-  mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, revealU);
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <project_vertex>', `#include <project_vertex>
+const REVEAL_VERT = [['#include <common>', '#include <common>\nvarying vec3 vWp; varying float vBegin;\n#ifdef SHAPE\nattribute float aBegin;\n#endif'], ['#include <project_vertex>', `#include <project_vertex>
       vec4 rwp = vec4(transformed, 1.0);
       #ifdef USE_INSTANCING
         rwp = instanceMatrix * rwp;
       #endif
-      vWp = (modelMatrix * rwp).xyz;`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec3 vWp; uniform float uT; uniform vec3 uCanvas; float rv = 1.0;
-      float rh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      ${SWEEP_GLSL}`)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-      { vec3 wp = vWp; float cell = 0.008 * exp2(floor(log2(max(9.6 - wp.z, 1.0))));   // about one dab wide from Seurat's viewpoint, near or far
-        rv = clamp((uT - (${delay}) - rh(floor(wp.xz / cell)) * 0.6) * 3.0, 0.0, 1.0); diffuseColor.rgb *= rv; }`)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uCanvas * (1.0 - rv);');
-  };
-  mat.customProgramCacheKey = () => 'reveal|' + delay;
+      vWp = (modelMatrix * rwp).xyz;
+      #ifdef SHAPE
+        vBegin = aBegin;
+      #else
+        vBegin = ${GROUND.toFixed(2)};
+      #endif`]];
+const REVEAL_FRAG = `varying vec3 vWp; varying float vBegin; uniform float uT; uniform vec3 uCanvas;
+      float rh(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      ${SWEEP_GLSL}
+      float revealed() {                                           // 0 before the sheet lands here, 1 a third of a second after
+        float cell = 0.008 * exp2(floor(log2(max(${EYE[2].toFixed(1)} - vWp.z, 1.0))));   // about one dab wide from Seurat's viewpoint, near or far
+        return clamp((uT - vBegin - ${SPAN.toFixed(2)} * sweepU(vWp) - 0.15 - rh(floor(vWp / cell)) * 0.45) * 3.0, 0.0, 1.0);
+      }`;
+function patch(sh, define) {
+  Object.assign(sh.uniforms, revealU);
+  if (define) sh.vertexShader = '#define SHAPE\n' + sh.vertexShader;
+  for (const [a, b] of REVEAL_VERT) { if (!sh.vertexShader.includes(a)) throw new Error('grande-jatte: shader chunk ' + a + ' not found'); sh.vertexShader = sh.vertexShader.replace(a, b); }
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + REVEAL_FRAG);
+}
+function revealing(mat) {                                          // the ground: canvas until its sheet lands
+  mat.onBeforeCompile = sh => { patch(sh, false);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\nfloat rv = revealed(); diffuseColor.rgb *= rv;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uCanvas * (1.0 - rv);'); };
+  mat.customProgramCacheKey = () => 'reveal-ground';
   return mat;
 }
-const WASH = `${GROUND[0].toFixed(1)} + ${GROUND[1].toFixed(1)} * sweepU(wp)`;   // a spot takes its colour when the ground sheet lands on it
+const discardFirst = sh => { sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'void main() {\nif (revealed() < 0.5) discard;'); };
+function shapeMaterial(kind) {                                     // a shape of the cast: not there until its sheet lands
+  const mat = new THREE.MeshStandardMaterial({ roughness: 1, side: kind === 'cap' || kind === 'panel' ? THREE.DoubleSide : THREE.FrontSide });
+  mat.onBeforeCompile = sh => { patch(sh, true); discardFirst(sh); };
+  mat.customProgramCacheKey = () => 'reveal-shape';
+  return mat;
+}
+function shapeDepth() {                                            // the same test in the shadow pass
+  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+  mat.onBeforeCompile = sh => { patch(sh, true); discardFirst(sh); };
+  mat.customProgramCacheKey = () => 'reveal-depth';
+  return mat;
+}
+for (const mesh of built.group.children) { mesh.castShadow = mesh.receiveShadow = true; mesh.customDepthMaterial = shapeDepth(); }
+scene.add(built.group);
 {
   // the lawn: the island's bank, receding to the right of the river
   const shape = new THREE.Shape([[bankX(16), -16], [70, -16], [70, 92], [bankX(-92), 92]].map(([x, z]) => new THREE.Vector2(x, z)));
-  const lawn = new THREE.Mesh(new THREE.ShapeGeometry(shape), revealing(new THREE.MeshStandardMaterial({ color: 0x8fa64e, roughness: 1 }), `0.2 + ${WASH}`));
+  const lawn = new THREE.Mesh(new THREE.ShapeGeometry(shape), revealing(new THREE.MeshStandardMaterial({ color: 0x8fa64e, roughness: 1 })));
   lawn.rotation.x = Math.PI / 2; lawn.scale.y = -1; lawn.receiveShadow = true; scene.add(lawn);   // the shape's y becomes -z
   lawn.material.side = THREE.DoubleSide;
-  const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c9da, roughness: 0.5 }), `0.2 + ${WASH}`));
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c9da, roughness: 0.5 })));
   river.rotation.x = -Math.PI / 2; river.position.set(-60, -0.3, -38); river.receiveShadow = true; scene.add(river);
   // the far bank: a strip of grass, a white wall, a few houses (boxes) and soft masses of trees (flattened balls), washed in with the rest
   const boxes = [], balls = [], box = (x, y, z, sx, sy, sz, c) => boxes.push([x, y, z, sx, sy, sz, c]), ball = (x, y, z, sx, sy, sz, c) => balls.push([x, y, z, sx, sy, sz, c]);
@@ -304,7 +326,7 @@ const WASH = `${GROUND[0].toFixed(1)} + ${GROUND[1].toFixed(1)} * sweepU(wp)`;  
   for (let i = 0; i < 80; i++) { const x = -62 + i * 1.7, k = R(0.8, 1.7); ball(x, 3.0 * k, -96 - R(0, 12), 4.0 * k, 3.6 * k, 4.0 * k, GREENS[(i * 3) % 4]); }          // across the horizon
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S3 = new THREE.Vector3(), col = new THREE.Color();
   for (const [list, geo] of [[boxes, new THREE.BoxGeometry(1, 1, 1)], [balls, new THREE.IcosahedronGeometry(1, 2)]]) {
-    const inst = new THREE.InstancedMesh(geo, revealing(new THREE.MeshStandardMaterial({ roughness: 1 }), `0.2 + ${WASH}`), list.length);
+    const inst = new THREE.InstancedMesh(geo, revealing(new THREE.MeshStandardMaterial({ roughness: 1 })), list.length);
     list.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
     scene.add(inst);
   }
@@ -318,13 +340,13 @@ const skyU = { uT: revealU.uT, uCanvas: { value: CANVAS } };
   scene.add(new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, vertexColors: true, uniforms: skyU,
     vertexShader: 'varying vec3 vC; varying vec3 vP; void main() { vC = color; vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `varying vec3 vC; varying vec3 vP; uniform float uT; uniform vec3 uCanvas; ${SWEEP_GLSL}
-      void main() { gl_FragColor = vec4(mix(uCanvas, vC, smoothstep(0.0, 1.0, uT - 0.3 - (${WASH.replace('wp', 'vP')}))), 1.0); }` })));
+      void main() { gl_FragColor = vec4(mix(uCanvas, vC, smoothstep(0.0, 0.6, uT - 0.2 - ${GROUND.toFixed(2)} - ${SPAN.toFixed(2)} * sweepU(vP))), 1.0); }` })));
 }
 
 /* ---------- the dabs: BakedDebris pieces that do not fly by themselves; a displace hook carries each from the palette to its place ---------- */
 const boom = new BakedDebris({
-  pieces, bursts: [{ position: [0, 0, 0], radius: 0, time: 0 }],   // burst 0 only marks the dabs of the ground sheet
-  gravity: 0, ground: null, killY: -1e6, duration: 0.2, step: 1 / 30, pieceSize: 0.085,
+  pieces, bursts: [{ position: [0, 0, 0], radius: 0, time: 0 }],   // every piece names burst 0; nothing bursts
+  gravity: 0, ground: null, killY: -1e6, duration: 0.2, step: 1 / 30, pieceSize: 0.085, castShadow: false, receiveShadow: false,
   material: new THREE.MeshStandardMaterial({ roughness: 0.95 }),
   // A dab glides in from beyond the left edge of the picture, along the picture plane, and slows as it lands. Every dab starts the
   // same distance to the left of its place and none overtakes another, so a sheet in the air is the picture itself: stretched, rippling, loose.
@@ -334,8 +356,8 @@ const boom = new BakedDebris({
       float bh(float n) { return fract(sin(n) * 43758.5453); }
       ${SWEEP_GLSL}
       vec3 debrisDisplace(vec3 p, DebrisInfo d) {
-        // the clock runs backwards: not launched = it has arrived. It is part of the scene now; a dab of the ground sheet has given its colour to the ground and goes
-        if (d.local <= 0.0) return d.burst > -0.5 ? vec3(0.0, -300.0, 0.0) : vec3(0.0);
+        // the clock runs backwards: not launched = it has arrived. It has given its colour to what it landed on, and goes
+        if (d.local <= 0.0) return vec3(0.0, -300.0, 0.0);
         float s = d.local / uFlight, i = d.index;
         if (s >= 1.0) return vec3(0.0, -300.0, 0.0);               // not on its way yet: out of sight
         float dist = max(${EYE[2].toFixed(1)} - p.z, 1.0), u = sweepU(p);   // far things travel further in the world, the same on the canvas
@@ -360,14 +382,14 @@ function setLook(name) {
   if (name === 'cubes') boom.removeStrokes();
   else {
     painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 1.0 : 1.2;
-    if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, strokeScale: 1.5, maxWidth: 11, jitter: 0.1 }));   // a positive look-ahead: the clock runs backwards
+    if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, strokeScale: 1.6, maxWidth: 11, jitter: 0.1 }));   // a positive look-ahead: the clock runs backwards
   }
   $('purity').disabled = name !== 'dabs'; markDirty(false);
 }
 
 /* ---------- camera: Seurat's viewpoint while the picture builds, then a slow walk to the side; a drag takes over ---------- */
 const SHOTS = {
-  painting: [[0.8, 1.7, 9.6], [0.5, 0.36, -6.4], 40], walk: [[9.5, 2.6, 8.5], [0.2, 1.2, -3], 42], close: [[0.1, 1.5, 8.6], [2.7, 1.25, 4.9], 26], above: [[16, 24, 22], [-2, 0, -10], 40],
+  painting: [[0.8, 1.7, 9.6], [0.5, 0.36, -6.4], 40], walk: [[9.5, 2.6, 8.5], [0.2, 1.2, -3], 42], close: [[0.4, 1.5, 8.2], [2.6, 1.3, 4.9], 22], above: [[16, 24, 22], [-2, 0, -10], 40],
 };
 if (PORTRAIT) SHOTS.painting = [[1.1, 1.8, 13.5], [1.1, -2.4, -6.4], 48];   // a tall window holds the right half of the picture; it looks down so the figures clear the panel   // a tall window: step back to keep the width of the picture
 let auto = true, shot = 'painting';

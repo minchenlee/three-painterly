@@ -73,7 +73,7 @@ html[data-ui-hidden] #liteNote { display: none !important; }
 <div id="ui">
   <header>
     <h1>Sunday Afternoon</h1>
-    <p>Georges Seurat's <i>A Sunday on La Grande Jatte</i> (1884–86) paints itself, dab by dab, sheet after sheet of dabs from the left, then lets you walk in. Move close to see the dots.</p>
+    <p>Georges Seurat's <i>A Sunday on La Grande Jatte</i> (1884–86) paints itself in sheets of dabs from the left, laid out as he composed it. Then you can walk in.</p>
   </header>
 
   <div class="grp">
@@ -117,8 +117,8 @@ html[data-ui-hidden] #liteNote { display: none !important; }
         <input type="range" id="world" min="0" max="8" step="0.5" value="2" aria-label="Dot size on the canvas">
         <div class="lab"><span>Dab size from afar</span><output id="szOut">4 px</output></div>
         <input type="range" id="size" min="3" max="14" step="1" value="4" aria-label="Dab size from afar">
-        <div class="lab"><span>Pigment purity</span><output id="puOut">0.70</output></div>
-        <input type="range" id="purity" min="0" max="1" step="0.05" value="0.7" aria-label="Pigment purity">
+        <div class="lab"><span>Pigment purity</span><output id="puOut">0.50</output></div>
+        <input type="range" id="purity" min="0" max="1" step="0.05" value="0.5" aria-label="Pigment purity">
       </div>
     </details>
   </div>
@@ -151,7 +151,8 @@ $('more').open = !NARROW;
 // The picture is built by T_BUILD; then the camera leaves Seurat's viewpoint and the scene turns out to have depth.
 const T_BUILD = 12, T_END = 20, FLIGHT = 3.2;
 // Everything arrives from the left of the picture. sweep(x, z) is where a point sits across Seurat's frame: 0 = left edge, 1 = right edge.
-const EYE = [0.8, 1.7, 9.6];
+// Seurat's viewpoint: eye level, looking a little down, so the horizon sits a fifth of the way down the picture, as in the painting.
+const EYE = [0, 1.6, 0], AIM = [0, -0.58, -10], FOV = 40;
 const sweep = (x, z) => Math.min(1, Math.max(0, 0.5 + (x - EYE[0]) / Math.max(EYE[2] - z, 1) / 1.4));
 const SWEEP_GLSL = `float sweepU(vec3 p) { return clamp(0.5 + (p.x - ${EYE[0].toFixed(1)}) / max(${EYE[2].toFixed(1)} - p.z, 1.0) / 1.4, 0.0, 1.0); }`;
 // The sheets: each number is its first landing at the left edge; the landing crosses the picture in SPAN seconds. A dab flies for FLIGHT seconds, twice as
@@ -163,16 +164,19 @@ const rnd = mulberry32(1884), R = (a, b) => a + (b - a) * rnd();
 /* ---------- palette, people, trees (../lib) ---------- */
 const palette = createPalette(), { C, def } = palette;
 peoplePalette(def);
-def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0x6f6270, 0x7f7078, 0x4a6e3c, 0x5c7f42, 0x3f5f3a, 0x748f48, 0x8c9c52);
-def('FAR1 FAR2 FAR3 FAR4', 0x5f8448, 0x4f7440, 0x6f9050, 0x7f9a56);
+def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0xb8a48c, 0xa8947c, 0x3f6440, 0x4c7444, 0x33543a, 0x5f8448, 0x74904e);
+def('PALE1 PALE2 PALE3 PALE4 PALE5', 0x7f9a52, 0x98ad5a, 0x6f8c4c, 0xb0bd66, 0xc2c874);              // the tree in full sun on the left
+def('FAR1 FAR2 FAR3 FAR4', 0x6f9080, 0x5f8474, 0x86a08a, 0x7a9a7a);                                // far trees go blue with the air
+def('SALMON LAVGREY MAROON MONKEY PUG SLATEV STRAW RUST', 0xdba595, 0xa69ab4, 0x8a3f3a, 0xc2b4a0, 0x9a4a34, 0x5f6090, 0xd9b86a, 0xb0704a);
 // Everything is voxels, small enough for a smooth outline from where Seurat stood: about 2 cm in the foreground, 4 cm in the
 // middle distance, 8 cm far away. Nothing here is a debris piece, so the count does not matter: each thing is meshed once.
 const hero = createPeople(C, LITE ? 3 : 4), people = createPeople(C, LITE ? 2 : 3), far = createPeople(C, 2);
 // A tree in voxels of v metres: a trunk that leans a little, three boughs, and a crown of leaf masses with small ones on its surface.
-function tree(h, r, lean, seed, v) {
-  const S = 1 / v, L = [C.LEAF3, C.LEAF1, C.LEAF2, C.LEAF4, C.LEAF5], k = 0.05 * h, H = (a, b) => h01(seed, a, b);
-  const rods = [[[0, 0, 0], [lean * 0.12, h * 0.6, 0], 0.6 * k, C.TRUNK], [[lean * 0.12, h * 0.6, 0], [lean * 0.25, h, 0], 0.48 * k, C.TRUNK2]];
-  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) rods.push([[lean * 0.12, h * 0.62, 0], [lean * 0.25 + dx * r * 0.6, h + r * 0.1, dz * r * 0.6], 0.3 * k, C.TRUNK2]);
+// h: height of the trunk; r: radius of the crown, whose lowest leaves hang at about h - r / 3. pale: leaves in full sun. tr: radius of the trunk.
+function tree(h, r, lean, seed, v, { pale = false, tr = 0.12 } = {}) {
+  const S = 1 / v, L = pale ? [C.PALE3, C.PALE1, C.PALE2, C.PALE4, C.PALE5] : [C.LEAF3, C.LEAF1, C.LEAF2, C.LEAF4, C.LEAF5], H = (a, b) => h01(seed, a, b);
+  const rods = [[[0, 0, 0], [lean * 0.12, h * 0.6, 0], tr, C.TRUNK], [[lean * 0.12, h * 0.6, 0], [lean * 0.25, h, 0], 0.8 * tr, C.TRUNK2]];
+  for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) rods.push([[lean * 0.12, h * 0.62, 0], [lean * 0.25 + dx * r * 0.6, h + r * 0.1, dz * r * 0.6], 0.5 * tr, C.TRUNK2]);
   const cx = lean * 0.25, cy = h + r * 0.45, lumps = [];            // [x, y, z, radius, colour], small ones first: they give a spot its colour
   for (let i = 0; i < 16; i++) { const a = H(i, 4) * 6.283, e = (H(i, 5) - 0.3) * 1.5, c = Math.cos(e), q = 0.2 + H(i, 6) * 0.16;
     lumps.push([cx + Math.cos(a) * c * r * 0.92, cy + Math.sin(e) * r * 0.68, Math.sin(a) * c * r * 0.92, r * q, L[Math.min(4, Math.max(0, Math.floor(1.2 + Math.sin(e) * 2.2 + H(i, 7) * 1.6)))]]); }
@@ -210,40 +214,68 @@ function tree(h, r, lean, seed, v) {
 }
 const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C.OCHRE], [4, 5, -1, C.ROSE], [3, 5, 1, C.WHITEW], [4, 3, 0, C.GREEND]]) m.set(x, y, z, c); return m; };
 
-/* ---------- the cast: [model, x, z, quarter turns (0 faces right, 2 faces the river, 1 faces us), when its dabs start, how long they take, voxel size] ----------
-   The bank runs from the left edge of the picture into the distance; the river is to its left. Back to front, as a painter would work. */
-const bankX = z => -5.0 + 0.079 * z;                             // from the picture: the bank enters at the left edge, half way up, and runs to the horizon
+/* ---------- the lie of the land, read off the painting ----------
+   The river is on the left. Its edge runs almost straight ahead and a little to the left; the lawn dips to it over the last three metres. */
+const SHORE = [[-30, -2.4], [0, -3.0], [7.8, -4.2], [13.3, -5.15], [20.5, -6.0], [60, -8.8], [200, -16], [900, -45]];   // [metres ahead, x of the water's edge]
+const shoreX = z => { const d = -z; for (let i = 1; i < SHORE.length; i++) if (d <= SHORE[i][0]) { const [d0, x0] = SHORE[i - 1], [d1, x1] = SHORE[i]; return x0 + (x1 - x0) * Math.max(0, d - d0) / (d1 - d0); } return SHORE[SHORE.length - 1][1]; };
+const WATER_Y = -0.8;
+const groundY = (x, z) => { const t = Math.min(1, Math.max(0, (x - shoreX(z)) / 3.2)); return -0.75 * (1 - t * t * (3 - 2 * t)); };
+// G(px, py): the spot on the ground that Seurat's viewpoint sees at pixel (px, py) of a 1280 x 858 reproduction of the painting (the picture
+// itself spans 12..1268 and 10..848). Every place below is a pixel of the painting: where a figure's feet are, or the foot of a tree.
+const seurat = new THREE.PerspectiveCamera(FOV, 1256 / 838, 0.1, 2000); seurat.position.set(...EYE); seurat.lookAt(...AIM); seurat.updateMatrixWorld();
+const ray = (px, py) => new THREE.Vector3((px - 12) / 1256 * 2 - 1, 1 - (py - 10) / 838 * 2, 0.5).unproject(seurat).sub(seurat.position).normalize();
+function G(px, py) { const d = ray(px, py); let x = 0, y = 0, z = 0; for (let i = 0; i < 8; i++) { const t = (y - EYE[1]) / d.y; x = EYE[0] + d.x * t; z = EYE[2] + d.z * t; y = groundY(x, z); } return [x, y, z]; }
+const W = (px, ahead) => { const d = ray(px, 300); return [EYE[0] - d.x / d.z * ahead, WATER_Y, -ahead]; };   // on the water, `ahead` metres away, in the direction of pixel column px
+
+/* ---------- the cast: [model, place, quarter turns (0 faces right, 1 faces us, 2 faces the river, 3 faces away), sheet, size of one unit] ---------- */
 const cast = [];
-// `start` only picks the sheet a thing belongs to (see SHEETS)
-const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, size, sheet: start < 13 ? 0 : start < 17.8 ? 1 : start < 23 ? 2 : 3 });
-// boats
-add(far.sailboat(), -17, -50, 1, 5.0, 1.6, 0.1); add(far.steamer(), -14, -34, 3, 5.6, 2.0, 0.1); add(far.sailboat(), -12.5, -22, 1, 6.4, 1.8, 0.11); add(far.scull(), -9.5, -12, 1, 7.4, 1.6, 0.1);
-// trees: the far rows first, then the ones that frame the picture, last the two behind us that shade the foreground
-// [x, z, height of the trunk (m), radius of the crown (m), lean, start]
-for (const [x, z, h, r, lean, t, v] of [[-3, -62, 4.4, 3.2, 1, 6.0, 0.4], [7, -56, 4.8, 3.4, -1, 6.3, 0.4], [0, -50, 4.4, 3.0, 0, 6.6, 0.4], [14, -46, 5.2, 3.6, 1, 6.9, 0.4], [4, -39, 4.4, 3.0, 1, 7.2, 0.4], [-2.5, -34, 4.0, 2.6, -1, 7.5, 0.4], [9.5, -30, 4.8, 3.2, 0, 7.8, 0.4],
-  [12.5, -20, 6.0, 3.4, -1, 8.2, 0.3], [8.6, -8, 8.0, 4.2, -2, 9.0, 0.3], [2.9, -11.5, 6.6, 3.0, 1, 9.8, 0.3], [-2.2, -5.2, 7.6, 2.6, -1, 10.6, 0.3], [5.7, -1.4, 9.0, 4.4, 1, 11.4, 0.3], [8.5, 10, 7.6, 5.0, -2, 12.4, 0.45], [12.5, 6.5, 7.0, 4.8, 1, 12.8, 0.45]])
-{ const v = z > 5 ? 0.2 : Math.min(0.3, Math.max(LITE ? 0.14 : 0.09, 0.0075 * Math.hypot(x - EYE[0], z - EYE[2])));   // voxels about 7 pixels wide from Seurat's viewpoint; coarser behind it
-  add(tree(h, r, lean, cast.length * 7 + 1, v), x, z, 0, t, 2.4, v); }
-// far figures, small in the distance
-add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 0.9, -21, 1, 13.0, 1.0); add(far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false }), 1.6, -21.3, 1, 13.3, 1.0);
-add(far.lady({ dress: C.ROSE, bodice: C.RED, parasol: C.CREAMW }), -1.6, -27, 2, 13.6, 1.0); add(far.gent({ cane: true }), -0.9, -27.3, 2, 13.8, 1.0);
-add(far.lady({ dress: C.OCHRE, bodice: C.BROWN, bustle: false, parasol: C.RED }), 4.2, -31, 0, 14.0, 1.0); add(far.seatedLady({ dress: C.SKYBLUE, bodice: C.BLUE, hatC: C.OCHRE }), 6.2, -18.5, 2, 14.2, 0.9);
-add(far.gent({ coat: C.BROWN, hat: 'boater', hatC: C.OCHRE, cane: true }), 8.2, -24.5, 2, 14.4, 1.0); add(far.seatedLady({ dress: C.VIOLET, bodice: C.PLUMD, hat: 'boater', hatC: C.CREAMW }), -3.0, -19, 2, 14.6, 0.9);
-add(far.child({ dress: C.RED }), -1.2, -16.4, 2, 14.8, 0.8); add(far.seatedGent({ coat: C.COAT, hat: 'boater', hatC: C.OCHRE, cane: false }), 2.2, -15.5, 2, 15.0, 0.9);
-// the middle ground
-add(people.gent({ coat: C.BROWN, trousers: C.GREY, hat: 'boater', hatC: C.OCHRE, horn: true, tails: false }), -4.4, -13.2, 2, 15.6, 1.3);
-add(people.child({ dress: C.ORANGE, hat: null, running: true }), 4.7, -12.6, 0, 16.2, 1.1);
-add(people.gent({ coat: C.COAT, trousers: C.GREY, cane: true }), 3.5, -8.6, 2, 16.8, 1.3); add(people.lady({ dress: C.NAVY, bodice: C.BLUE, parasol: C.ORANGE, hatC: C.OCHRE }), 4.4, -9.4, 2, 17.3, 1.4);
-add(people.lady({ dress: C.ORANGE, bodice: C.OCHRE, bustle: false, hat: 'boater', hatC: C.CREAMW, rod: true }), -5.2, -7.0, 2, 18.0, 1.4); add(people.seatedLady({ dress: C.RED, bodice: C.BROWN, hat: 'boater', hatC: C.OCHRE }), -4.3, -6.2, 2, 18.5, 1.2);
-add(people.seatedLady({ dress: C.SKYBLUE, bodice: C.BLUE, hatC: C.CREAMW, parasol: C.BLUE }), -2.4, -7.6, 2, 19.0, 1.3);
-add(people.lady({ dress: C.ROSE, bodice: C.RED, bustle: false, hat: 'boater', hatC: C.OCHRE, parasol: C.RED }), 0.5, -5.6, 1, 19.8, 1.6); add(people.child({ dress: C.WHITEW }), -0.35, -5.3, 1, 20.6, 1.1);   // the only two who face us
-add(people.seatedLady({ dress: C.GREYLT, bodice: C.GREY, hatC: C.WHITEW }), -3.0, -3.5, 3, 21.4, 1.2); add(people.seatedLady({ dress: C.PLUMD, bodice: C.COAT, hatC: C.RED, parasol: C.OCHRE }), -3.9, -3.2, 3, 21.8, 1.3);
-add(bouquet(people.seatedLady({ dress: C.ROSE, bodice: C.CREAMW, hat: 'boater', hatC: C.OCHRE })), 1.9, -2.1, 2, 22.4, 1.3);
-// the foreground, in the shade
-add(hero.seatedGent({ coat: C.GREY, trousers: C.GREYLT, cane: true }), -0.7, 1.0, 2, 23.2, 1.3); add(hero.seatedLady({ dress: C.NAVY, bodice: C.COAT, hatC: C.RED, sewing: true }), -1.6, 1.3, 2, 23.8, 1.3);
-add(hero.reclining({}), -1.7, 2.7, 2, 24.6, 1.5); add(hero.dog({ sniff: true }), 0.2, 4.1, 0, 25.6, 1.0);
-add(hero.gent({ cane: true }), 3.0, 4.6, 2, 26.2, 1.8); add(hero.lady({ parasol: C.BLACK, hatC: C.BLACK }), 2.3, 5.1, 2, 27.0, 2.2);
-add(hero.monkey({}), 1.5, 5.3, 2, 29.0, 0.8); add(hero.dog({ c: C.TAN, size: 0.55 }), 1.0, 4.4, 2, 29.5, 0.8);
+// Seurat did not hold his figures to one perspective. So a figure's size comes from the painting too: `top` is the pixel row of the top of
+// its hat or parasol, and the figure is scaled until it reaches that row from where its feet are. Without `top`, `size` is the unit in metres.
+const rowOf = new THREE.Vector3();
+function add(model, at, turn, sheet, top = null, size = 0.085) {
+  if (top !== null) { let lo = 0.05, hi = 6; const units = model.bounds().hi[1] / model.detail;
+    for (let i = 0; i < 30; i++) { const h = (lo + hi) / 2, row = 10 + (1 - rowOf.set(at[0], at[1] + h, at[2]).project(seurat).y) / 2 * 838; if (row > top) lo = h; else hi = h; }
+    size = lo / units; }
+  cast.push({ model, x: at[0], y: at[1], z: at[2], turn, size, sheet });
+}
+const voxel = (x, z, floor = 0.09) => Math.min(0.3, Math.max(LITE ? floor * 1.5 : floor, 0.0075 * Math.hypot(x - EYE[0], z - EYE[2])));   // about 7 pixels wide from Seurat's viewpoint
+const plant = (at, h, r, lean, opt = {}, v = voxel(at[0], at[2])) => add(tree(h, r, lean, cast.length * 7 + 1, v, opt), at, 0, 0, null, v);
+// sheet 0: boats and trees
+add(far.sailboat(), W(112, 95), 0, 0, null, 0.14); add(far.sailboat(), W(382, 150), 0, 0, null, 0.1); add(far.steamer(), W(486, 125), 2, 0, null, 0.13); add(far.scull(), W(330, 50), 0, 0, null, 0.155);
+plant(G(308, 445), 2.3, 1.4, 0.5, { pale: true, tr: 0.09 }, LITE ? 0.08 : 0.05);                           // the tree in the sun on the left
+plant(G(812, 312), 3.5, 5.2, -2.4, { tr: 0.2 });                                      // the big one that leans, right of the middle
+plant(G(600, 246), 3.6, 5.0, 0.4, { tr: 0.16 });                                      // behind the lady with the red parasol
+for (const [px, py] of [[1045, 290], [1088, 300], [1142, 286], [1200, 296], [1246, 288]]) plant(G(px, py), 3.6, 4.0, R(-0.5, 0.5), { tr: 0.13 });   // the row on the right
+for (const [px, py] of [[700, 208], [770, 216], [900, 214], [985, 206], [1100, 216], [1220, 210], [520, 204], [1330, 230], [1420, 300], [1480, 380], [1600, 300]]) plant(G(px, py), 4.2, 5.4, R(-0.6, 0.6), { tr: 0.2 });   // deeper in, and off the picture to the right
+for (const [x, z] of [[-9.2, 2.2], [-6.5, 1.2], [-3.5, 1.0], [-0.5, 1.6]]) plant([x, 0, z], 3.2, 2.7, 0, { tr: 0.2 }, 0.2);   // behind us and to the left: their shade lies across the foreground
+// sheet 1: the far figures and the middle distance
+const soldier = () => far.gent({ coat: C.NAVY, trousers: C.RED, hat: 'kepi', hatC: C.RED, tails: false });
+add(soldier(), G(512, 292), 2, 1, 190); add(soldier(), G(533, 292), 2, 1, 190);
+add(far.lady({ dress: C.SLATEV, bodice: C.PLUMD, parasol: C.SLATEV, hatC: C.STRAW }), G(283, 362), 2, 1, 248); add(far.gent({ coat: C.BROWN, hat: 'boater', hatC: C.STRAW }), G(363, 270), 3, 1, 208);
+add(far.lady({ dress: C.SALMON, bodice: C.ROSE, bustle: false, hat: 'boater', hatC: C.STRAW }), G(848, 292), 3, 1, 178); add(far.gent({ cane: true }), G(872, 292), 3, 1, 175);
+add(far.seatedGent({ coat: C.COAT, hat: 'cap', hatC: C.BLACK, cane: false }), G(716, 318), 2, 1, 258); add(far.seatedLady({ dress: C.PLUMD, bodice: C.PLUMD, hatC: C.BLACK }), G(786, 306), 2, 1, 256);
+add(far.reclining({ shirt: C.RUST, trousers: C.LAVGREY }), G(745, 243), 2, 1, 216); add(far.seatedGent({ coat: C.NAVY, hat: 'cap', cane: false }), G(492, 335), 2, 1, 276); add(far.reclining({ shirt: C.COAT, trousers: C.COAT }), G(546, 326), 2, 1, 297);
+add(far.lady({ dress: C.WHITEW, bodice: C.WHITEW, bustle: false, parasol: C.WHITEW, hat: null }), G(967, 222), 3, 1, 170); add(far.gent({ coat: C.RUST }), G(948, 222), 3, 1, 172); add(far.lady({ dress: C.ROSE, bodice: C.ROSE }), G(905, 228), 0, 1, 180);
+add(people.gent({ coat: C.RUST, trousers: C.RUST, hat: 'boater', hatC: C.STRAW, horn: true, tails: false }), G(455, 372), 2, 1, 180);   // the horn player
+add(people.child({ dress: C.ORANGE, hat: 'boater', hatC: C.CREAMW, running: true }), G(915, 352), 0, 1, 236);                             // the girl who runs
+add(people.seatedLady({ dress: C.GREYLT, bodice: C.GREYLT, hat: 'boater', hatC: C.RUST }), G(1160, 392), 3, 1, 290); add(people.seatedGent({ coat: C.SLATEV, trousers: C.SLATEV, hat: 'boater', hatC: C.SKYBLUE, cane: false }), G(1206, 386), 3, 1, 264);
+// sheet 2: the middle group
+add(people.lady({ dress: C.RUST, bodice: C.RUST, hat: 'boater', hatC: C.STRAW, rod: true }), G(135, 505), 2, 2, 252);                // she fishes
+add(people.seatedLady({ dress: C.RUST, bodice: C.RUST, hat: 'boater', hatC: C.BLACK }), G(228, 462), 2, 2, 338);
+add(people.seatedLady({ dress: C.GREYLT, bodice: C.GREYLT, hat: 'bonnet', hatC: C.WHITEW }), G(345, 468), 3, 2, 355);                  // the nurse, seen from behind
+add(people.seatedLady({ dress: C.PLUMD, bodice: C.BROWN, hatC: C.BLACK, parasol: C.RED }), G(412, 442), 2, 2, 312);
+add(people.lady({ dress: C.SALMON, bodice: C.RED, bustle: false, hat: 'boater', hatC: C.GREYLT, parasol: C.RED }), G(645, 470), 1, 2, 120);   // the only two who face us
+add(people.child({ dress: C.WHITEW, hat: 'boater', hatC: C.WHITEW }), G(582, 492), 1, 2, 335);
+add(people.seatedLady({ dress: C.MAROON, bodice: C.MAROON, hatC: C.RED, parasol: C.SLATEV }), G(752, 530), 2, 2, 322);
+add(bouquet(people.seatedLady({ dress: C.PLUMD, bodice: C.PLUMD, hat: null })), G(852, 520), 2, 2, 375);
+// sheet 3: the foreground, in the shade
+add(hero.seatedGent({ coat: C.PLUMD, trousers: C.COAT, cane: true }), G(300, 640), 2, 3, 450);
+add(hero.seatedLady({ dress: C.PLUMD, bodice: C.COAT, hat: 'bonnet', hatC: C.LAVGREY, sewing: true }), G(430, 665), 2, 3, 465);
+add(hero.reclining({ shirt: C.RUST, trousers: C.LAVGREY, hatC: C.COAT }), G(225, 742), 2, 3, 560);                                      // the boatman with his pipe
+add(hero.dog({ c: C.BLACK, sniff: true }), G(590, 695), 2, 3, 568);
+add(hero.dog({ c: C.PUG, size: 0.5 }), G(850, 752), 2, 3, 715); add(hero.monkey({ c: C.MONKEY }), G(935, 742), 2, 3, 662);
+add(hero.gent({ coat: C.COAT, trousers: C.LAVGREY, cane: true }), G(978, 568), 2, 3, 105);
+add(hero.lady({ dress: C.SLATEV, bodice: C.BLACK, hatC: C.BLACK, parasol: C.BLACK, parasolTilt: 52 }), G(1105, 748), 2, 3, 92);
 
 /* ---------- dabs: BakedDebris pieces. The debris clock runs backwards, so "launch" is the moment a dab arrives ----------
    No dab stays. Where one lands, the shape or the ground under it takes its colour at that moment (see `revealing`), and the dab is hidden. */
@@ -254,33 +286,36 @@ const DAB = dist => 0.0075 * dist;                                // the size of
 let castMat = null, castDepthMat = null;                          // made on first use, further down (castMaterial, castDepth)
 const castGroup = new THREE.Group(), COVER = LITE ? 0.3 : 0.55;
 for (const o of cast) {
-  const m = o.model, begin = SHEETS[o.sheet], unit = m.tree ? o.size : o.size / m.detail, { lo, hi } = m.tree ? m : m.bounds(), dist = Math.max(Math.hypot(o.x - EYE[0], o.z - EYE[2]), 1);
+  const m = o.model, begin = SHEETS[o.sheet], unit = m.tree ? o.size : o.size / m.detail, { lo, hi } = m.tree ? m : m.bounds(), dist = Math.max(Math.hypot(o.x - EYE[0], o.z - EYE[2]), 1.5);
   for (let y0 = lo[1]; y0 < hi[1]; y0 += 48) {                    // in slabs, to stay under the mesher's limit of quads for one call
     const g = meshGrid(m.get, [lo[0], y0, lo[2]], [hi[0], Math.min(hi[1], y0 + 48), hi[2]], { palette: palette.PAL }); if (!g) continue;
     g.setAttribute('aBegin', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(begin), 1));
     const mesh = new THREE.Mesh(g, castMaterial()); mesh.customDepthMaterial = castDepth();
-    mesh.position.set(o.x, 0, o.z); mesh.scale.setScalar(unit); mesh.rotation.y = -o.turn * Math.PI / 2;   // a quarter turn takes +x to +z, as modelPieces does
+    mesh.position.set(o.x, o.y, o.z); mesh.scale.setScalar(unit); mesh.rotation.y = -o.turn * Math.PI / 2;   // a quarter turn takes +x to +z, as modelPieces does
     mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; castGroup.add(mesh);
   }
   const land = (x, y, z, color) => { const arrive = begin + SPAN * sweep(x, z) + 0.4 * rnd();
     pieces.push({ position: [x, y, z], size: DAB(Math.max(EYE[2] - z, 1)), color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 }); };
+  // a tree behind the viewpoint gets few dabs: it is never in the picture
   if (m.tree) { const towards = new THREE.Vector3(EYE[0] - o.x, 0.3, EYE[2] - o.z).normalize().toArray();
-    for (const [x, y, z, c] of m.spots(Math.round(COVER * 0.5 * m.area / DAB(dist) ** 2), towards)) land(o.x + x, y, o.z + z, palette.HEX[c]); }
+    for (const [x, y, z, c] of m.spots(Math.round(COVER * 0.5 * m.area / DAB(o.z > -1 ? 30 : Math.max(dist, 8)) ** 2), towards)) land(o.x + x, o.y + y, o.z + z, palette.HEX[c]); }
   else { const share = COVER * 0.6 * unit * unit / DAB(dist) ** 2;                                   // about half its surface faces away
-    for (const p of modelPieces(m, { palette, origin: [o.x, 0, o.z], size: o.size, turn: o.turn, ao: false })) if (rnd() < share) land(p.position[0], p.position[1], p.position[2], p.color); }
+    for (const p of modelPieces(m, { palette, origin: [o.x, o.y, o.z], size: o.size, turn: o.turn, ao: false })) if (rnd() < share) land(p.position[0], p.position[1], p.position[2], p.color); }
 }
 
-// The ground sheet: dabs spread evenly over Seurat's frame, each aimed at the spot of sky, river or lawn it covers there.
+// The ground sheet: dabs spread evenly over Seurat's frame (and a wider window's), each aimed at the spot of sky, river or lawn it covers there.
 {
-  const eye = new THREE.PerspectiveCamera(40, 2.1, 0.1, 600), v = new THREE.Vector3(), col = new THREE.Color();
-  eye.position.set(...EYE); eye.lookAt(0.5, 0.36, -6.4); eye.updateMatrixWorld();
-  const LAWN = [0x9aa84e, 0x86a04a, 0xb4b452, 0x6f9050, 0xa8b060, 0x7c9a58], WATER = [0xb4c9da, 0x9fb9d6, 0xd5dde2, 0xc9c2da], SKY = [0xdfe3df, 0xc5d3e6, 0xeee6d6, 0xd9d0e2], FAR = [0x5f8448, 0x6f9050, 0x7f9a56];
+  const eye = new THREE.PerspectiveCamera(FOV, 2.1, 0.1, 2000), v = new THREE.Vector3(), col = new THREE.Color();
+  eye.position.set(...EYE); eye.lookAt(...AIM); eye.updateMatrixWorld();
+  const LAWN = [0xb9b860, 0xa3b058, 0xc9c26a, 0x86a052, 0xd2c47a, 0x9aa860], WATER = [0xc0cede, 0xa9bcd8, 0xdfe3e6, 0xcfc8dc], SKY = [0xdfe3df, 0xc5d3e6, 0xeee6d6, 0xd9d0e2], FARC = [0x6f9080, 0x86a08a, 0x7a9a7a];
   for (let i = 0, n = LITE ? 8000 : 20000; i < n; i++) {
-    v.set(R(-1.1, 1.1), R(-1.35, 1.35), 0.5).unproject(eye).sub(eye.position).normalize();
-    let d = v.y < -0.004 ? -EYE[1] / v.y : 1e9, list = SKY;
-    if (d < 104) { const x = EYE[0] + v.x * d, z = EYE[2] + v.z * d; list = x < bankX(z) ? (x < -60 ? FAR : WATER) : LAWN; }
-    else { d = 100; if (EYE[1] + v.y * d < 7) list = FAR; }
-    const pos = [EYE[0] + v.x * d, Math.max(0.05, EYE[1] + v.y * d), EYE[2] + v.z * d], dist = Math.max(EYE[2] - pos[2], 1);
+    v.set(R(-1.1, 1.1), R(-1.2, 1.2), 0.5).unproject(eye).sub(eye.position).normalize();
+    let pos, list = SKY;
+    if (v.y < -0.012) { let t = -EYE[1] / v.y, x = EYE[0] + v.x * t, z = EYE[2] + v.z * t;
+      if (x < shoreX(z)) { t = (WATER_Y - EYE[1]) / v.y; x = EYE[0] + v.x * t; z = EYE[2] + v.z * t; pos = [x, WATER_Y + 0.05, z]; list = x < -80 ? FARC : WATER; }
+      else { pos = [x, groundY(x, z) + 0.05, z]; list = LAWN; } }
+    else { pos = [EYE[0] + v.x * 180, EYE[1] + v.y * 180, EYE[2] + v.z * 180]; if (v.y < 0.03) list = FARC; }
+    const dist = Math.max(EYE[2] - pos[2], 1);
     const arrive = GROUND + SPAN * sweep(pos[0], pos[2]) + 0.4 * rnd();
     pieces.push({ position: pos, size: 0.0075 * dist, color: col.set(list[Math.floor(rnd() * list.length)]).offsetHSL(R(-0.02, 0.02), 0, R(-0.05, 0.05)).getHex(), velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 });
   }
@@ -293,12 +328,12 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.78;
 const scene = new THREE.Scene();
 const CANVAS = new THREE.Color(0xf3ecdb);
-const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 600);
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 2000);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.minDistance = 0.6; controls.maxDistance = 90; controls.maxPolarAngle = Math.PI * 0.495;
+controls.enableDamping = true; controls.minDistance = 0.6; controls.maxDistance = 120; controls.maxPolarAngle = Math.PI * 0.495;
 scene.add(new THREE.HemisphereLight(0xcfdcf8, 0xa9b272, 1.9));   // plenty of sky light: the shade in this picture is full of colour
-const sun = new THREE.DirectionalLight(0xfff0cc, 3.0), sunDir = new THREE.Vector3(0.62, 0.55, 0.35).normalize();   // a late afternoon; two trees behind us shade the foreground
-sun.position.copy(sunDir).multiplyScalar(120).add(new THREE.Vector3(0, 0, -25)); sun.target.position.set(0, 0, -25);
+const sun = new THREE.DirectionalLight(0xfff0cc, 3.0), sunDir = new THREE.Vector3(-0.72, 0.5, 0.48).normalize();   // a late afternoon: the sun is low on the left and behind us, so shadows fall to the right
+sun.position.copy(sunDir).multiplyScalar(120).add(new THREE.Vector3(4, 0, -22)); sun.target.position.set(4, 0, -22);
 sun.castShadow = true; sun.shadow.mapSize.setScalar(LITE ? 2048 : 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 10, far: 260 });
 scene.add(sun, sun.target);
@@ -354,43 +389,46 @@ function castDepth() {                                             // the same t
 }
 scene.add(castGroup);
 {
-  // the lawn: the island's bank, receding to the right of the river
-  const shape = new THREE.Shape([[bankX(16), -16], [70, -16], [70, 92], [bankX(-92), 92]].map(([x, z]) => new THREE.Vector2(x, z)));
-  const lawn = new THREE.Mesh(new THREE.ShapeGeometry(shape), revealing(new THREE.MeshStandardMaterial({ color: 0x8fa64e, roughness: 1 })));
-  lawn.rotation.x = Math.PI / 2; lawn.scale.y = -1; lawn.receiveShadow = true; scene.add(lawn);   // the shape's y becomes -z
-  lawn.material.side = THREE.DoubleSide;
-  const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c9da, roughness: 0.5 })));
-  river.rotation.x = -Math.PI / 2; river.position.set(-60, -0.3, -38); river.receiveShadow = true; scene.add(river);
-  // the far bank: a strip of grass, a white wall and a few houses (boxes), washed in with the rest
+  // the lawn: a grid that follows the water's edge, fine where the bank dips
+  const zs = [], ts = [-0.4, 0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 4.5, 8, 16, 40, 120, 400], pos = [], idx = [];
+  for (let z = 30; z > -60; z -= 1) zs.push(z); for (let z = -60; z > -200; z -= 5) zs.push(z); for (let z = -200; z >= -900; z -= 50) zs.push(z);
+  for (const z of zs) for (const t of ts) { const x = shoreX(z) + t; pos.push(x, t < 0 ? WATER_Y - 0.15 : groundY(x, z), z); }
+  for (let i = 0; i + 1 < zs.length; i++) for (let j = 0; j + 1 < ts.length; j++) { const a = i * ts.length + j, b = a + 1, c = a + ts.length, d = c + 1; idx.push(a, b, c, b, d, c); }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); lg.setIndex(idx); lg.computeVertexNormals();
+  const lawn = new THREE.Mesh(lg, revealing(new THREE.MeshStandardMaterial({ color: 0xa3a672, roughness: 1, side: THREE.DoubleSide })));
+  lawn.receiveShadow = true; lawn.frustumCulled = false; scene.add(lawn);
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(700, 1500), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c8de, roughness: 0.5 })));
+  river.rotation.x = -Math.PI / 2; river.position.set(-320, WATER_Y, -600); river.receiveShadow = true; scene.add(river);
+  // the far bank: a strip of land, its white embankment and a few houses (boxes), washed in with the rest
   const boxes = [], box = (x, y, z, sx, sy, sz, c) => boxes.push([x, y, z, sx, sy, sz, c]);
-  box(-95, 0.1, -40, 70, 0.9, 130, 0x8a9a52); box(-60.2, 1.0, -40, 0.6, 1.2, 120, 0xf0ead8);
-  for (const [z, w, h] of [[-12, 6, 4], [-30, 8, 5], [-52, 5, 4], [-70, 7, 5]]) { box(-66, h / 2 + 0.5, z, w, h, w, 0xf2ecdc); box(-66, h + 1.0, z, w + 0.6, 1.0, w + 0.6, 0xc0694c); }
+  box(-240, -0.3, -450, 320, 1.6, 1300, 0x8a9a6a); box(-80.3, 0.2, -450, 0.6, 2.4, 1300, 0xf0ead8);
+  for (const [z, w, h] of [[-165, 9, 6], [-260, 12, 7], [-420, 10, 6], [-640, 14, 8]]) { box(-92, h / 2 + 0.5, z, w, h, w, 0xf2ecdc); box(-92, h + 1.0, z, w + 0.8, 1.2, w + 0.8, 0xc0694c); }
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S3 = new THREE.Vector3(), col = new THREE.Color();
   const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), revealing(new THREE.MeshStandardMaterial({ roughness: 1 })), boxes.length);
   boxes.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
   scene.add(inst);
-  // its trees, and the line of trees at the horizon: leaf masses stamped into two voxel grids (40 cm voxels: a few pixels wide at that distance)
-  const FV = 0.4, FAR = [C.FAR1, C.FAR2, C.FAR3, C.FAR4], farMat = revealing(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  // its trees, and the trees far down the island: leaf masses stamped into two voxel grids (1 m voxels: a few pixels wide at that distance)
+  const FV = 1, FARL = [C.FAR1, C.FAR2, C.FAR3, C.FAR4], farMat = revealing(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
   function masses(x0, z0, nx, nz, list) {                           // list: [x, y, z, radius, colour index]; the grid starts at (x0, 0, z0)
-    const ny = 40, grid = createGrid(nx, ny, nz);
+    const ny = 24, grid = createGrid(nx, ny, nz);
     for (const [bx, by, bz, br, c] of list) { const X = (bx - x0) / FV, Y = by / FV, Z = (bz - z0) / FV, Rr = br / FV;
       for (let x = Math.floor(X - Rr * 1.2); x <= X + Rr * 1.2; x++) for (let y = Math.max(0, Math.floor(Y - Rr)); y <= Y + Rr; y++) for (let z = Math.floor(Z - Rr * 1.2); z <= Z + Rr * 1.2; z++) {
         const d = Math.hypot(x - X, (y - Y) / 0.85, z - Z) / Rr + (h01(x >> 1, y >> 1, z >> 1) - 0.5) * 0.3;
-        if (d < 1) grid.set(x, y, z, h01(x >> 1, y, z >> 1) < 0.3 ? FAR[(c + 1) % 4] : FAR[c]); } }
+        if (d < 1) grid.set(x, y, z, h01(x >> 1, y, z >> 1) < 0.3 ? FARL[(c + 1) % 4] : FARL[c]); } }
     for (let a = 0; a < Math.max(nx, nz); a += 64) { const lo = nx > nz ? [a, 0, 0] : [0, 0, a], hi = nx > nz ? [Math.min(nx, a + 64), ny, nz] : [nx, ny, Math.min(nz, a + 64)];
       const g = meshGrid(grid.get, lo, hi, { palette: palette.PAL }); if (!g) continue;
       const mesh = new THREE.Mesh(g, farMat); mesh.position.set(x0, 0, z0); mesh.scale.setScalar(FV); mesh.frustumCulled = false; scene.add(mesh); }
   }
   const along = [], across = [];
-  for (let i = 0; i < 70; i++) { const z = -104 + i * 2.1 + R(-1, 1), k = R(0.7, 1.5); along.push([-63 - R(0, 14), 2.6 * k + 1, z, 3.4 * k, i % 4]); }
-  for (let i = 0; i < 80; i++) { const x = -62 + i * 1.7, k = R(0.8, 1.7); across.push([x, 3.0 * k, -96 - R(0, 12), 4.0 * k, (i * 3) % 4]); }
-  masses(-86, -112, 80, 400, along); masses(-72, -118, 380, 80, across);
+  for (let z = -880; z < -110; z += 7) { const k = R(0.8, 1.5); along.push([-88 - R(0, 26), 4.5 * k + 1, z + R(-2, 2), 6 * k, Math.floor(R(0, 4))]); }
+  for (let i = 0; i < 70; i++) { const k = R(0.8, 1.6); across.push([-25 + i * 3.4, 4.5 * k, -190 - R(0, 60), 7 * k, i % 4]); }
+  masses(-130, -900, 56, 800, along); masses(-40, -270, 280, 100, across);
 }
 // the sky: a dome that writes no depth, so the painter treats it as sky; it washes in first
 const skyU = { uT: revealU.uT, uCanvas: { value: CANVAS } };
 {
-  const g = new THREE.SphereGeometry(400, 48, 24), col = [], p = g.attributes.position, zen = new THREE.Color(0x86a9d6), hor = new THREE.Color(0xe9e7d8), c = new THREE.Color();
-  for (let i = 0; i < p.count; i++) { c.copy(hor).lerp(zen, Math.pow(Math.max(0, p.getY(i) / 400), 0.55)); col.push(c.r, c.g, c.b); }
+  const g = new THREE.SphereGeometry(1500, 48, 24), col = [], p = g.attributes.position, zen = new THREE.Color(0x86a9d6), hor = new THREE.Color(0xe9e7d8), c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) { c.copy(hor).lerp(zen, Math.pow(Math.max(0, p.getY(i) / 1500), 0.55)); col.push(c.r, c.g, c.b); }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   scene.add(new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, vertexColors: true, uniforms: skyU,
     vertexShader: 'varying vec3 vC; varying vec3 vP; void main() { vC = color; vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -427,8 +465,8 @@ const boom = new BakedDebris({
 boom.mesh.frustumCulled = false; scene.add(boom.mesh);
 
 /* ---------- painting ---------- */
-const brushes = { dabs: pointillist({ purity: 0.7, hueSpread: 0.06, trail: 0.7 }), oil: impressionist() };
-const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 4, saturation: 1.0, exposure: 0.78, shadowAmount: 0.45, warmth: 0.5, contrast: 1.0, canvas: 0.05, minStrokeWorld: 0.02, resolutionScale: LITE ? 0.6 : 0.9 });
+const brushes = { dabs: pointillist({ purity: 0.5, hueSpread: 0.06, trail: 0.7 }), oil: impressionist() };
+const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 4, saturation: 0.88, exposure: 0.78, shadowAmount: 0.45, warmth: 0.5, contrast: 1.0, canvas: 0.05, minStrokeWorld: 0.02, resolutionScale: LITE ? 0.6 : 0.9 });
 let look = 'dabs', dirty = 2, shadowDirty = true;
 const markDirty = shadows => { dirty = 2; if (shadows) shadowDirty = true; };
 function setLook(name) {
@@ -436,7 +474,7 @@ function setLook(name) {
   for (const b of $('looks').children) b.setAttribute('aria-pressed', String(b.dataset.look === name));
   if (name === 'cubes') boom.removeStrokes();
   else {
-    painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 1.0 : 1.2;
+    painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 0.88 : 1.1;
     if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, strokeScale: 1.6, maxWidth: 11, jitter: 0.1 }));   // a positive look-ahead: the clock runs backwards
   }
   $('purity').disabled = name !== 'dabs'; markDirty(false);
@@ -444,9 +482,9 @@ function setLook(name) {
 
 /* ---------- camera: Seurat's viewpoint while the picture builds, then a slow walk to the side; a drag takes over ---------- */
 const SHOTS = {
-  painting: [[0.8, 1.7, 9.6], [0.5, 0.36, -6.4], 40], walk: [[9.5, 2.6, 8.5], [0.2, 1.2, -3], 42], close: [[0.4, 1.5, 8.2], [2.6, 1.3, 4.9], 22], above: [[16, 24, 22], [-2, 0, -10], 40],
+  painting: [EYE, AIM, FOV], walk: [[8.5, 2.2, -0.5], [0, 1.0, -8], 44], close: [[-0.6, 1.5, -1.6], [1.3, 1.3, -3.6], 26], above: [[13, 22, 12], [0, 0, -9], 40],
 };
-if (PORTRAIT) SHOTS.painting = [[1.1, 1.8, 13.5], [1.1, -2.4, -6.4], 48];   // a tall window holds the right half of the picture; it looks down so the figures clear the panel   // a tall window: step back to keep the width of the picture
+if (PORTRAIT) SHOTS.painting = [[0.9, 1.6, 2.2], [0.9, -1.6, -7.8], 46];   // a tall window holds the right half of the picture, from a few steps back; it looks down so the figures clear the panel
 let auto = true, shot = 'painting';
 const camA = new THREE.Vector3(), camB = new THREE.Vector3(), tarA = new THREE.Vector3(), tarB = new THREE.Vector3();
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };

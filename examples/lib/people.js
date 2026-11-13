@@ -16,33 +16,50 @@ export function createPeople(C, detail = 2) {
   const createModel = () => { const m = newModel(detail); m.smooth = detail > 1; return m; };   // smooth: draw with the finer shapes
   const thin = m => (m.smooth ? 0.22 : 0.5);                        // a cane, a rod, the stick of a parasol
   const head = (m, x, y, skin = C.SKIN) => {
-    m.ellipsoid(x, y, 0, 1.5, 1.7, 1.5, skin);
-    if (m.detail > 2) { m.ellipsoid(x + 1.45, y - 0.2, 0, 0.5, 0.42, 0.4, skin); m.ellipsoid(x + 0.9, y - 1.3, 0, 0.75, 0.6, 0.9, skin); }   // a nose and a chin: a profile
+    if (!m.smooth) { m.ellipsoid(x, y, 0, 1.5, 1.7, 1.5, skin); return; }
+    m.ellipsoid(x, y + 0.25, 0, 1.2, 1.45, 1.15, skin); m.line([x - 0.2, y - 2.2, 0], [x - 0.1, y - 0.9, 0], skin, 0.55);        // a smaller head on a neck
+    if (m.detail > 2) { m.ellipsoid(x + 1.15, y + 0.05, 0, 0.42, 0.36, 0.34, skin); m.ellipsoid(x + 0.7, y - 0.95, 0, 0.6, 0.5, 0.7, skin); }   // a nose and a chin: a profile
   };
   const dot = (m, x, y, z, c, r = 0.62) => { if (m.smooth) m.ellipsoid(x, y, z, r, r, r, c); else m.set(x, y, z, c); };   // one voxel, or a small ball on a fine model
-  const arm = (m, pts, c, hand = C.SKIN) => { for (let i = 0; i + 1 < pts.length; i++) m.line(pts[i], pts[i + 1], c, 0.75); const h = pts[pts.length - 1]; dot(m, h[0], h[1], h[2], hand, 1.0); };   // a hand a little wider than the sleeve
+  const arm = (m, pts, c, hand = C.SKIN) => { for (let i = 0; i + 1 < pts.length; i++) m.line(pts[i], pts[i + 1], c, m.smooth ? 0.6 : 0.75); const h = pts[pts.length - 1]; dot(m, h[0], h[1], h[2], hand, 0.68); };   // a hand a little wider than the sleeve
   const leg = (m, a, b, c, r = 0.9) => { if (m.smooth) m.line(a, b, c, r); else m.box(Math.min(a[0], b[0]) - (a[0] === b[0] ? 1 : 0), Math.max(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[1], b[1]) + (a[1] !== b[1] ? 0 : 1), a[2], a[2], c); };
   const tube = (m, x, y0, y1, r, c) => { if (m.smooth) m.line([x, y0 - 0.5, 0], [x, y1 - 0.5, 0], c, r, true); else for (let y = Math.round(y0); y < y1; y++) m.ellipsoid(x, y, 0, r, 0.5, r, c); };   // an upright cylinder
   const brim = (m, x, y, r, c) => m.ellipsoid(x, y, 0, r, m.smooth ? 0.3 : 0.5, r, c);
-  /** A parasol held at hand [x, y, z]: a stick and a cover. */
-  const parasol = (m, hand, c, r = 4.6, lean = 0.6) => {
-    const top = [hand[0] + lean, hand[1] + 10, hand[2] - 1];
-    m.line(hand, top, C.BROWN, thin(m)); m.dome(top[0], top[1] - 2, top[2], r, 2.2, (x, z) => (Math.hypot(x - top[0], z - top[2]) > r - 1 ? C.BLACK : c)); dot(m, top[0], top[1] + 1, top[2], C.BROWN);
+  /**
+   * A parasol held at hand [x, y, z]: a stick and a cover. lean: how far the top is in front of the hand.
+   * tilt (degrees): instead, the stick slants back by that angle and the cover tilts with it, as when it rests on a shoulder.
+   */
+  const parasol = (m, hand, c, r = 4.6, lean = 0.6, tilt = null) => {
+    if (tilt === null) {
+      const top = [hand[0] + lean, hand[1] + 10, hand[2] - 1];
+      m.line(hand, top, C.BROWN, thin(m)); m.dome(top[0], top[1] - 2, top[2], r, 2.2, (x, z) => (Math.hypot(x - top[0], z - top[2]) > r - 1 ? C.BLACK : c)); dot(m, top[0], top[1] + 1, top[2], C.BROWN);
+      return;
+    }
+    const a = tilt * Math.PI / 180, ax = [-Math.sin(a), Math.cos(a)], px = [Math.cos(a), Math.sin(a)], L = 11.5, h = 2.0;   // the stick's direction, and the one across it
+    const ctr = [hand[0] + ax[0] * L, hand[1] + ax[1] * L, hand[2] - 1.6];
+    m.line(hand, [ctr[0] + ax[0] * h, ctr[1] + ax[1] * h, ctr[2]], C.BROWN, thin(m));
+    const step = m.smooth ? 0.3 : 0.7, t = m.smooth ? 0.34 : 0.5;
+    for (let q = 0; q <= r; q += step) for (let f = 0, n = Math.max(1, Math.ceil(6.2832 * q / step)); f < n; f++) {   // rings of small balls on a tilted cap
+      const u = q * Math.cos(f / n * 6.2832), w = q * Math.sin(f / n * 6.2832), up = h * Math.sqrt(Math.max(0, 1 - (q / r) ** 2));
+      m.ellipsoid(ctr[0] + px[0] * u + ax[0] * up, ctr[1] + px[1] * u + ax[1] * up, ctr[2] + w, t, t, t, q > r - 0.9 ? C.BLACK : c);
+    }
   };
+  const K = m => (m.smooth ? 0.82 : 1);                            // hats for the smaller head
   const hats = {
-    top: (m, x, y, c = C.BLACK) => { brim(m, x, y, 2.4, c); tube(m, x, y + 0.5, y + 4, 1.6, c); },
-    boater: (m, x, y, c = C.OCHRE, band = C.BLACK) => { brim(m, x, y, 2.5, c); if (m.smooth) { tube(m, x, y + 0.3, y + 2.4, 1.6, c); tube(m, x, y + 0.6, y + 1.3, 1.68, band); } else { m.ellipsoid(x, y + 1, 0, 1.6, 0.5, 1.6, band); m.ellipsoid(x, y + 2, 0, 1.6, 0.5, 1.6, c); } },
-    bonnet: (m, x, y, c = C.RED, trim = C.BLACK) => { m.ellipsoid(x - 0.4, y, 0, 2.0, 1.0, 1.9, c); m.ellipsoid(x - 0.2, y + 1, 0, 1.3, 0.8, 1.2, c); dot(m, x + 1, y + 1, 1, trim); },
-    cap: (m, x, y, c = C.NAVY) => { m.ellipsoid(x, y, 0, 1.7, 0.9, 1.6, c); dot(m, x + 2, y, 0, c); },
-    kepi: (m, x, y, c = C.RED) => { tube(m, x, y, y + 2, 1.5, c); dot(m, x + 2, y, 0, C.BLACK); },
+    top: (m, x, y, c = C.BLACK) => { brim(m, x, y, 2.4 * K(m), c); tube(m, x, y + 0.5, y + 4, 1.6 * K(m), c); },
+    boater: (m, x, y, c = C.OCHRE, band = C.BLACK) => { brim(m, x, y, 2.5 * K(m), c); if (m.smooth) { tube(m, x, y + 0.3, y + 2.0, 1.32, c); tube(m, x, y + 0.6, y + 1.2, 1.4, band); } else { m.ellipsoid(x, y + 1, 0, 1.6, 0.5, 1.6, band); m.ellipsoid(x, y + 2, 0, 1.6, 0.5, 1.6, c); } },
+    bonnet: (m, x, y, c = C.RED, trim = C.BLACK) => { const k = K(m); m.ellipsoid(x - 0.4, y, 0, 2.0 * k, 1.0 * k, 1.9 * k, c); m.ellipsoid(x - 0.2, y + 1 * k, 0, 1.3 * k, 0.8 * k, 1.2 * k, c); dot(m, x + 1, y + 1, 1, trim); },
+    cap: (m, x, y, c = C.NAVY) => { m.ellipsoid(x, y, 0, 1.7 * K(m), 0.9, 1.6 * K(m), c); dot(m, x + 2, y, 0, c); },
+    kepi: (m, x, y, c = C.RED) => { tube(m, x, y, y + 2, 1.5 * K(m), c); dot(m, x + 2, y, 0, C.BLACK); },
   };
   const bell = (m, waist, c, wide = 2.4, hem = null) => { for (let y = 0; y < waist; y++) { const r = 1.5 + Math.pow(1 - y / waist, 0.75) * wide; m.ellipsoid(0.3, y, 0, r * 1.05, m.smooth ? 2.2 : 0.5, r * 0.85, y === 0 && hem && !m.smooth ? hem : c); } };
 
   /**
    * A woman standing in profile. dress, bodice: colours. bustle: the padded back of the 1880s skirt. hat: 'bonnet' | 'boater' | null,
-   * hatC: its colour. parasol: a colour, or null. rod: true for a fishing rod held out over the water.
+   * hatC: its colour. parasol: a colour, or null; parasolLean: how far its top leans forward. parasolTilt: degrees it slants back over her shoulder.
+   * rod: true for a fishing rod held out over the water.
    */
-  function lady({ dress = C.VIOLET, bodice = C.PLUMD, bustle = true, hat = 'bonnet', hatC = C.BLACK, parasol: par = null, rod = false, hair = C.HAIR } = {}) {
+  function lady({ dress = C.VIOLET, bodice = C.PLUMD, bustle = true, hat = 'bonnet', hatC = C.BLACK, parasol: par = null, parasolLean = 0.6, parasolTilt = null, rod = false, hair = C.HAIR } = {}) {
     const m = createModel(), waist = 9;
     bell(m, waist, dress, 2.4, bodice);
     if (bustle) { m.ellipsoid(-2.7, waist - 1.6, 0, 2.3, 2.3, 1.9, dress); m.ellipsoid(-3.3, waist - 4.5, 0, 1.8, 2.6, 1.7, dress); }
@@ -50,7 +67,7 @@ export function createPeople(C, detail = 2) {
     head(m, 0.2, 17.6); m.ellipsoid(-1.1, 18.0, 0, 1.2, 1.3, 1.4, hair);
     if (hat) hats[hat](m, 0.1, 19.4, hatC);
     arm(m, [[0, 14.5, -2.4], [0.6, 11, -2.6], [1.6, 9.5, -2.4]], bodice);                           // the far arm hangs
-    if (par) { arm(m, [[0.4, 14.5, 2.4], [1.6, 11.5, 2.6], [3, 12.5, 2.4]], bodice); parasol(m, [3, 12.5, 2.4], par); }
+    if (par) { arm(m, [[0.4, 14.5, 2.4], [1.6, 11.5, 2.6], [3, 12.5, 2.4]], bodice); parasol(m, [3, 12.5, 2.4], par, 4.6, parasolLean, parasolTilt); }
     else if (rod) { arm(m, [[0.4, 14.5, 2.4], [2, 12, 2.6], [3.4, 12.2, 2.2]], bodice); m.line([3.4, 12.2, 2.2], [17, 17, 1], C.BROWN, thin(m)); m.line([17, 17, 1], [17.5, 4, 1], C.GREYLT, m.smooth ? 0.1 : 0.5); }
     else arm(m, [[0.4, 14.5, 2.4], [1.2, 11, 2.6], [2.2, 10, 2.2]], bodice);
     return m;
@@ -94,15 +111,15 @@ export function createPeople(C, detail = 2) {
     if (cane) m.line([3, 4.2, 2.2], [6, 0, 2.6], C.BLACK, thin(m));
     return m;
   }
-  /** A man lying on the grass, propped on one elbow, with a pipe. He faces +x; his legs trail behind. */
+  /** A man leaning back on one elbow, his legs stretched out in front of him, with a pipe. He faces +x. */
   function reclining({ shirt = C.ORANGE, trousers = C.SKYBLUE, hat = 'cap', hatC = C.NAVY } = {}) {
     const m = createModel();
-    for (const z of [-1, 0.6]) m.line([-9, 0.8, z], [-1, 1.2, z], trousers, 1.0);
-    if (m.smooth) m.ellipsoid(-10.2, 0.7, -0.2, 1.2, 0.9, 1.5, C.BLACK); else m.box(-11, -10, 0, 1, -1, 1, C.BLACK);
-    for (let i = 0; i <= 5; i++) m.ellipsoid(-0.5 + i * 0.9, 1.6 + i * 0.75, 0, 1.6, 1.6, 2.0, shirt);
-    dot(m, 4.6, 6.2, 0, C.SKIN); head(m, 5.4, 7.4); hats[hat](m, 5.2, 9.0, hatC);
-    arm(m, [[3.6, 4.6, 2.2], [4.6, 2, 2.6], [6.4, 0.6, 2.4]], C.SKIN); arm(m, [[3.6, 4.6, -2.2], [5, 2.6, -2.4], [6.4, 1.8, -1.6]], C.SKIN);
-    m.line([7, 7, 0], [8.6, 6.4, 0], C.BROWN, thin(m));
+    for (const z of [-1, 0.8]) { m.line([0, 1, z], [10, 0.9, z], trousers, 1.0); dot(m, 11, 1, z, C.BLACK, 1.0); }
+    for (let i = 0; i <= 5; i++) m.ellipsoid(-0.3 - i * 0.75, 1.6 + i * 0.85, 0, 1.7, 1.6, 2.1, shirt);   // from the hips back and up to the shoulders
+    dot(m, -4.2, 7.3, 0, C.SKIN); head(m, -4.3, 8.7); hats[hat](m, -4.4, 10.4, hatC);
+    arm(m, [[-4, 5.6, 2.3], [-5.6, 3, 2.6], [-6.4, 0.6, 2.4]], C.SKIN);       // the arm he leans on, behind him
+    arm(m, [[-3.6, 5.6, -2.3], [-1.6, 3.6, -2.4], [0.4, 3, -1.8]], C.SKIN);   // the other rests on his lap
+    m.line([-2.8, 8.3, 0], [-1.2, 7.9, 0], C.BROWN, thin(m));
     return m;
   }
   /** A child. running: legs apart and arms out. */

@@ -30,6 +30,15 @@ test('every brush defines the five brush functions once', () => {
   }
 });
 
+test('pointillist has a flying part for BakedDebris strokes; impressionist leaves the built-in oil stroke', () => {
+  const { flying } = pointillist();
+  assert.match(flying.vertex, /float strokeStretch\(float \w+\)/);
+  for (const re of [/vec3 strokePalette\(vec3 \w+, float \w+\)/, /bool strokeMark\(vec2 \w+, float \w+, out float \w+\)/, /vec3 strokeShade\(vec3 \w+, vec2 \w+, float \w+, float \w+\)/])
+    assert.equal(flying.fragment.match(new RegExp(re, 'g'))?.length, 1, String(re));
+  assert.match(flying.fragment, /flat varying float vPiece;/);
+  assert.equal(impressionist().flying, undefined);
+});
+
 test('the default brush is impressionist; the shader is head + brush + body', () => {
   const pass = make();
   assert.equal(pass.brush.name, 'impressionist');

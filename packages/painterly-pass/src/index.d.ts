@@ -16,6 +16,11 @@ export interface PainterlyBrush {
   reach(pass: PainterlyPass): number;
   /** Cells per side to test around each pixel. Default: 2 x reach + 1. The pass keeps it between 2 and 7. */
   search?(pass: PainterlyPass, reach: number): number;
+  /**
+   * The same mark for BakedDebris pieces in the air: GLSL for boom.createStrokes(). Without it, strokes are oil strokes.
+   * The interface is oilStroke in baked-debris/shaders.
+   */
+  flying?: { vertex: string; fragment: string };
 }
 
 /** Oil strokes with the palette habits of late-1800s impressionism. The default brush. */
@@ -30,9 +35,10 @@ export interface PointillistOptions {
   pigments?: number;
 }
 
-/** Round dabs of divided colour. Its options are live in brush.uniforms (uPurity, uHueSpread, uPigments). */
+/** Round dabs of divided colour, on surfaces and for BakedDebris strokes. Its options are live in brush.uniforms (uPurity, uHueSpread, uPigments). */
 export function pointillist(options?: PointillistOptions): PainterlyBrush & {
   uniforms: { uPurity: IUniform<number>; uHueSpread: IUniform<number>; uPigments: IUniform<number> };
+  flying: { vertex: string; fragment: string };
 };
 
 /** Options of new PainterlyPass(scene, camera, options). Each is also a field you can change at any time. */

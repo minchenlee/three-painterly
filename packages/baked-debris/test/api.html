@@ -116,6 +116,32 @@ test('render: cubes, shadows and strokes compile without errors', () => {
   r.dispose();
 });
 
+test('render: a brush look compiles, reads vPiece, and follows painter.brush', () => {
+  const r = new THREE.WebGLRenderer(); r.setSize(64, 64);
+  const errs = []; r.debug.onShaderError = (gl, p, vs, fs) => errs.push(gl.getShaderInfoLog(vs) + gl.getShaderInfoLog(fs));
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100); cam.position.set(0, 2, 6);
+  const dots = { uniforms: { uDot: { value: 0.8 } }, flying: {
+    vertex: 'float strokeStretch(float spd) { return 1.0; }',
+    fragment: `uniform float uDot; flat varying float vPiece;
+      vec3 strokePalette(vec3 c, float r) { return vPiece < 0.5 ? c : c.bgr; }
+      bool strokeMark(vec2 q, float seed, out float w) { w = dot(q, q); return w < uDot; }
+      vec3 strokeShade(vec3 col, vec2 q, float seed, float w) { return col * (1.0 - 0.2 * w); }` } };
+  const painter = { sceneTarget: null, brush: dots };
+  const b = new BakedDebris(opts()); b.setTime(0.4);
+  const s = b.createStrokes({ painter }); scene.add(s); r.render(scene, cam);
+  ok(errs.length === 0, errs.join('\n'));
+  painter.brush = null; r.render(scene, cam);
+  ok(errs.length === 0, errs.join('\n'));
+  ok(s.material.fragmentShader === api.strokeFragment && !('uDot' in s.material.uniforms), 'strokes did not go back to the oil look');
+  // three.js keeps a material's programs until the material is disposed, so going back to a look compiles nothing
+  const programs = r.info.programs.length;
+  painter.brush = dots; r.render(scene, cam); painter.brush = null; r.render(scene, cam);
+  ok(r.info.programs.length === programs, `switching back compiled again (${programs} -> ${r.info.programs.length})`);
+  b.removeStrokes();
+  ok(r.info.programs.length === 0, `removeStrokes left ${r.info.programs.length} program(s)`);
+  r.dispose();
+});
+
 // ---- displace hook ----
 // one still piece at the origin, seen head-on: count lit pixels to see where the GPU put it
 function litPixels(b, extra) {

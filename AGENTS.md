@@ -5,7 +5,7 @@ Guide for coding agents that work on this repository. To use the library in anot
 ## Layout
 
 - `packages/painterly-pass/src/`: `PainterlyPass.js` (the Pass), `shaders.js` (GLSL shared by every brush), `brushes/*.js` (one brush per file: mark shape, palette, canvas), `index.js` (public exports).
-- `packages/baked-debris/src/`: `BakedDebris.js` (class, GPU side), `bake.js` (CPU collision bake), `colliders.js` (`voxelCollider`, `boxCollider`, `anyCollider`), `shaders.js` (GLSL and three.js chunk patches), `index.js`.
+- `packages/baked-debris/src/`: `BakedDebris.js` (class, GPU side), `bake.js` (CPU collision bake), `colliders.js` (`voxelCollider`, `boxCollider`, `anyCollider`), `shaders.js` (GLSL and three.js chunk patches; `oilStroke` is the built-in look of flying strokes), `index.js`.
 - `packages/*/examples/`: small examples. `examples/`: large demos that use both packages.
 - `packages/*/test/`: `*.test.js` run in Node; `api.html` runs in a browser.
 
@@ -19,7 +19,9 @@ Guide for coding agents that work on this repository. To use the library in anot
 - PainterlyPass reads the depth buffer as standard depth. Do not remove the renderer checks (WebGPU, logarithmic depth, reverse depth).
 - Keep `solid()` hot paths cheap: no allocation per call.
 - The default brush (`impressionist()`) must keep its output. After a change to `shaders.js` or `PainterlyPass.js`, compare a screenshot of `basic.html` before and after: no pixel may differ.
-- A new brush goes in `src/brushes/`, defines the five functions documented in `brushes/impressionist.js`, and gets a row in the package README.
+- A new brush goes in `src/brushes/`, defines the five functions documented in `brushes/impressionist.js`, and gets a row in the package README. Give it a `flying` part too (the functions of `oilStroke` in `baked-debris/src/shaders.js`), so flying pieces match the painting.
+- The oil stroke of BakedDebris must keep its output too. `strokeFragment` is public: effects pair it with their own vertex shader, so it must not need a new varying.
+- The two packages do not import each other. A brush is a plain object, and BakedDebris reads only `brush.flying` and `brush.uniforms`.
 
 ## Test
 

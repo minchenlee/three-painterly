@@ -9,7 +9,14 @@ Both packages share one version number until the first public release.
 - New exports `impressionist()` and `pointillist({ purity, hueSpread, pigments })`.
 - `pointillist()` paints round dabs of divided colour: one pigment per dab, mixed only with white. It tests 3×3 cells per pixel at the default dab size.
 - A brush is a plain object (`{ glsl, uniforms, reach, search }`). Writing your own is lower-level and may change.
+- A brush can carry a `flying` part: the same mark for BakedDebris strokes. `pointillist()` has one (round dabs, one pigment per piece).
 - Node tests for the brush plumbing (`packages/painterly-pass/test`).
+
+### baked-debris
+- Strokes take their look from the brush. `createStrokes({ painter })` follows `painter.brush`, also when it changes later. New `brush` option to set it yourself. With the default brush, or none, strokes are the oil strokes of 0.1.0, with the same output.
+- `baked-debris/shaders`: new `oilStroke` (the built-in look) and `strokeShaders(look)`. `strokeVertex` and `strokeFragment` are unchanged in output.
+- The stroke vertex shader writes `flat varying float vPiece`: the piece's seed, exact on every pixel.
+- Node tests for the stroke look (`test/strokes.test.js`); `test/api.html` compiles a look and switches looks.
 
 ### examples
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.

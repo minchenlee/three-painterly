@@ -14,7 +14,7 @@ Install: `npm i painterly-pass baked-debris three`
 ## Examples
 
 - [packages/painterly-pass/examples/basic.html](https://github.com/minchenlee/three-painterly/blob/main/packages/painterly-pass/examples/basic.html): smallest PainterlyPass setup; B switches brushes
-- [packages/baked-debris/examples/explode.html](https://github.com/minchenlee/three-painterly/blob/main/packages/baked-debris/examples/explode.html): voxel towers, three bursts, a wall, a swirl made with the displace hook
+- [packages/baked-debris/examples/explode.html](https://github.com/minchenlee/three-painterly/blob/main/packages/baked-debris/examples/explode.html): voxel towers, three bursts, a wall, a swirl made with the displace hook; B switches brushes, strokes included
 - [examples/voxel-paris/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/voxel-paris/index.html): both modules on a large voxel scene, time slider, brush-stroke fire
 - [examples/split-time/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/split-time/index.html): two bakes, one played backwards
 - [examples/paint-pulse/index.html](https://github.com/minchenlee/three-painterly/blob/main/examples/paint-pulse/index.html): music drives `setTime`; WebAudio
@@ -72,7 +72,7 @@ Brushes: `import { PainterlyPass, impressionist, pointillist } from 'painterly-p
 - `impressionist()`: oil strokes, the default. The table above describes it.
 - `pointillist({ purity = 0.8, hueSpread = 0.07, pigments = 12 })`: round dabs of pure pigment hues mixed only with white. Live values: `brush.uniforms.uPurity.value` (also `uHueSpread`, `uPigments`). It reads strokeSize (dab spacing), strokeWidth (dab size), saturation, shadowTint (hue of the shadow dabs), shadowAmount, warmth, colorJitter, contrast, canvas. It ignores strokeLength.
 - Set at creation (`{ brush: pointillist() }`) or later (`painter.brush = …`; `null` restores the default). Each change compiles one shader: keep one brush object per brush and reuse it.
-- BakedDebris strokes keep the oil look with every brush.
+- BakedDebris strokes follow the brush: `boom.createStrokes({ painter })` draws oil strokes with `impressionist()` and round dabs with `pointillist()`, and changes with `painter.brush`.
 
 Unknown option names are warned about and ignored.
 
@@ -107,7 +107,7 @@ Methods:
 - `setTime(t)`, `setTimeWarp({ burst, hover } | null)`, `setSizeScale(s)`: no rebake.
 - `setBurstOffsets([dt0, dt1, …])`: move bursts in time without a rebake (first 32 bursts).
 - `rebake(changes)`: needed after any physics change (speed, restitution, friction, solid, pieces, bursts, seed, …).
-- `createStrokes({ painter, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. "Flying" = every launched piece: landed pieces stay strokes (`stats.flying` counts them all). Use a positive `lookAhead` when the clock plays backwards. `keep` (0–1) draws only that share of flying pieces, fixed per piece; lower it for large strokes (live: `mesh.material.uniforms.uKeep.value`). `removeStrokes()` switches back.
+- `createStrokes({ painter, brush, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 })`: returns a mesh; add it to `painter.overlayScene`. Flying pieces become brush strokes. The look comes from `brush` (default: `painter.brush`, followed when it changes): oil strokes, or round dabs with `pointillist()`. No need to call it again after a brush change. "Flying" = every launched piece: landed pieces stay strokes (`stats.flying` counts them all). Use a positive `lookAhead` when the clock plays backwards. `keep` (0–1) draws only that share of flying pieces, fixed per piece; lower it for large strokes (live: `mesh.material.uniforms.uKeep.value`). `removeStrokes()` switches back.
 - `setDisplace({ glsl, uniforms } | null)`: GPU offset on top of the bake (see below).
 - `dispose()`.
 - `boom.stats`: `{ pieces, flying, secondary }`. `boom.uniforms`: shader uniforms, including the displace hook's.
@@ -133,7 +133,7 @@ displace: {
 
 `DebrisInfo`: `time` (use it, not uTime), `local` (time since launch, <= 0 = not launched), `kind` (0 piece, 1 fragment), `burst` (-1 = none), `index` (stable per piece), `rest` (local time from which the piece rests).
 
-Brush look for your own effects: `import { strokeFragment } from 'baked-debris'`.
+Oil brush look for your own effects: `import { strokeFragment } from 'baked-debris'`. For another brush: `import { strokeShaders } from 'baked-debris/shaders'; strokeShaders(brush.flying).fragment` (lower-level; your vertex shader must write `flat varying float vPiece` if the look reads it).
 
 ## Pitfalls
 

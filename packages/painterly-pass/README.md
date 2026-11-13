@@ -63,6 +63,8 @@ painter.brush = null;            // back to the default; any brush can be set at
 
 Setting `brush` compiles one shader. Keep one brush object per brush and switch between them, as `examples/basic.html` does.
 
+BakedDebris strokes follow the brush: `boom.createStrokes({ painter })` draws flying pieces as oil strokes with `impressionist()` and as round dabs with `pointillist()`. They change with `painter.brush`.
+
 ### pointillist
 
 Each dab picks one pigment from a wheel of `pigments` hues. The hue is the local colour's hue, spread to its neighbours. Greys have no hue of their own, so they take any hue. In the dark, some dabs lean to the shadow colour; in the light, some lean to orange. White brings each pigment up to the tone of the scene. No dab uses black.
@@ -81,7 +83,7 @@ At the default dab size each pixel tests 3×3 cells, against 4×4 for the oil br
 
 ### Your own brush
 
-A brush is a plain object: `{ glsl, uniforms, reach(pass), search(pass, reach) }`. `glsl` defines five functions: `brushPalette`, `brushGround`, `brushMark`, `brushShade` and `brushFinish`. `src/brushes/impressionist.js` documents each one. This interface is lower-level and may change.
+A brush is a plain object: `{ glsl, uniforms, reach(pass), search(pass, reach), flying }`. `glsl` defines five functions: `brushPalette`, `brushGround`, `brushMark`, `brushShade` and `brushFinish`. `src/brushes/impressionist.js` documents each one. The optional `flying` part gives BakedDebris strokes the same mark; the BakedDebris README describes it. Without it, strokes are oil strokes. This interface is lower-level and may change.
 
 ## Options
 
@@ -132,7 +134,6 @@ The pointillist brush follows the divided colour of Georges Seurat and Paul Sign
 - Perspective cameras only. `WebGLRenderer` only: `WebGPURenderer` is not supported. A renderer created with `logarithmicDepthBuffer` or `reverseDepthBuffer` is not supported; `render()` throws an error that says so.
 - Each pixel samples the scene many times. On weak GPUs lower `resolutionScale` or raise `strokeSize`.
 - Transparent objects are painted with whatever is behind them in the depth buffer.
-- BakedDebris strokes (`createStrokes`) keep the oil look with every brush.
 
 ## Example
 

@@ -118,9 +118,26 @@ painter.overlayScene.add(boom.createStrokes({ painter }));
 
 Flying pieces are then drawn as brush strokes on top of the painting, stretched along their screen velocity: long sweeps when fast, short strokes when hovering. "Flying" means every piece that has been launched: a piece that has landed stays a stroke (lying flat, because it does not move), and `boom.stats.flying` counts all of them. The scene depth from the painter hides strokes behind buildings. While strokes are on, flying cubes are hidden; pieces still in place stay cubes and are painted with the scene. `boom.removeStrokes()` switches back.
 
-`createStrokes` options: `strokeScale` (1.25), `maxWidth` in CSS pixels (34), `jitter` (0.16), `lookAhead` (−0.03 s: the stroke points from where the piece was a moment ago; use a positive value when you play the clock backwards), `keep` (1: the share of flying pieces drawn as strokes; each piece's choice is fixed, so nothing flickers. With large strokes, a lower `keep` saves overdraw. Change it live with `strokes.material.uniforms.uKeep.value`).
+The strokes take their look from the painter's brush. With the default brush they are oil strokes. With `pointillist()` they are round dabs: one piece is one dab of one pigment, a little longer when it is fast. When you set `painter.brush` later, the strokes follow on the next frame. A brush you have used before does not compile again.
 
-To give your own effects (fire, sparks) the same brush look, import the stroke fragment shader: `import { strokeFragment } from 'baked-debris'`. The GLSL pieces and patch functions are also available as `baked-debris/shaders`; that entry is lower-level and may change between versions.
+`createStrokes` options: `brush` (a PainterlyPass brush; default: the painter's current brush, followed when it changes), `strokeScale` (1.25), `maxWidth` in CSS pixels (34), `jitter` (0.16), `lookAhead` (−0.03 s: the stroke points from where the piece was a moment ago; use a positive value when you play the clock backwards), `keep` (1: the share of flying pieces drawn as strokes; each piece's choice is fixed, so nothing flickers. With large strokes, a lower `keep` saves overdraw. Change it live with `strokes.material.uniforms.uKeep.value`).
+
+To give your own effects (fire, sparks) the same oil look, import the stroke fragment shader: `import { strokeFragment } from 'baked-debris'`. The GLSL pieces and patch functions are also available as `baked-debris/shaders`; that entry is lower-level and may change between versions.
+
+### Your own stroke look
+
+A brush gives strokes their look with a `flying` part: `{ flying: { vertex, fragment }, uniforms }`. A brush without `flying` gets the oil stroke. The two strings are GLSL:
+
+| Part | Function | Meaning |
+|---|---|---|
+| `vertex` | `float strokeStretch(float spd)` | Length / width of the stroke. `spd` is the screen speed in pixels per second. |
+| `fragment` | `bool strokeMark(vec2 q, float seed, out float w)` | `q` = (along, across) the stroke, each −1..1; +x is the direction of travel. Return false outside the mark. `w` is passed on to `strokeShade`. |
+| `fragment` | `vec3 strokePalette(vec3 c, float r)` | Colour of the mark from the piece colour `c`. `r` is random per piece. |
+| `fragment` | `vec3 strokeShade(vec3 col, vec2 q, float seed, float w)` | Relief of the mark. |
+
+The fragment part can use `h1`, `lum`, `uJitter` and the brush's `uniforms`, which the stroke material shares. `seed` and `r` are interpolated and differ a little from pixel to pixel. For a yes/no choice per piece, declare `flat varying float vPiece;` in the fragment part and read that: it is the same seed, exact on every pixel.
+
+`oilStroke` in `baked-debris/shaders` is the built-in look and the reference. `strokeShaders(look)` from the same entry returns the complete `{ vertex, fragment }` shaders for a look, for effects that should match it; an effect with its own vertex shader must write `vPiece` if the look reads it.
 
 ## Displace hook
 
@@ -181,7 +198,7 @@ boom.setDisplace(null);           // remove; or pass a new { glsl, uniforms } (r
 
 ## Example
 
-`examples/explode.html` — two voxel towers, three bursts, a wall to bounce off. It imports PainterlyPass from `../../painterly-pass/src/`, so serve the repository root: `python3 -m http.server` and open `/packages/baked-debris/examples/explode.html`.
+`examples/explode.html` — two voxel towers, three bursts, a wall to bounce off. It imports PainterlyPass from `../../painterly-pass/src/`, so serve the repository root: `python3 -m http.server` and open `/packages/baked-debris/examples/explode.html`. With the painting on, press B to switch brushes; the flying pieces change with it.
 
 ## License
 

@@ -2,6 +2,7 @@
 // Every piece's state is a pure function of uTime, so any moment can be shown directly.
 
 const DISPLACE_MARK = '/* baked-debris: displace hook */';
+const STROKE_MARK = '/* baked-debris: stroke look */';
 
 export const debrisState = /* glsl */`
 attribute float aIndex;   // the piece's row in the segment texture
@@ -137,8 +138,46 @@ export function patchDepth(material, hideFlyingU, key = 'baked-debris-depth') {
   material.customProgramCacheKey = () => key + '|' + hook().hash;
 }
 
+// The look of a flying stroke is GLSL in two parts, so a brush can replace it (createStrokes({ brush })):
+//   vertex:    float strokeStretch(float spd)     length / width of the quad; spd = screen speed in pixels per second
+//   fragment:  bool strokeMark(vec2 q, float seed, out float w)
+//                                                 q = (along, across) the quad, each -1..1, +x = direction of travel;
+//                                                 false = outside the mark; w = any value, passed on to strokeShade
+//              vec3 strokePalette(vec3 c, float r)   colour of the mark; c = piece colour, r = random per piece
+//              vec3 strokeShade(vec3 col, vec2 q, float seed, float w)   relief of the mark
+// The fragment part can use h1, lum, the uniform uJitter and the brush's own uniforms.
+// seed and r are interpolated, so they differ a little from pixel to pixel: fine for smooth variation. A look that
+// makes yes/no choices per piece declares "flat varying float vPiece;" and reads that instead (0..1, exact).
+// oilStroke is the built-in look: an oil stroke with a full head and a thin tail.
+export const oilStroke = {
+  vertex: /* glsl */`
+float strokeStretch(float spd) { return 2.2 + min(spd * 0.004, 5.0); }   // fast = long sweep, hovering = short stroke`,
+  fragment: /* glsl */`
+vec3 strokePalette(vec3 c, float r) {
+  float L = lum(c);
+  c = mix(vec3(L), c, 1.35);
+  c = mix(c, c * vec3(0.78, 0.80, 1.25) + vec3(0.02, 0.0, 0.05), pow(1.0 - L, 2.0) * 0.55);
+  c = mix(c, c * vec3(1.08, 0.98, 0.80) + vec3(0.06, 0.04, 0.0), smoothstep(0.45, 1.0, L) * 0.6);
+  c += (vec3(h1(vec2(r, 1.0)), h1(vec2(r, 2.0)), h1(vec2(r, 3.0))) - 0.5) * uJitter;   // broken colour
+  return max(c, 0.0);
+}
+bool strokeMark(vec2 q, float seed, out float w) {
+  float u = q.x, v = q.y;
+  float rag = (h1(vec2(floor(v * 6.0), seed * 37.0)) - 0.5) * 0.35;
+  w = sqrt(max(0.0, 1.0 - u * u)) * (0.55 + 0.45 * (u * 0.5 + 0.5));   // half-width here: full head, thin tail
+  if (abs(v) > w * (0.82 + 0.18 * h1(vec2(floor(u * 14.0), seed * 7.0))) || u < -0.85 + rag || u > 0.95 + rag * 0.3) return false;
+  return !(h1(vec2(floor(u * 10.0), floor(v * 6.0) + seed * 13.0)) < 0.06 && u < 0.4);   // dry-brush gaps
+}
+vec3 strokeShade(vec3 col, vec2 q, float seed, float w) {
+  float u = q.x, v = q.y;
+  col *= (1.0 + 0.14 * (1.0 - abs(v) / max(w, 1e-3))) * (0.9 + 0.1 * sin(v * 24.0 + seed * 6.283));
+  col *= (0.92 + 0.08 * smoothstep(-0.9, 0.2, u)) * (0.88 + 0.22 * seed);
+  return col;
+}`,
+};
+
 // Flying pieces as brush strokes: a camera-facing quad stretched along the piece's screen velocity.
-export const strokeVertex = /* glsl */`
+const strokeVertexSrc = /* glsl */`
 ${debrisState}
 uniform vec2 uRes;          // output size in device pixels
 uniform float uPixK;        // pixels per world unit at distance 1
@@ -147,7 +186,9 @@ uniform float uMaxWidth;    // device pixels
 uniform float uLookAhead;   // seconds to the second sample that sets the stroke direction (< 0 = back in time)
 uniform float uKeep;        // share of flying pieces drawn; the choice per piece is fixed by its index
 varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+flat varying float vPiece;   // vSeed without interpolation: the same bits on every pixel of the piece
 float keepHash(float i) { float h = fract(i * 0.1031); h *= h + 33.33; h *= h + h; return fract(h); }
+${STROKE_MARK}
 void main() {
   vec3 P0; float a0; float s0; float t0; debrisState(P0, a0, s0, t0);
   bool show = s0 > 0.0 && aStart < 1.0e8 && (aKind > 0.5 || t0 > 0.0) && keepHash(aIndex) < uKeep;
@@ -156,18 +197,18 @@ void main() {
   if (!show || c0.w <= 0.1 || c1.w <= 0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec2 dv = (c0.xy / c0.w - c1.xy / c1.w) * 0.5 * uRes;
   float spd = length(dv) / max(abs(uLookAhead), 1e-4);              // pixels per second
-  vSeed = fract(sin(aIndex * 12.9898) * 43758.5453);
+  vSeed = fract(sin(aIndex * 12.9898) * 43758.5453); vPiece = vSeed;
   vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed * 6.283), sin(vSeed * 6.283));
   float tw = 0.35 * sin(a0);                                        // a gentle curl instead of 3D tumbling
   dir = vec2(dir.x * cos(tw) - dir.y * sin(tw), dir.x * sin(tw) + dir.y * cos(tw));
   float wid = clamp(s0 * uPixK / c0.w * uStrokeScale, 1.5, uMaxWidth);
-  float len = wid * (2.2 + min(spd * 0.004, 5.0));                   // fast = long sweep, hovering = short stroke
+  float len = wid * strokeStretch(spd);
   vec2 off = dir * position.x * len + vec2(-dir.y, dir.x) * position.y * wid;
   gl_Position = c0 + vec4(off / (0.5 * uRes) * c0.w, 0.0, 0.0);
   vQ = position.xy * 2.0; vCol = aColor; vGlow = debrisGlow();
 }`;
 
-export const strokeFragment = /* glsl */`
+const strokeFragmentSrc = /* glsl */`
 uniform sampler2D tDepth;   // scene depth from PainterlyPass (any resolution)
 uniform bool uUseDepth;
 uniform vec2 uRes;
@@ -177,25 +218,25 @@ uniform float uJitter;
 varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
 float h1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
-vec3 palette(vec3 c, float r) {
-  float L = lum(c);
-  c = mix(vec3(L), c, 1.35);
-  c = mix(c, c * vec3(0.78, 0.80, 1.25) + vec3(0.02, 0.0, 0.05), pow(1.0 - L, 2.0) * 0.55);
-  c = mix(c, c * vec3(1.08, 0.98, 0.80) + vec3(0.06, 0.04, 0.0), smoothstep(0.45, 1.0, L) * 0.6);
-  c += (vec3(h1(vec2(r, 1.0)), h1(vec2(r, 2.0)), h1(vec2(r, 3.0))) - 0.5) * uJitter;   // broken colour
-  return max(c, 0.0);
-}
+${STROKE_MARK}
 void main() {
-  float u = vQ.x, v = vQ.y;                     // u: along the stroke (+ = direction of travel), v: across
-  float rag = (h1(vec2(floor(v * 6.0), vSeed * 37.0)) - 0.5) * 0.35;
-  float hw = sqrt(max(0.0, 1.0 - u * u)) * (0.55 + 0.45 * (u * 0.5 + 0.5));   // full head, thin tail
-  if (abs(v) > hw * (0.82 + 0.18 * h1(vec2(floor(u * 14.0), vSeed * 7.0))) || u < -0.85 + rag || u > 0.95 + rag * 0.3) discard;
-  if (h1(vec2(floor(u * 10.0), floor(v * 6.0) + vSeed * 13.0)) < 0.06 && u < 0.4) discard;   // dry-brush gaps
+  float w;                                      // vQ.x: along the stroke (+ = direction of travel), vQ.y: across
+  if (!strokeMark(vQ, vSeed, w)) discard;
   if (uUseDepth && gl_FragCoord.z > texture2D(tDepth, gl_FragCoord.xy / uRes).x + 1e-5) discard;   // behind the scene
-  vec3 col = palette(vCol * uBright * uTint, vSeed * 100.0);
+  vec3 col = strokePalette(vCol * uBright * uTint, vSeed * 100.0);
   col = mix(col, vec3(2.4, 1.3, 0.45), 0.9 * vGlow);
-  col *= (1.0 + 0.14 * (1.0 - abs(v) / max(hw, 1e-3))) * (0.9 + 0.1 * sin(v * 24.0 + vSeed * 6.283));
-  col *= (0.92 + 0.08 * smoothstep(-0.9, 0.2, u)) * (0.88 + 0.22 * vSeed);
+  col = strokeShade(col, vQ, vSeed, w);
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   #include <colorspace_fragment>
 }`;
+
+/** The stroke shaders for one look ({ vertex, fragment }, default oilStroke). The vertex shader still holds the displace hook mark. */
+export function strokeShaders(look = oilStroke) {
+  if (typeof look?.vertex !== 'string' || typeof look?.fragment !== 'string') throw new Error('BakedDebris: a stroke look needs vertex and fragment (GLSL strings)');
+  return {
+    vertex: mustReplace(strokeVertexSrc, STROKE_MARK, look.vertex, 'strokeVertex'),
+    fragment: mustReplace(strokeFragmentSrc, STROKE_MARK, look.fragment, 'strokeFragment'),
+  };
+}
+// the oil look, complete: strokeFragment also suits your own effects (fire, sparks) that should match the debris
+export const { vertex: strokeVertex, fragment: strokeFragment } = strokeShaders();

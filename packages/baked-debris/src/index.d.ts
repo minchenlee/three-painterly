@@ -127,9 +127,26 @@ export interface DebrisStats {
   secondary: number;
 }
 
+/** The look of a flying stroke: GLSL for the stroke shaders. See oilStroke in baked-debris/shaders for the functions to define. */
+export interface StrokeLook {
+  /** Defines float strokeStretch(float spd). */
+  vertex: string;
+  /** Defines strokePalette, strokeMark and strokeShade. */
+  fragment: string;
+}
+/** A PainterlyPass brush, as far as strokes use it. */
+export interface StrokeBrush {
+  /** Without it, strokes are oil strokes. */
+  flying?: StrokeLook;
+  /** Shared with the stroke material when the brush has a flying part. */
+  uniforms?: Record<string, IUniform>;
+}
+
 export interface CreateStrokesOptions {
-  /** A PainterlyPass: its scene depth hides strokes behind buildings. */
-  painter?: { sceneTarget: { depthTexture?: unknown } | null } | null;
+  /** A PainterlyPass: its scene depth hides strokes behind buildings, and strokes follow its brush. */
+  painter?: { sceneTarget: { depthTexture?: unknown } | null; brush?: StrokeBrush | null } | null;
+  /** The brush whose flying part is the look of the strokes. Default: the painter's current brush, also after it changes. */
+  brush?: StrokeBrush | null;
   /** Default 1.25. */
   strokeScale?: number;
   /** CSS pixels. Default 34. */

@@ -4,7 +4,7 @@ import {
   Color, ShaderMaterial, Vector2,
 } from 'three';
 import { launchPieces, addSecondary, simulate, mulberry32, validateOptions } from './bake.js';
-import { patchCube, patchDepth, strokeVertex, strokeFragment, withDisplace } from './shaders.js';
+import { patchCube, patchDepth, withDisplace, strokeShaders } from './shaders.js';
 
 const MAX_BURSTS = 32;   // must match MAX_BURSTS in shaders.js
 // uniforms of the stroke material, besides the debris uniforms; hook uniforms must not reuse these names
@@ -171,14 +171,14 @@ export class BakedDebris {
   setDisplace(h) {
     validateOptions(Object.assign({}, this.o, { displace: h }));
     const old = this._displace.names, names = h?.uniforms ? Object.keys(h.uniforms) : [];
-    for (const k of names) if ((k in this.uniforms && !old.includes(k)) || STROKE_UNIFORMS.includes(k))
+    for (const k of names) if ((k in this.uniforms && !old.includes(k)) || STROKE_UNIFORMS.includes(k) || this._stroke?.names.includes(k))
       throw new Error(`BakedDebris: displace uniform "${k}" clashes with a built-in uniform; rename it`);
     for (const k of old) { delete this.uniforms[k]; if (this.strokes) delete this.strokes.material.uniforms[k]; }
     for (const k of names) { this.uniforms[k] = h.uniforms[k]; if (this.strokes) this.strokes.material.uniforms[k] = h.uniforms[k]; }
     Object.assign(this._displace, { glsl: h ? h.glsl : null, hash: h ? hashString(h.glsl) : '0', names });
     this.o.displace = h ?? null;
     for (const m of [this.mesh.material, this.mesh.customDepthMaterial, this.mesh.customDistanceMaterial]) m.needsUpdate = true;
-    if (this.strokes) { this.strokes.material.vertexShader = withDisplace(strokeVertex, this._displace.glsl); this.strokes.material.needsUpdate = true; }
+    if (this.strokes) { this.strokes.material.vertexShader = withDisplace(this._stroke.vertex, this._displace.glsl); this.strokes.material.needsUpdate = true; }
   }
 
   /** Show the explosion at `t` seconds. Exact for any t, forward or backward. */
@@ -208,8 +208,11 @@ export class BakedDebris {
    * value when the clock runs backwards, so strokes still point the way pieces move on screen.
    * keep: the share of flying pieces drawn as strokes (0..1, default 1). Each piece's choice is fixed, so nothing
    * flickers; with large strokes, a lower keep saves overdraw. Change it later with mesh.material.uniforms.uKeep.value.
+   * brush: a PainterlyPass brush. Its `flying` part ({ vertex, fragment }, see oilStroke in shaders.js) is the look of
+   * the strokes, and its uniforms are shared. Default: the painter's current brush, followed when painter.brush changes.
+   * A brush without a `flying` part, or no brush, gives the oil stroke.
    */
-  createStrokes({ painter = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 } = {}) {
+  createStrokes({ painter = null, brush = null, strokeScale = 1.25, maxWidth = 34, jitter = 0.16, lookAhead = -0.03, keep = 1 } = {}) {
     if (!(keep >= 0 && keep <= 1)) throw new Error(`BakedDebris: createStrokes keep must be between 0 and 1, got ${keep}`);
     this.removeStrokes();                                     // one stroke mesh at a time
     const U = Object.assign({}, this.uniforms, {
@@ -217,11 +220,26 @@ export class BakedDebris {
       uStrokeScale: { value: strokeScale }, uMaxWidth: { value: maxWidth }, uBright: { value: 1 }, uTint: { value: new Color(1, 1, 1) },
       uJitter: { value: jitter }, uLookAhead: { value: lookAhead }, uKeep: { value: keep },
     });
-    const mat = new ShaderMaterial({ uniforms: U, vertexShader: withDisplace(strokeVertex, this._displace.glsl), fragmentShader: strokeFragment, toneMapped: false });
+    const mat = new ShaderMaterial({ uniforms: U, toneMapped: false });
+    // The look of the strokes: the `flying` part of the brush, or the built-in oil stroke. A change compiles one shader.
+    const stroke = { brush: undefined, vertex: '', names: [] };
+    const setLook = b => {
+      const look = b?.flying, names = look && b.uniforms ? Object.keys(b.uniforms) : [];
+      const src = strokeShaders(look ?? undefined);            // throws for a malformed look, before anything changes
+      for (const k of stroke.names) delete U[k];
+      for (const k of names) if (k in U) throw new Error(`BakedDebris: brush uniform "${k}" clashes with a built-in or displace uniform; rename it`);
+      for (const k of names) U[k] = b.uniforms[k];
+      Object.assign(stroke, { brush: b, vertex: src.vertex, names });
+      mat.vertexShader = withDisplace(src.vertex, this._displace.glsl); mat.fragmentShader = src.fragment; mat.needsUpdate = true;
+    };
+    setLook(brush ?? painter?.brush ?? null);
+    this._stroke = stroke;
     const mesh = new Mesh(this._buildStrokeGeo(), mat);
     mesh.frustumCulled = false;
     const size = new Vector2();
-    mesh.onBeforeRender = (renderer, scene, camera) => {     // keep screen size, depth and pixel scale current
+    mesh.onBeforeRender = (renderer, scene, camera) => {     // keep the look, screen size, depth and pixel scale current
+      const b = brush ?? painter?.brush ?? null;
+      if (b !== stroke.brush) setLook(b);
       renderer.getDrawingBufferSize(size);
       const target = renderer.getRenderTarget();
       if (target) size.set(target.width, target.height);
@@ -240,7 +258,7 @@ export class BakedDebris {
   removeStrokes() {
     if (!this.strokes) return;
     this.strokes.parent?.remove(this.strokes); this.strokes.geometry.dispose(); this.strokes.material.dispose();
-    this.strokes = null; this._hideFlying.value = 0; this._syncCounts();
+    this.strokes = null; this._stroke = null; this._hideFlying.value = 0; this._syncCounts();
   }
 
   dispose() {

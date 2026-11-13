@@ -1,7 +1,7 @@
 // Type check of the hand-written .d.ts files (npm run typecheck). Never run; it only has to compile.
 import { Scene, PerspectiveCamera, Vector3, MeshStandardMaterial, Mesh, BoxGeometry } from 'three';
 import { BakedDebris, voxelCollider, boxCollider, anyCollider, strokeFragment, meshToPieces, type DebrisStats } from 'baked-debris';
-import { withDisplace, patchCube, strokeFragment as rawStroke } from 'baked-debris/shaders';
+import { withDisplace, patchCube, strokeFragment as rawStroke, oilStroke, strokeShaders } from 'baked-debris/shaders';
 import { PainterlyPass, impressionist, pointillist, type PainterlyBrush } from 'painterly-pass';
 
 const scene = new Scene(), camera = new PerspectiveCamera(50, 1, 0.1, 100);
@@ -33,6 +33,13 @@ boom.setTime(1.5);
 const stats: DebrisStats = boom.rebake({ restitution: 0.5 });
 painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, keep: 0.5 }));
 boom.setDisplace(null);
+painter.overlayScene.add(boom.createStrokes({ painter, brush: pointillist() }));   // a PainterlyPass and its brushes fit createStrokes
+boom.createStrokes({ brush: { flying: oilStroke, uniforms: { uMine: { value: 1 } } } });
+boom.createStrokes({ brush: mine });
+const fire: string = strokeShaders(pointillist().flying).fragment + withDisplace(strokeShaders().vertex, null);
+void fire;
+// @ts-expect-error: a look needs both parts
+boom.createStrokes({ brush: { flying: { vertex: '' } } });
 const s: string = strokeFragment;
 void stats; void s;
 

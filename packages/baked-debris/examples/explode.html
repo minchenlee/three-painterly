@@ -21,6 +21,7 @@
   <div class="row"><button id="play">Play</button><button id="rev">Rewind</button><button id="zero">0</button></div>
   <label><span><input type="checkbox" id="warp"> Bullet time</span></label>
   <label><span><input type="checkbox" id="paint"> Painterly + brush-stroke debris</span></label>
+  <label>Brush <span style="color:#889">(B)</span><select id="brush"><option value="impressionist">Impressionist oil</option><option value="pointillist">Pointillist dabs</option></select></label>
   <label><span><input type="checkbox" id="swirl"> Swirl (displace hook)</span></label>
   <label>Bounce <output id="bOut">0.35</output><input type="range" id="bounce" min="0" max="75" value="35"></label>
   <label>Secondary blasts <output id="sOut">0%</output><input type="range" id="sec" min="0" max="60" value="0"></label>
@@ -37,7 +38,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BakedDebris, boxCollider, anyCollider } from '../src/index.js';
-import { PainterlyPass } from '../../painterly-pass/src/index.js';
+import { PainterlyPass, impressionist, pointillist } from '../../painterly-pass/src/index.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -102,6 +103,9 @@ function setPaint(on) {
   if (on && !strokes) { strokes = boom.createStrokes({ painter }); painter.overlayScene.add(strokes); }
   if (!on && strokes) { boom.removeStrokes(); strokes = null; }
 }
+// the strokes follow painter.brush, so a new brush changes the painting and the flying pieces together
+const brushes = { impressionist: impressionist(), pointillist: pointillist() };
+function setBrush(name) { painter.brush = brushes[name]; document.getElementById('brush').value = name; }
 
 const T_END = 12, play = { t: 0, dir: 0 };
 const $ = id => document.getElementById(id);
@@ -112,6 +116,8 @@ $('rev').onclick = () => { if (play.t <= 0) play.t = T_END; play.dir = play.dir 
 $('zero').onclick = () => { play.t = 0; play.dir = 0; sync(); };
 $('warp').onchange = e => boom.setTimeWarp(e.target.checked ? { burst: 0.3, hover: 1 / 25 } : null);
 $('paint').onchange = e => setPaint(e.target.checked);
+$('brush').onchange = e => setBrush(e.target.value);
+addEventListener('keydown', e => { if (e.code === 'KeyB') setBrush(painter.brush === brushes.pointillist ? 'impressionist' : 'pointillist'); });
 // displace hook: a GPU swirl on top of the bake. The angle stops growing when a piece comes to rest, so resting
 // pieces stay put; y is untouched, so pieces stay on the floor (the bake does not know the swirl, walls can be crossed).
 const swirl = {
@@ -144,7 +150,7 @@ renderer.setAnimationLoop(now => {
   controls.update();
   if (strokes) painter.render(renderer); else renderer.render(scene, camera);
 });
-window.__ex = { boom, play, setPaint, camera, controls, sync, swirl };
+window.__ex = { boom, play, setPaint, setBrush, painter, camera, controls, sync, swirl };
 </script>
 </body>
 </html>

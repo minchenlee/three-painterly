@@ -5,8 +5,8 @@ import { createModel as newModel } from './voxels.js';
 
 /** Add the colours these builders use: peoplePalette(palette.def). */
 export function peoplePalette(def) {
-  def('SKIN SKIN2 HAIR HAIRLT BLACK COAT GREY GREYLT', 0xe8c4a2, 0xd9ae8a, 0x4a3426, 0x9a6a3c, 0x1f1c24, 0x2b2a3c, 0x7c7f8c, 0xb9bcc6);
-  def('NAVY VIOLET PLUMD ROSE RED ORANGE OCHRE CREAMW WHITEW', 0x2c3a66, 0x5a4a8a, 0x3c2f55, 0xd98aa6, 0xc8392e, 0xe07a2c, 0xcfa24a, 0xefe6cf, 0xf6f3ea);
+  def('SKIN SKIN2 HAIR HAIRLT BLACK COAT GREY GREYLT', 0xe8c4a2, 0xd9ae8a, 0x4a3426, 0x9a6a3c, 0x2b2738, 0x3a3658, 0x8a8a9a, 0xc2c2cc);
+  def('NAVY VIOLET PLUMD ROSE RED ORANGE OCHRE CREAMW WHITEW', 0x36457c, 0x6c5c9a, 0x4b3d6c, 0xd993ab, 0xcc4a34, 0xe0823a, 0xcfa656, 0xefe6cf, 0xf6f3ea);
   def('BLUE SKYBLUE GREEND BROWN TAN BRASS WOODB SAIL SMOKE', 0x3f6fb8, 0x8fb4dc, 0x3f6a48, 0x6a4a33, 0xc59a66, 0xd8b23a, 0x7a5a3c, 0xf4f0e4, 0x9a9aa2);
 }
 

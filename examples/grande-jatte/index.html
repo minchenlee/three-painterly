@@ -73,11 +73,11 @@ html[data-ui-hidden] #liteNote { display: none !important; }
 <div id="ui">
   <header>
     <h1>Sunday Afternoon</h1>
-    <p>Georges Seurat's <i>A Sunday on La Grande Jatte</i> (1884–86) paints itself, dab by dab, then lets you walk in. Move close to see the dots.</p>
+    <p>Georges Seurat's <i>A Sunday on La Grande Jatte</i> (1884–86) paints itself, dab by dab, sheet after sheet of dabs from the left, then lets you walk in. Move close to see the dots.</p>
   </header>
 
   <div class="grp">
-    <div class="lab"><span>Time</span><output id="tOut">0.0 / 40.0 s</output></div>
+    <div class="lab"><span>Time</span><output id="tOut">0.0 / 32.0 s</output></div>
     <input type="range" id="time" min="0" max="1000" value="0" aria-label="Time">
     <div class="row">
       <button type="button" id="bStart" title="Back to the blank canvas" aria-label="Back to the blank canvas">⏮</button>
@@ -113,12 +113,12 @@ html[data-ui-hidden] #liteNote { display: none !important; }
     <details id="more" open>
       <summary>Brush</summary>
       <div class="grp">
-        <div class="lab"><span>Dot size on the canvas</span><output id="wOut">3.0 cm</output></div>
-        <input type="range" id="world" min="0" max="8" step="0.5" value="3" aria-label="Dot size on the canvas">
-        <div class="lab"><span>Dab size from afar</span><output id="szOut">5 px</output></div>
-        <input type="range" id="size" min="3" max="14" step="1" value="5" aria-label="Dab size from afar">
-        <div class="lab"><span>Pigment purity</span><output id="puOut">0.80</output></div>
-        <input type="range" id="purity" min="0" max="1" step="0.05" value="0.8" aria-label="Pigment purity">
+        <div class="lab"><span>Dot size on the canvas</span><output id="wOut">2.0 cm</output></div>
+        <input type="range" id="world" min="0" max="8" step="0.5" value="2" aria-label="Dot size on the canvas">
+        <div class="lab"><span>Dab size from afar</span><output id="szOut">4 px</output></div>
+        <input type="range" id="size" min="3" max="14" step="1" value="4" aria-label="Dab size from afar">
+        <div class="lab"><span>Pigment purity</span><output id="puOut">0.70</output></div>
+        <input type="range" id="purity" min="0" max="1" step="0.05" value="0.7" aria-label="Pigment purity">
       </div>
     </details>
   </div>
@@ -149,24 +149,35 @@ $('liteNote').hidden = !LITE;
 const NARROW = innerWidth <= 600, PORTRAIT = innerWidth / innerHeight < 0.8;
 $('more').open = !NARROW;
 // The picture is built by T_BUILD; then the camera leaves Seurat's viewpoint and the scene turns out to have depth.
-const T_BUILD = 31, T_END = 40, FLIGHT = 1.5;
+const T_BUILD = 23, T_END = 32, FLIGHT = 6;
+// Everything arrives from the left of the picture. sweep(x, z) is where a point sits across Seurat's frame: 0 = left edge, 1 = right edge.
+const EYE = [0.8, 1.7, 9.6];
+const sweep = (x, z) => Math.min(1, Math.max(0, 0.5 + (x - EYE[0]) / Math.max(EYE[2] - z, 1) / 1.4));
+const SWEEP_GLSL = `float sweepU(vec3 p) { return clamp(0.5 + (p.x - ${EYE[0].toFixed(1)}) / max(${EYE[2].toFixed(1)} - p.z, 1.0) / 1.4, 0.0, 1.0); }`;
+// The sheets: [first landing at the left edge, seconds for the landing to cross the picture]. A dab flies for FLIGHT seconds, twice as
+// long as the crossing, so a whole sheet is in the air at once: the picture slides in from the left, stretched and loose, and tightens into place.
+// First the ground: sky, river and lawn. Then trees and boats; far and middle figures; the middle group; the foreground.
+const GROUND = [3.6, 3.0], SHEETS = [[7.4, 3.0], [11.2, 3.0], [14.6, 3.0], [18.0, 3.0]];
 const rnd = mulberry32(1884), R = (a, b) => a + (b - a) * rnd();
 
 /* ---------- palette, people, trees (../lib) ---------- */
 const palette = createPalette(), { C, def } = palette;
 peoplePalette(def);
-def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0x6a5a66, 0x7a6872, 0x3f7a3c, 0x4f8f45, 0x35683a, 0x6aa24e, 0x86b455);
-const people = createPeople(C, LITE ? 1 : 2), far = createPeople(C, 1);   // far figures and boats need no fine detail
+def('TRUNK TRUNK2 LEAF1 LEAF2 LEAF3 LEAF4 LEAF5', 0x6f6270, 0x7f7078, 0x4a6e3c, 0x5c7f42, 0x3f5f3a, 0x748f48, 0x8c9c52);
+const people = createPeople(C, LITE ? 1 : 2), far = createPeople(C, 1), hero = createPeople(C, LITE ? 2 : 3);   // far figures and boats need no fine detail; the foreground gets the finest
 // A tree on 20 cm voxels: a trunk that leans a little, three boughs, a lumpy crown.
 function tree(h, r, lean, seed, tr) {                            // h, r in voxels; tr: radius of the trunk
   const m = createModel(1), top = [lean, h, 0], L = [C.LEAF1, C.LEAF2, C.LEAF3, C.LEAF4, C.LEAF5];
   m.line([0, 0, 0], [lean * 0.6, h * 0.6, 0], C.TRUNK, tr); m.line([lean * 0.6, h * 0.6, 0], top, C.TRUNK2, tr * 0.8);
   for (const [dx, dz] of [[0.6, 0.3], [-0.5, 0.5], [0.1, -0.7]]) m.line([lean * 0.6, h * 0.62, 0], [lean + dx * r * 0.6, h + r * 0.15, dz * r * 0.6], C.TRUNK2, tr * 0.6);
-  const cy = h + r * 0.45;
-  for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let c = -r; c <= r; c++) {
-    const d = Math.hypot(a, b * 1.3, c) / r + (h01(a + seed >> 1, b >> 1, c >> 1) - 0.5) * 0.5;
-    if (d <= 1) m.set(lean + a, Math.round(cy) + b, c, L[Math.floor(h01(a >> 1, b + seed, c >> 1) * 5)]);
-  }
+  // the crown: one big mass and four smaller ones around it, lit leaves on top and darker ones below
+  const lumps = [[0, 0.45, 0, 1]];
+  for (let k = 0; k < 4; k++) { const a = k * 1.571 + h01(seed, k) * 1.2; lumps.push([Math.cos(a) * 0.55, 0.25 + h01(seed, k, 1) * 0.45, Math.sin(a) * 0.55, 0.55 + h01(seed, k, 2) * 0.2]); }
+  for (const [lx, ly, lz, lr] of lumps) { const R0 = r * lr, cx = lean + lx * r, cy = Math.round(h + ly * r), cz = lz * r;
+    for (let a = -R0; a <= R0; a++) for (let b = -R0; b <= R0; b++) for (let c = -R0; c <= R0; c++) {
+      const d = Math.hypot(a, b * 1.35, c) / R0 + (h01(a + seed >> 1, b >> 1, c >> 1) - 0.5) * 0.4;
+      if (d <= 1) m.set(Math.round(cx + a), cy + b, Math.round(cz + c), L[Math.min(4, Math.max(0, Math.floor(h01(a >> 1, b + seed, c >> 1) * 3 + (b / R0 + 1) * 1.2)))]);
+    } }
   return m;
 }
 const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C.OCHRE], [4, 5, -1, C.ROSE], [3, 5, 1, C.WHITEW], [4, 3, 0, C.GREEND]]) m.set(x, y, z, c); return m; };
@@ -175,7 +186,8 @@ const bouquet = m => { for (const [x, y, z, c] of [[3, 4, 0, C.RED], [4, 4, 1, C
    The bank runs from the left edge of the picture into the distance; the river is to its left. Back to front, as a painter would work. */
 const bankX = z => -5.0 + 0.079 * z;                             // from the picture: the bank enters at the left edge, half way up, and runs to the horizon
 const cast = [];
-const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, start, dur, size });
+// `start` only picks the sheet a thing belongs to (see SHEETS)
+const add = (model, x, z, turn, start, dur, size = 0.085) => cast.push({ model, x, z, turn, size, sheet: start < 13 ? 0 : start < 17.8 ? 1 : start < 23 ? 2 : 3 });
 // boats
 add(far.sailboat(), -17, -50, 1, 5.0, 1.6, 0.1); add(far.steamer(), -14, -34, 3, 5.6, 2.0, 0.1); add(far.sailboat(), -12.5, -22, 1, 6.4, 1.8, 0.11); add(far.scull(), -9.5, -12, 1, 7.4, 1.6, 0.1);
 // trees: the far rows first, then the ones that frame the picture, last the two behind us that shade the foreground
@@ -199,19 +211,37 @@ add(people.lady({ dress: C.ROSE, bodice: C.RED, bustle: false, hat: 'boater', ha
 add(people.seatedLady({ dress: C.GREYLT, bodice: C.GREY, hatC: C.WHITEW }), -3.0, -3.5, 3, 21.4, 1.2); add(people.seatedLady({ dress: C.PLUMD, bodice: C.COAT, hatC: C.RED, parasol: C.OCHRE }), -3.9, -3.2, 3, 21.8, 1.3);
 add(bouquet(people.seatedLady({ dress: C.ROSE, bodice: C.CREAMW, hat: 'boater', hatC: C.OCHRE })), 1.9, -2.1, 2, 22.4, 1.3);
 // the foreground, in the shade
-add(people.seatedGent({ coat: C.GREY, trousers: C.GREYLT, cane: true }), -0.7, 1.0, 2, 23.2, 1.3); add(people.seatedLady({ dress: C.NAVY, bodice: C.COAT, hatC: C.RED, sewing: true }), -1.6, 1.3, 2, 23.8, 1.3);
-add(people.reclining({}), -1.7, 2.7, 2, 24.6, 1.5); add(people.dog({ sniff: true }), 0.2, 4.1, 0, 25.6, 1.0);
-add(people.gent({ cane: true }), 3.0, 4.6, 2, 26.2, 1.8); add(people.lady({ parasol: C.BLACK, hatC: C.BLACK }), 2.3, 5.1, 2, 27.0, 2.2);
-add(people.monkey({}), 1.5, 5.3, 2, 29.0, 0.8); add(people.dog({ c: C.TAN, size: 0.55 }), 1.0, 4.4, 2, 29.5, 0.8);
+add(hero.seatedGent({ coat: C.GREY, trousers: C.GREYLT, cane: true }), -0.7, 1.0, 2, 23.2, 1.3); add(hero.seatedLady({ dress: C.NAVY, bodice: C.COAT, hatC: C.RED, sewing: true }), -1.6, 1.3, 2, 23.8, 1.3);
+add(hero.reclining({}), -1.7, 2.7, 2, 24.6, 1.5); add(hero.dog({ sniff: true }), 0.2, 4.1, 0, 25.6, 1.0);
+add(hero.gent({ cane: true }), 3.0, 4.6, 2, 26.2, 1.8); add(hero.lady({ parasol: C.BLACK, hatC: C.BLACK }), 2.3, 5.1, 2, 27.0, 2.2);
+add(hero.monkey({}), 1.5, 5.3, 2, 29.0, 0.8); add(hero.dog({ c: C.TAN, size: 0.55 }), 1.0, 4.4, 2, 29.5, 0.8);
 
 /* ---------- pieces: every voxel that shows a face. The debris clock runs backwards, so "launch" is the moment a dab arrives ---------- */
 const pieces = [];
 for (const o of cast) {
   const list = modelPieces(o.model, { palette, origin: [o.x, 0, o.z], size: o.size, turn: o.turn });
   let top = 1; for (const p of list) top = Math.max(top, p.cell[1]);
-  for (const p of list) {                                        // from the ground up, a little out of order
-    const arrive = o.start + o.dur * (0.75 * p.cell[1] / top + 0.25 * rnd());
+  const [begin, span] = SHEETS[o.sheet];
+  for (const p of list) {                                        // the sheet crosses the picture; within it a thing fills from the ground up, a little out of order
+    const arrive = begin + span * sweep(p.position[0], p.position[2]) + 0.3 * p.cell[1] / top + 0.5 * rnd();
     pieces.push({ position: p.position, size: p.size, color: p.color, velocity: [0, 0.001, 0], launchTime: T_END - arrive, spin: 0 });
+  }
+}
+
+// The ground sheet: dabs spread evenly over Seurat's frame, each aimed at the spot of sky, river or lawn it covers there.
+// They do not stay: where one lands, the surface under it takes its colour at that moment (see `revealing`), and the dab is hidden.
+{
+  const eye = new THREE.PerspectiveCamera(40, 2.1, 0.1, 600), v = new THREE.Vector3(), col = new THREE.Color();
+  eye.position.set(...EYE); eye.lookAt(0.5, 0.36, -6.4); eye.updateMatrixWorld();
+  const LAWN = [0x9aa84e, 0x86a04a, 0xb4b452, 0x6f9050, 0xa8b060, 0x7c9a58], WATER = [0xb4c9da, 0x9fb9d6, 0xd5dde2, 0xc9c2da], SKY = [0xdfe3df, 0xc5d3e6, 0xeee6d6, 0xd9d0e2], FAR = [0x5f8448, 0x6f9050, 0x7f9a56];
+  for (let i = 0, n = LITE ? 9000 : 22000; i < n; i++) {
+    v.set(R(-1.1, 1.1), R(-1.35, 1.35), 0.5).unproject(eye).sub(eye.position).normalize();
+    let d = v.y < -0.004 ? -EYE[1] / v.y : 1e9, list = SKY;
+    if (d < 104) { const x = EYE[0] + v.x * d, z = EYE[2] + v.z * d; list = x < bankX(z) ? (x < -60 ? FAR : WATER) : LAWN; }
+    else { d = 100; if (EYE[1] + v.y * d < 7) list = FAR; }
+    const pos = [EYE[0] + v.x * d, Math.max(0.05, EYE[1] + v.y * d), EYE[2] + v.z * d], dist = Math.max(EYE[2] - pos[2], 1);
+    const arrive = GROUND[0] + GROUND[1] * sweep(pos[0], pos[2]) + 0.5 * rnd();
+    pieces.push({ position: pos, size: 0.0075 * dist, color: col.set(list[Math.floor(rnd() * list.length)]).offsetHSL(R(-0.02, 0.02), 0, R(-0.05, 0.05)).getHex(), velocity: [0, 0.001, 0], launchTime: T_END - arrive, burst: 0, spin: 0 });
   }
 }
 
@@ -219,21 +249,21 @@ for (const o of cast) {
 const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: !LITE, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 1.5));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.8;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.78;
 const scene = new THREE.Scene();
-const CANVAS = new THREE.Color(0xf1e9d6);
+const CANVAS = new THREE.Color(0xf3ecdb);
 const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 600);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.minDistance = 0.6; controls.maxDistance = 90; controls.maxPolarAngle = Math.PI * 0.495;
-scene.add(new THREE.HemisphereLight(0xd6e6ff, 0xa9b86a, 1.7));   // plenty of sky light: the shade in this picture is full of colour
-const sun = new THREE.DirectionalLight(0xfff1d6, 3.0), sunDir = new THREE.Vector3(0.62, 0.55, 0.35).normalize();   // a late afternoon; two trees behind us shade the foreground
+scene.add(new THREE.HemisphereLight(0xcfdcf8, 0xa9b272, 1.9));   // plenty of sky light: the shade in this picture is full of colour
+const sun = new THREE.DirectionalLight(0xfff0cc, 3.0), sunDir = new THREE.Vector3(0.62, 0.55, 0.35).normalize();   // a late afternoon; two trees behind us shade the foreground
 sun.position.copy(sunDir).multiplyScalar(120).add(new THREE.Vector3(0, 0, -25)); sun.target.position.set(0, 0, -25);
 sun.castShadow = true; sun.shadow.mapSize.setScalar(LITE ? 2048 : 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 10, far: 260 });
 scene.add(sun, sun.target);
 
-// A blank canvas that fills in. Each 25 cm patch of a surface turns from canvas to its colour at its own moment:
-// `delay` is GLSL for the second a spot starts (from wp, its world position), and noise spreads the patches over 1.6 s.
+// A blank canvas that fills in. Each dab-sized patch of a surface turns from canvas to its colour at its own moment:
+// `delay` is GLSL for the second a spot starts (from wp, its world position), and noise spreads the patches over 0.6 s.
 const revealU = { uT: { value: 0 }, uCanvas: { value: CANVAS.clone().multiplyScalar(1.25) } };
 function revealing(mat, delay) {
   mat.onBeforeCompile = sh => {
@@ -246,69 +276,82 @@ function revealing(mat, delay) {
       vWp = (modelMatrix * rwp).xyz;`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vWp; uniform float uT; uniform vec3 uCanvas; float rv = 1.0;
-      float rh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+      float rh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      ${SWEEP_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-      { vec3 wp = vWp; rv = clamp((uT - (${delay}) - rh(floor(wp.xz * 4.0)) * 1.6) * 5.0, 0.0, 1.0); diffuseColor.rgb *= rv; }`)
+      { vec3 wp = vWp; float cell = 0.008 * exp2(floor(log2(max(9.6 - wp.z, 1.0))));   // about one dab wide from Seurat's viewpoint, near or far
+        rv = clamp((uT - (${delay}) - rh(floor(wp.xz / cell)) * 0.6) * 3.0, 0.0, 1.0); diffuseColor.rgb *= rv; }`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uCanvas * (1.0 - rv);');
   };
   mat.customProgramCacheKey = () => 'reveal|' + delay;
   return mat;
 }
-const SWEEP = 'clamp((wp.z + 90.0) / 104.0, 0.0, 1.0)';           // 0 at the horizon, 1 at our feet
+const WASH = `${GROUND[0].toFixed(1)} + ${GROUND[1].toFixed(1)} * sweepU(wp)`;   // a spot takes its colour when the ground sheet lands on it
 {
   // the lawn: the island's bank, receding to the right of the river
   const shape = new THREE.Shape([[bankX(16), -16], [70, -16], [70, 92], [bankX(-92), 92]].map(([x, z]) => new THREE.Vector2(x, z)));
-  const lawn = new THREE.Mesh(new THREE.ShapeGeometry(shape), revealing(new THREE.MeshStandardMaterial({ color: 0x8cab4c, roughness: 1 }), `2.6 + 4.2 * ${SWEEP}`));
+  const lawn = new THREE.Mesh(new THREE.ShapeGeometry(shape), revealing(new THREE.MeshStandardMaterial({ color: 0x8fa64e, roughness: 1 }), `0.2 + ${WASH}`));
   lawn.rotation.x = Math.PI / 2; lawn.scale.y = -1; lawn.receiveShadow = true; scene.add(lawn);   // the shape's y becomes -z
   lawn.material.side = THREE.DoubleSide;
-  const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0x8fb2d6, roughness: 0.35 }), `1.6 + 3.4 * ${SWEEP}`));
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(260, 130), revealing(new THREE.MeshStandardMaterial({ color: 0xb4c9da, roughness: 0.5 }), `0.2 + ${WASH}`));
   river.rotation.x = -Math.PI / 2; river.position.set(-60, -0.3, -38); river.receiveShadow = true; scene.add(river);
-  // the far bank, its white wall and houses, and a line of trees at the horizon: plain boxes, washed in with the rest
-  const list = [], box = (x, y, z, sx, sy, sz, c) => list.push([x, y, z, sx, sy, sz, c]);
-  box(-95, 0.1, -40, 70, 0.9, 130, 0x7c9a4a); box(-60.2, 1.2, -40, 0.6, 1.6, 120, 0xf0ead8);
-  for (let i = 0; i < 26; i++) { const z = -100 + i * 5.2 + R(-1, 1), k = R(0.8, 1.4); box(-66 - R(0, 10), 3.6 * k, z, 5 * k, 6 * k, 5 * k, [0x4f8a45, 0x3f7a3c, 0x5f9a4c][i % 3]); }
-  for (const [z, w, h] of [[-12, 6, 4], [-30, 8, 5], [-52, 5, 4], [-70, 7, 5]]) { box(-64, h / 2 + 0.5, z, w, h, w, 0xf2ecdc); box(-64, h + 1.1, z, w + 0.6, 1.2, w + 0.6, 0xb5553d); }
-  for (let i = 0; i < 30; i++) { const x = -50 + i * 4.2, k = R(0.8, 1.5); box(x, 4 * k, -92 - R(0, 8), 6 * k, 8 * k, 6 * k, [0x4f8a45, 0x3f7a3c, 0x5f9a4c][i % 3]); }
-  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), revealing(new THREE.MeshStandardMaterial({ roughness: 1 }), `1.0 + 3.0 * ${SWEEP}`), list.length);
+  // the far bank: a strip of grass, a white wall, a few houses (boxes) and soft masses of trees (flattened balls), washed in with the rest
+  const boxes = [], balls = [], box = (x, y, z, sx, sy, sz, c) => boxes.push([x, y, z, sx, sy, sz, c]), ball = (x, y, z, sx, sy, sz, c) => balls.push([x, y, z, sx, sy, sz, c]);
+  const GREENS = [0x5f8448, 0x4f7440, 0x6f9050, 0x7f9a56];
+  box(-95, 0.1, -40, 70, 0.9, 130, 0x8a9a52); box(-60.2, 1.0, -40, 0.6, 1.2, 120, 0xf0ead8);
+  for (const [z, w, h] of [[-12, 6, 4], [-30, 8, 5], [-52, 5, 4], [-70, 7, 5]]) { box(-66, h / 2 + 0.5, z, w, h, w, 0xf2ecdc); box(-66, h + 1.0, z, w + 0.6, 1.0, w + 0.6, 0xc0694c); }
+  for (let i = 0; i < 70; i++) { const z = -104 + i * 2.1 + R(-1, 1), k = R(0.7, 1.5); ball(-63 - R(0, 14), 2.6 * k + 1, z, 3.4 * k, 3.0 * k, 3.4 * k, GREENS[i % 4]); }       // along the far bank
+  for (let i = 0; i < 80; i++) { const x = -62 + i * 1.7, k = R(0.8, 1.7); ball(x, 3.0 * k, -96 - R(0, 12), 4.0 * k, 3.6 * k, 4.0 * k, GREENS[(i * 3) % 4]); }          // across the horizon
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S3 = new THREE.Vector3(), col = new THREE.Color();
-  list.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
-  scene.add(inst);
+  for (const [list, geo] of [[boxes, new THREE.BoxGeometry(1, 1, 1)], [balls, new THREE.IcosahedronGeometry(1, 2)]]) {
+    const inst = new THREE.InstancedMesh(geo, revealing(new THREE.MeshStandardMaterial({ roughness: 1 }), `0.2 + ${WASH}`), list.length);
+    list.forEach((b, i) => { inst.setMatrixAt(i, M4.compose(P.set(b[0], b[1], b[2]), Q, S3.set(b[3], b[4], b[5]))); inst.setColorAt(i, col.set(b[6])); });
+    scene.add(inst);
+  }
 }
 // the sky: a dome that writes no depth, so the painter treats it as sky; it washes in first
 const skyU = { uT: revealU.uT, uCanvas: { value: CANVAS } };
 {
-  const g = new THREE.SphereGeometry(400, 32, 16), col = [], p = g.attributes.position, zen = new THREE.Color(0x4f86cc), hor = new THREE.Color(0xbcd8ee), c = new THREE.Color();
-  for (let i = 0; i < p.count; i++) { c.copy(hor).lerp(zen, Math.pow(Math.max(0, p.getY(i) / 400), 0.45)); col.push(c.r, c.g, c.b); }
+  const g = new THREE.SphereGeometry(400, 48, 24), col = [], p = g.attributes.position, zen = new THREE.Color(0x86a9d6), hor = new THREE.Color(0xe9e7d8), c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) { c.copy(hor).lerp(zen, Math.pow(Math.max(0, p.getY(i) / 400), 0.55)); col.push(c.r, c.g, c.b); }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   scene.add(new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, vertexColors: true, uniforms: skyU,
-    vertexShader: 'varying vec3 vC; void main() { vC = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'varying vec3 vC; uniform float uT; uniform vec3 uCanvas; void main() { gl_FragColor = vec4(mix(uCanvas, vC, smoothstep(0.4, 3.2, uT)), 1.0); }' })));
+    vertexShader: 'varying vec3 vC; varying vec3 vP; void main() { vC = color; vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vC; varying vec3 vP; uniform float uT; uniform vec3 uCanvas; ${SWEEP_GLSL}
+      void main() { gl_FragColor = vec4(mix(uCanvas, vC, smoothstep(0.0, 1.0, uT - 0.3 - (${WASH.replace('wp', 'vP')}))), 1.0); }` })));
 }
 
 /* ---------- the dabs: BakedDebris pieces that do not fly by themselves; a displace hook carries each from the palette to its place ---------- */
-const BRUSH = new THREE.Vector3(0.7, 0.35, 9.2);                   // where the dabs leave from: just below Seurat's viewpoint
 const boom = new BakedDebris({
-  pieces, bursts: [], gravity: 0, ground: null, killY: -1e6, duration: 0.2, step: 1 / 30, pieceSize: 0.085,
+  pieces, bursts: [{ position: [0, 0, 0], radius: 0, time: 0 }],   // burst 0 only marks the dabs of the ground sheet
+  gravity: 0, ground: null, killY: -1e6, duration: 0.2, step: 1 / 30, pieceSize: 0.085,
   material: new THREE.MeshStandardMaterial({ roughness: 0.95 }),
-  displace: { uniforms: { uBrush: { value: BRUSH }, uFlight: { value: FLIGHT } },
+  // A dab glides in from beyond the left edge of the picture, along the picture plane, and slows as it lands. Every dab starts the
+  // same distance to the left of its place and none overtakes another, so a sheet in the air is the picture itself: stretched, rippling, loose.
+  displace: { uniforms: { uFlight: { value: FLIGHT } },
     glsl: /* glsl */`
-      uniform vec3 uBrush; uniform float uFlight;
+      uniform float uFlight;
       float bh(float n) { return fract(sin(n) * 43758.5453); }
+      ${SWEEP_GLSL}
       vec3 debrisDisplace(vec3 p, DebrisInfo d) {
-        if (d.local <= 0.0) return vec3(0.0);                      // the clock runs backwards: not launched = it has arrived, and is part of the scene
+        // the clock runs backwards: not launched = it has arrived. It is part of the scene now; a dab of the ground sheet has given its colour to the ground and goes
+        if (d.local <= 0.0) return d.burst > -0.5 ? vec3(0.0, -300.0, 0.0) : vec3(0.0);
         float s = d.local / uFlight, i = d.index;
-        if (s >= 1.0) return vec3(0.0, -300.0, 0.0);               // still on the palette, out of sight
-        vec3 from = uBrush + (vec3(bh(i * 1.3), bh(i * 2.1), bh(i * 3.7)) - 0.5) * vec3(1.6, 0.4, 0.8);
-        vec3 way = from - p;
-        vec3 arc = vec3(sin(i * 7.1), 1.6 + bh(i * 5.9), cos(i * 3.3)) * (0.5 + 0.06 * length(way));   // each dab takes its own curve
-        return way * s * s + arc * sin(3.14159 * s);               // s * s: it slows down as it lands
+        if (s >= 1.0) return vec3(0.0, -300.0, 0.0);               // not on its way yet: out of sight
+        float dist = max(${EYE[2].toFixed(1)} - p.z, 1.0), u = sweepU(p);   // far things travel further in the world, the same on the canvas
+        float h = (p.y - 1.7) / dist;                                      // how high it sits in the picture
+        vec3 off = vec3(-1.15 * 1.4, 0.08, 0.0) * dist * pow(s, 1.2);      // 1.15 picture widths to the left, a little above; it slows as it lands
+        off.x += 0.13 * dist * sin(10.0 * h + 5.0 * s) * s;                // the sheet billows: its leading edge is a wave, not a line
+        off.y += 0.06 * dist * sin(9.0 * s + u * 7.0 + 6.0 * h) * s;       // and ripples like cloth in the wind
+        off.xy += (vec2(bh(i * 1.3), bh(i * 2.1)) - 0.5) * 0.16 * dist * s;   // loose far out, tight as it lands
+        return off;
       }` },
 });
 boom.mesh.frustumCulled = false; scene.add(boom.mesh);
 
 /* ---------- painting ---------- */
-const brushes = { dabs: pointillist({ purity: 0.8, hueSpread: 0.06 }), oil: impressionist() };
-const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 5, saturation: 1.15, exposure: 0.8, shadowAmount: 0.4, minStrokeWorld: 0.03, resolutionScale: LITE ? 0.6 : 0.75 });
+const brushes = { dabs: pointillist({ purity: 0.7, hueSpread: 0.06, trail: 0.7 }), oil: impressionist() };
+const painter = new PainterlyPass(scene, camera, { brush: brushes.dabs, strokeSize: 4, saturation: 1.0, exposure: 0.78, shadowAmount: 0.45, warmth: 0.5, contrast: 1.0, canvas: 0.05, minStrokeWorld: 0.02, resolutionScale: LITE ? 0.6 : 0.9 });
 let look = 'dabs', dirty = 2, shadowDirty = true;
 const markDirty = shadows => { dirty = 2; if (shadows) shadowDirty = true; };
 function setLook(name) {
@@ -316,15 +359,15 @@ function setLook(name) {
   for (const b of $('looks').children) b.setAttribute('aria-pressed', String(b.dataset.look === name));
   if (name === 'cubes') boom.removeStrokes();
   else {
-    painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 1.15 : 1.3;
-    if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, strokeScale: 1.7, maxWidth: 15, jitter: 0.1 }));   // a positive look-ahead: the clock runs backwards
+    painter.brush = brushes[name]; painter.saturation = name === 'dabs' ? 1.0 : 1.2;
+    if (!boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, lookAhead: 0.03, strokeScale: 1.5, maxWidth: 11, jitter: 0.1 }));   // a positive look-ahead: the clock runs backwards
   }
   $('purity').disabled = name !== 'dabs'; markDirty(false);
 }
 
 /* ---------- camera: Seurat's viewpoint while the picture builds, then a slow walk to the side; a drag takes over ---------- */
 const SHOTS = {
-  painting: [[0.8, 1.7, 9.6], [0.5, 0.36, -6.4], 40], walk: [[9.5, 2.6, 8.5], [0.2, 1.2, -3], 42], close: [[0.5, 1.6, 6.5], [2.3, 1.45, 5.1], 30], above: [[16, 24, 22], [-2, 0, -10], 40],
+  painting: [[0.8, 1.7, 9.6], [0.5, 0.36, -6.4], 40], walk: [[9.5, 2.6, 8.5], [0.2, 1.2, -3], 42], close: [[0.1, 1.5, 8.6], [2.7, 1.25, 4.9], 26], above: [[16, 24, 22], [-2, 0, -10], 40],
 };
 if (PORTRAIT) SHOTS.painting = [[1.1, 1.8, 13.5], [1.1, -2.4, -6.4], 48];   // a tall window holds the right half of the picture; it looks down so the figures clear the panel   // a tall window: step back to keep the width of the picture
 let auto = true, shot = 'painting';

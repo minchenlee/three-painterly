@@ -10,7 +10,7 @@ Both packages share one version number until the first public release.
 - `pointillist()` paints round dabs of divided colour: one pigment per dab, mixed only with white. It tests 3×3 cells per pixel at the default dab size.
 - A brush is a plain object (`{ glsl, uniforms, reach, search }`). Writing your own is lower-level and may change.
 - New `anchors` option: `[{ object, min, max }]`. Strokes inside the box of an anchor are laid in the object's own space, so a moving object carries its strokes. Up to 4. Without anchors the shader and its output are unchanged.
-- A brush can carry a `flying` part: the same mark for BakedDebris strokes. `pointillist()` has one (round dabs, one pigment per piece).
+- A brush can carry a `flying` part: the same mark for BakedDebris strokes. `pointillist()` has one: round dabs, one pigment each; a fast piece draws a trail of up to three (`trail` option).
 - Node tests for the brush plumbing (`packages/painterly-pass/test`).
 
 ### baked-debris
@@ -20,6 +20,7 @@ Both packages share one version number until the first public release.
 - Node tests for the stroke look (`test/strokes.test.js`); `test/api.html` compiles a look and switches looks.
 
 ### examples
+- `examples/voxel-paris`: a Brush control in the Paint tab switches between oil strokes and pointillist dabs. The fire follows.
 - `examples/lightspeed-ram`: a cruiser rams a flagship at lightspeed. Both modules, no gravity, a displace hook splits the ship.
 - `examples/balloon-house`: balloons burst through a roof and carry a house off, in pointillist dabs. Balloons are pieces with their own velocity and launch time; bullet time is the drag. A displace hook gathers them into a cluster that follows the house.
 

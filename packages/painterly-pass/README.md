@@ -59,7 +59,7 @@ painter.brush = null;            // back to the default; any brush can be set at
 | Brush | Mark | Colour |
 |---|---|---|
 | `impressionist()` (default) | An oil stroke: an ellipse with a ragged edge, a paint ridge and bristle streaks. | Livelier colour, cool shadows, warm lights, a little unmixed colour per stroke. |
-| `pointillist({ purity, hueSpread, pigments })` | A round dab with an uneven edge. | Divided colour: each dab is one pigment, mixed only with white. The eye mixes the dabs. |
+| `pointillist({ purity, hueSpread, pigments, trail })` | A round dab with an uneven edge. | Divided colour: each dab is one pigment, mixed only with white. The eye mixes the dabs. |
 
 Setting `brush` compiles one shader. Keep one brush object per brush and switch between them, as `examples/basic.html` does.
 
@@ -74,8 +74,9 @@ Each dab picks one pigment from a wheel of `pigments` hues. The hue is the local
 | `purity` | `0.8` | 0 = the scene's own colour, 1 = pure pigment hues. |
 | `hueSpread` | `0.07` | How far dabs stray to neighbouring hues, in turns of the colour wheel. |
 | `pigments` | `12` | Number of pigment hues on the wheel. |
+| `trail` | `2` | BakedDebris strokes only. A fast piece draws a trail of up to three dabs, so its direction shows. This is how far it can stretch, in dab widths. 0 keeps every piece one round dab. |
 
-These three are live in `brush.uniforms`: `brush.uniforms.uPurity.value = 1` (also `uHueSpread`, `uPigments`).
+These are live in `brush.uniforms`: `brush.uniforms.uPurity.value = 1` (also `uHueSpread`, `uPigments`, `uTrail`).
 
 The brush also reads these pass options: `strokeSize` (dab spacing), `strokeWidth` (dab size), `saturation`, `shadowTint` (its hue is the pigment of the shadow dabs), `shadowAmount` (their share in the dark), `warmth` (the share of orange dabs in the light), `colorJitter` (value difference between dabs), `contrast` and `canvas`. It ignores `strokeLength`.
 

@@ -232,6 +232,12 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
   </div>
 
   <div class="grp" data-pane="art" hidden>
+    <div class="row"><span class="lab">Brush</span>
+      <div class="seg" role="group" aria-label="Brush" id="brushSeg">
+        <button type="button" data-brush="oil" aria-pressed="true" title="Impressionist oil strokes">Oil</button>
+        <button type="button" data-brush="dabs" aria-pressed="false" title="Pointillist dabs of pure pigment">Dabs</button>
+      </div>
+    </div>
     <div class="lab"><span>Stroke size</span><output id="strokeOut">7 px</output></div>
     <input type="range" id="stroke" min="3" max="22" step="1" value="7" aria-label="Stroke size">
     <div class="lab"><span>Amount</span><output id="amtOut">100%</output></div>
@@ -255,8 +261,9 @@ kbd { font: 11px var(--font); border: 1px solid var(--line); border-radius: 4px;
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { BakedDebris, voxelCollider, strokeFragment } from '../../packages/baked-debris/src/index.js';   // strokeFragment: reuse the debris brush look for fireballs
-import { PainterlyPass } from '../../packages/painterly-pass/src/index.js';
+import { BakedDebris, voxelCollider } from '../../packages/baked-debris/src/index.js';
+import { strokeShaders } from '../../packages/baked-debris/src/shaders.js';   // the debris stroke look of a brush, reused for fireballs
+import { PainterlyPass, impressionist, pointillist } from '../../packages/painterly-pass/src/index.js';
 
 addEventListener('error', e => { const s = document.getElementById('status'); s.hidden = false; s.textContent = 'Failed to load: ' + (e.message || 'script error'); });   // STR is not defined yet if the script fails to parse
 const $ = id => document.getElementById(id);
@@ -796,6 +803,20 @@ mat.onBeforeCompile = sh => { glowPatch(sh); fogPatch(sh); };
 /* ---------- painterly mode: PainterlyPass + BakedDebris brush strokes ---------- */
 const painter = new PainterlyPass(scene, camera, { strokeSize: 7, saturation: 1.3 });
 const paint = { on: false };
+// Two brushes. The debris strokes follow painter.brush by themselves; the fire strokes are this page's own, so setBrush updates them.
+const BRUSHES = { oil: { brush: impressionist(), saturation: 1.3 }, dabs: { brush: pointillist(), saturation: 1.15 } };
+let brushName = 'oil';
+function applyFireBrush(){
+  if (!fireStrokes) return;
+  const b = BRUSHES[brushName].brush, m = fireStrokes.material, look = strokeShaders(b.flying);
+  if (m.fragmentShader !== look.fragment){ m.fragmentShader = look.fragment; Object.assign(m.uniforms, b.uniforms); m.needsUpdate = true; }
+  m.uniforms.uDab.value = b.flying ? 1 : 0;
+}
+function setBrush(name){
+  brushName = name; painter.brush = BRUSHES[name].brush; painter.saturation = BRUSHES[name].saturation;
+  document.querySelectorAll('#brushSeg button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.brush === name)));
+  applyFireBrush(); markDirty(false);
+}
 function drawFrame(){
   if (!paint.on){ renderer.render(scene, camera); return; }
   painter.exposure = renderer.toneMappingExposure;
@@ -807,7 +828,7 @@ function drawFrame(){
 function setArt(on){ const was = paint.on; paint.on = !!on;
   if (paint.on && !boom.strokes) painter.overlayScene.add(boom.createStrokes({ painter, jitter: 0.16 }));
   if (!paint.on) boom.removeStrokes();
-  if (fire){ if (!fireStrokes){ fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); }
+  if (fire){ if (!fireStrokes){ fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); applyFireBrush(); }
     fire.visible = !paint.on; fireStrokes.visible = paint.on; }
   if (was !== paint.on) setPieces(+$('pieces').value);   // painterly mode uses fewer, larger strokes
   markDirty(false); }
@@ -946,12 +967,13 @@ function makeFireStrokes(){
   g.instanceCount = src.instanceCount;
   const B = boom.uniforms, U = { uTime: B.uTime, uWarp: B.uWarp, uBurstT: B.uBurstT, uHover: B.uHover, uShift: B.uBurstShift,
     tDepth: { value: null }, uUseDepth: { value: false }, uRes: { value: new THREE.Vector2(1, 1) }, uPixK: { value: 500 },
-    uMaxWidth: { value: 34 }, uBright: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uJitter: { value: 0.16 } };
-  const m = new THREE.ShaderMaterial({ uniforms: U, toneMapped: false, fragmentShader: strokeFragment, vertexShader: `
+    uMaxWidth: { value: 34 }, uBright: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uJitter: { value: 0.16 }, uDab: { value: 0 } };
+  const m = new THREE.ShaderMaterial({ uniforms: U, toneMapped: false, fragmentShader: strokeShaders().fragment, vertexShader: `
     attribute vec3 fP; attribute vec3 fV; attribute vec4 fA; attribute vec4 fT; attribute vec3 fCol;
     uniform float uTime; uniform float uWarp; uniform float uBurstT; uniform float uHover; uniform float uShift[32];
-    uniform vec2 uRes; uniform float uPixK; uniform float uMaxWidth;
+    uniform vec2 uRes; uniform float uPixK; uniform float uMaxWidth; uniform float uDab;
     varying vec2 vQ; varying vec3 vCol; varying float vSeed; varying float vGlow;
+    flat varying float vPiece; varying float vTrail;   // read by the pointillist look only
     float fLocal(float off){ float tl = uTime + off - fT.x - uShift[int(fT.w + 0.5)];
       if (uWarp > 0.5 && tl > 0.0) tl = uBurstT*(1.0 - exp(-tl/uBurstT)) + uHover*tl; return tl; }
     vec3 fPos(float tl){ return fP + fV*(1.0 - exp(-1.6*tl))/1.6; }
@@ -963,11 +985,12 @@ function makeFireStrokes(){
       vec4 c0 = VP * vec4(fPos(tl), 1.0), c1 = VP * vec4(fPos(max(fLocal(-0.03), 0.0)), 1.0);
       if (c0.w <= 0.1 || c1.w <= 0.1){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       vec2 dv = (c0.xy/c0.w - c1.xy/c1.w) * 0.5 * uRes; float spd = length(dv) / 0.03;
-      vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+      vSeed = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453); vPiece = vSeed;
       vec2 dir = spd > 6.0 ? dv / length(dv) : vec2(cos(vSeed*6.283), sin(vSeed*6.283));
       float tw = 0.35 * sin(fT.z * tl); dir = vec2(dir.x*cos(tw) - dir.y*sin(tw), dir.x*sin(tw) + dir.y*cos(tw));
       float wid = 0.5 * clamp(sc * uPixK / c0.w * 1.25, 1.5, uMaxWidth);   // thin flicks
-      float len = wid * (2.2 + min(spd * 0.004, 5.0));
+      vTrail = uDab > 0.5 ? 1.0 + min(spd * 0.0035, 2.0) : 2.2 + min(spd * 0.004, 5.0);   // dabs: a short trail; oil: a long flick
+      float len = wid * vTrail;
       vec2 off = dir * position.x * len + vec2(-dir.y, dir.x) * position.y * wid;
       gl_Position = c0 + vec4(off / (0.5 * uRes) * c0.w, 0.0, 0.0);
       vQ = position.xy * 2.0; vCol = fCol / 2.2; vGlow = 0.55 * (1.0 - tl/fT.y);
@@ -1011,7 +1034,7 @@ function rebuildFire(){
   scene.remove(fire); fire.geometry.dispose(); fire.material.dispose();
   if (fireStrokes){ painter.overlayScene.remove(fireStrokes); fireStrokes.geometry.dispose(); fireStrokes.material.dispose(); fireStrokes = null; }
   makeFire(fireRecs());
-  if (paint.on){ fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); fire.visible = false; }
+  if (paint.on){ fireStrokes = makeFireStrokes(); painter.overlayScene.add(fireStrokes); applyFireBrush(); fire.visible = false; }
 }
 // street sections: a disabled section does not blow at all (wall whole, furniture still, no fire, no flash)
 function applySections(){
@@ -1216,6 +1239,7 @@ $('burstT').oninput = () => { burstLen = $('burstT').value/100; $('bOut').textCo
 $('slow').oninput = () => { const d = Math.round(4*Math.pow(50, $('slow').value/100)); hover = 1/d; $('slOut').textContent = `1/${d}`; if (warpOn) setWarp(true); };
 $('slow').dispatchEvent(new Event('input'));
 $('stroke').oninput = () => { $('strokeOut').textContent = `${$('stroke').value} px`; painter.strokeSize = +$('stroke').value; markDirty(false); };
+document.querySelectorAll('#brushSeg button').forEach(b => { b.onclick = () => setBrush(b.dataset.brush); });
 $('amt').oninput = () => { $('amtOut').textContent = `${$('amt').value}%`; painter.amount = $('amt').value/100; markDirty(false); };
 let secTimer = 0;
 $('sec').oninput = () => { secFrac = $('sec').value/100; clearTimeout(secTimer); secTimer = setTimeout(() => setPieces(+$('pieces').value), 150); };
@@ -1279,7 +1303,7 @@ function frame(now){
   }
   requestAnimationFrame(frame);
 }
-window.__vp = { LITE, setSections, sectionNames: STR.sections, burstOf: () => BURSTS.map(b => b.sec),
+window.__vp = { LITE, setBrush, painter, setSections, sectionNames: STR.sections, burstOf: () => BURSTS.map(b => b.sec),
   blastInfo: () => ({ blocks: DEB.blocks.length, blocksOff: DEB.blocks.filter(([b]) => !secOn[BURSTS[b.i].sec]).length,
     fire: fire.geometry.instanceCount, fireOff: DEB.fixed.filter(d => d.kind === 2 && !secOn[BURSTS[d.bi].sec]).length,
     firstT: Math.min(...BURSTS.filter(burstOn).map(burstT)) }),

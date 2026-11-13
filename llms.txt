@@ -74,7 +74,7 @@ Moving objects: strokes are fixed to the world, so an object that moves slides u
 
 Brushes: `import { PainterlyPass, impressionist, pointillist } from 'painterly-pass'`.
 - `impressionist()`: oil strokes, the default. The table above describes it.
-- `pointillist({ purity = 0.8, hueSpread = 0.07, pigments = 12 })`: round dabs of pure pigment hues mixed only with white. Live values: `brush.uniforms.uPurity.value` (also `uHueSpread`, `uPigments`). It reads strokeSize (dab spacing), strokeWidth (dab size), saturation, shadowTint (hue of the shadow dabs), shadowAmount, warmth, colorJitter, contrast, canvas. It ignores strokeLength.
+- `pointillist({ purity = 0.8, hueSpread = 0.07, pigments = 12, trail = 2 })`: round dabs of pure pigment hues mixed only with white. Live values: `brush.uniforms.uPurity.value` (also `uHueSpread`, `uPigments`, `uTrail`). `trail`: a fast BakedDebris piece draws up to three dabs in a row; 0 = always one. It reads strokeSize (dab spacing), strokeWidth (dab size), saturation, shadowTint (hue of the shadow dabs), shadowAmount, warmth, colorJitter, contrast, canvas. It ignores strokeLength.
 - Set at creation (`{ brush: pointillist() }`) or later (`painter.brush = …`; `null` restores the default). Each change compiles one shader: keep one brush object per brush and reuse it.
 - BakedDebris strokes follow the brush: `boom.createStrokes({ painter })` draws oil strokes with `impressionist()` and round dabs with `pointillist()`, and changes with `painter.brush`.
 
@@ -137,7 +137,7 @@ displace: {
 
 `DebrisInfo`: `time` (use it, not uTime), `local` (time since launch, <= 0 = not launched), `kind` (0 piece, 1 fragment), `burst` (-1 = none), `index` (stable per piece), `rest` (local time from which the piece rests).
 
-Oil brush look for your own effects: `import { strokeFragment } from 'baked-debris'`. For another brush: `import { strokeShaders } from 'baked-debris/shaders'; strokeShaders(brush.flying).fragment` (lower-level; your vertex shader must write `flat varying float vPiece` if the look reads it).
+Oil brush look for your own effects: `import { strokeFragment } from 'baked-debris'`. For another brush: `import { strokeShaders } from 'baked-debris/shaders'; strokeShaders(brush.flying).fragment` (lower-level; your vertex shader must write `flat varying float vPiece` and `varying float vTrail` (length / width of the quad) for the pointillist look; see the fire in examples/voxel-paris).
 
 ## Pitfalls
 

@@ -36,6 +36,8 @@ test('pointillist has a flying part for BakedDebris strokes; impressionist leave
   for (const re of [/vec3 strokePalette\(vec3 \w+, float \w+\)/, /bool strokeMark\(vec2 \w+, float \w+, out float \w+\)/, /vec3 strokeShade\(vec3 \w+, vec2 \w+, float \w+, float \w+\)/])
     assert.equal(flying.fragment.match(new RegExp(re, 'g'))?.length, 1, String(re));
   assert.match(flying.fragment, /flat varying float vPiece;/);
+  assert.match(flying.vertex, /varying float vTrail;/); assert.match(flying.fragment, /varying float vTrail;/);
+  assert.equal(pointillist({ trail: 0 }).uniforms.uTrail.value, 0);
   assert.equal(impressionist().flying, undefined);
 });
 

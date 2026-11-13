@@ -57,7 +57,7 @@ python3 -m http.server     # or: npx serve .
 # http://localhost:8000/examples/balloon-house/
 ```
 
-`examples/voxel-paris` is a larger demo that uses both modules: a Paris street corner of about 5 million voxels, where 22 bursts along the street blow out the ground floor and chosen upper floors. Drag the time slider to scrub or rewind, change the time of day, and watch flying pieces turn into brush strokes. It loads three.js from a CDN and builds the city in the browser (a few seconds on first load).
+`examples/voxel-paris` is a larger demo that uses both modules: a Paris street corner of about 5 million voxels, where 22 bursts along the street blow out the ground floor and chosen upper floors. Drag the time slider to scrub or rewind, change the time of day, and watch flying pieces turn into brush strokes. The Paint tab switches between oil strokes and pointillist dabs. It loads three.js from a CDN and builds the city in the browser (a few seconds on first load).
 
 `examples/split-time` shows one building on two clocks: the lower floors fly back together from the rubble while the upper floors blow apart. It uses two BakedDebris bakes and plays one of them backwards.
 

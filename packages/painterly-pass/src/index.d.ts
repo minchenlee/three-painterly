@@ -33,11 +33,13 @@ export interface PointillistOptions {
   hueSpread?: number;
   /** Number of pigment hues on the colour wheel. Default 12. */
   pigments?: number;
+  /** BakedDebris strokes: how far a fast piece stretches into a trail of dabs, in dab widths. 0 = always one round dab. Default 2. */
+  trail?: number;
 }
 
-/** Round dabs of divided colour, on surfaces and for BakedDebris strokes. Its options are live in brush.uniforms (uPurity, uHueSpread, uPigments). */
+/** Round dabs of divided colour, on surfaces and for BakedDebris strokes. Its options are live in brush.uniforms (uPurity, uHueSpread, uPigments, uTrail). */
 export function pointillist(options?: PointillistOptions): PainterlyBrush & {
-  uniforms: { uPurity: IUniform<number>; uHueSpread: IUniform<number>; uPigments: IUniform<number> };
+  uniforms: { uPurity: IUniform<number>; uHueSpread: IUniform<number>; uPigments: IUniform<number>; uTrail: IUniform<number> };
   flying: { vertex: string; fragment: string };
 };
 

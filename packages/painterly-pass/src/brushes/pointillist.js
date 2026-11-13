@@ -74,17 +74,29 @@ vec3 brushFinish(vec3 col, vec2 px) {
 
 // The same dab for BakedDebris pieces in the air (createStrokes): the interface is oilStroke in baked-debris/shaders.
 // One piece is one dab of one pigment, so a wall that blows apart comes apart into its pigments.
+// A round dab shows no direction, so a fast piece draws a short trail: three dabs in a row, smaller towards the tail,
+// each its own pigment. A slow piece draws them on top of each other: one round dab.
 // The palette values are fixed, like those of the oil stroke; uJitter is the jitter option of createStrokes.
 // Pieces carry their unlit colour, which is paler than the lit scene: the palette takes it a little darker and purer.
 const flying = {
   vertex: /* glsl */`
-float strokeStretch(float spd) { return 1.0 + min(spd * 0.0006, 0.35); }   // round; a fast dab is a little longer`,
+uniform float uTrail;
+varying float vTrail;   // length / width of the quad: 1 = one round dab
+float strokeStretch(float spd) { vTrail = 1.0 + min(spd * 0.0035, uTrail); return vTrail; }`,
   fragment: divided + /* glsl */`
-flat varying float vPiece;   // exact per piece: one dab is one pigment, so the choice must not change inside the dab
-vec3 strokePalette(vec3 c, float r) { return dividedColour(c * 0.9, vPiece * 100.0, 1.5, vec3(0.78, 0.80, 1.25), 0.55, 0.6, uJitter); }
+flat varying float vPiece;   // exact per piece: a dab is one pigment, so the choice must not change inside the dab
+varying float vTrail;
+float trailDab = 0.0;        // the dab of the trail this pixel is in: strokeMark sets it, strokePalette reads it
+vec3 strokePalette(vec3 c, float r) { return dividedColour(c * 0.9, vPiece * 100.0 + trailDab * 7.31, 1.5, vec3(0.78, 0.80, 1.25), 0.55, 0.6, uJitter); }
 bool strokeMark(vec2 q, float seed, out float w) {
-  w = dot(q, q) / 0.6 + (h1(floor(q * 5.0) + vPiece * 37.0) - 0.5) * 0.16;   // the uneven edge of the surface dab
-  return w < 1.0;
+  float along = q.x * vTrail;                                  // in dab radii; the head leads
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    vec2 d = vec2(along - (vTrail - 1.0) * (1.0 - fi), q.y) / (0.78 - 0.17 * fi);
+    w = dot(d, d) + (h1(floor(d * 4.0) + vPiece * 37.0 + fi) - 0.5) * 0.16;   // the uneven edge of the surface dab
+    if (w < 1.0) { trailDab = fi; return true; }
+  }
+  return false;
 }
 vec3 strokeShade(vec3 col, vec2 q, float seed, float w) { return col * (1.05 - 0.11 * smoothstep(0.45, 1.0, w)); }`,
 };
@@ -92,21 +104,22 @@ vec3 strokeShade(vec3 col, vec2 q, float seed, float w) { return col * (1.05 - 0
 // Largest dab: radius 0.70 x strokeWidth cells, x 1.22 for the oval, x 1.06 for the uneven edge (about 1.3 in all).
 const reach = pass => 0.70 * 1.3 * pass.strokeWidth;
 
-const defaults = { purity: 0.8, hueSpread: 0.07, pigments: 12 };
+const defaults = { purity: 0.8, hueSpread: 0.07, pigments: 12, trail: 2 };
 
 /**
  * Round dabs of divided colour, after Georges Seurat's and Paul Signac's method.
  * It reads these PainterlyPass options: strokeSize (dab spacing), strokeWidth (dab size), saturation,
  * shadowTint (its hue is the pigment of the shadow dabs), shadowAmount (their share in the shade),
  * warmth (share of orange dabs in the light), colorJitter (value difference between dabs), contrast, canvas.
- * Its own options are live in brush.uniforms: uPurity, uHueSpread, uPigments.
- * BakedDebris strokes made with this brush are round dabs of the same pigments.
+ * Its own options are live in brush.uniforms: uPurity, uHueSpread, uPigments, uTrail.
+ * BakedDebris strokes made with this brush are round dabs of the same pigments. A fast piece draws a trail of up to
+ * three dabs; trail (default 2) is how far it can stretch, in dab widths, and 0 keeps every piece one round dab.
  */
 export function pointillist(options = {}) {
   for (const k in options) if (!Object.prototype.hasOwnProperty.call(defaults, k)) console.warn(`pointillist: unknown option "${k}" ignored`);
   const o = { ...defaults, ...options };
   return {
     name: 'pointillist', glsl, reach, flying,
-    uniforms: { uPurity: { value: o.purity }, uHueSpread: { value: o.hueSpread }, uPigments: { value: o.pigments } },
+    uniforms: { uPurity: { value: o.purity }, uHueSpread: { value: o.hueSpread }, uPigments: { value: o.pigments }, uTrail: { value: o.trail } },
   };
 }

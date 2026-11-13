@@ -118,7 +118,7 @@ painter.overlayScene.add(boom.createStrokes({ painter }));
 
 Flying pieces are then drawn as brush strokes on top of the painting, stretched along their screen velocity: long sweeps when fast, short strokes when hovering. "Flying" means every piece that has been launched: a piece that has landed stays a stroke (lying flat, because it does not move), and `boom.stats.flying` counts all of them. The scene depth from the painter hides strokes behind buildings. While strokes are on, flying cubes are hidden; pieces still in place stay cubes and are painted with the scene. `boom.removeStrokes()` switches back.
 
-The strokes take their look from the painter's brush. With the default brush they are oil strokes. With `pointillist()` they are round dabs: one piece is one dab of one pigment, a little longer when it is fast. When you set `painter.brush` later, the strokes follow on the next frame. A brush you have used before does not compile again.
+The strokes take their look from the painter's brush. With the default brush they are oil strokes. With `pointillist()` they are round dabs of one pigment each: one dab for a slow piece, a trail of up to three for a fast one. When you set `painter.brush` later, the strokes follow on the next frame. A brush you have used before does not compile again.
 
 `createStrokes` options: `brush` (a PainterlyPass brush; default: the painter's current brush, followed when it changes), `strokeScale` (1.25), `maxWidth` in CSS pixels (34), `jitter` (0.16), `lookAhead` (−0.03 s: the stroke points from where the piece was a moment ago; use a positive value when you play the clock backwards), `keep` (1: the share of flying pieces drawn as strokes; each piece's choice is fixed, so nothing flickers. With large strokes, a lower `keep` saves overdraw. Change it live with `strokes.material.uniforms.uKeep.value`).
 
@@ -137,7 +137,9 @@ A brush gives strokes their look with a `flying` part: `{ flying: { vertex, frag
 
 The fragment part can use `h1`, `lum`, `uJitter` and the brush's `uniforms`, which the stroke material shares. `seed` and `r` are interpolated and differ a little from pixel to pixel. For a yes/no choice per piece, declare `flat varying float vPiece;` in the fragment part and read that: it is the same seed, exact on every pixel.
 
-`oilStroke` in `baked-debris/shaders` is the built-in look and the reference. `strokeShaders(look)` from the same entry returns the complete `{ vertex, fragment }` shaders for a look, for effects that should match it; an effect with its own vertex shader must write `vPiece` if the look reads it.
+A look can add varyings of its own: declare one in both parts and write it in `strokeStretch`. The pointillist look passes the stretch to the fragment part this way (`vTrail`).
+
+`oilStroke` in `baked-debris/shaders` is the built-in look and the reference. `strokeShaders(look)` from the same entry returns the complete `{ vertex, fragment }` shaders for a look, for effects that should match it; an effect with its own vertex shader must write `vPiece`, and the look's own varyings, if the look reads them (`examples/voxel-paris` does this for its fire).
 
 ## Displace hook
 
